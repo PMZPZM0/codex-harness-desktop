@@ -14,6 +14,20 @@
 > ⛔ 别把「云助手要部署」的纪律套到主仓 / PPcode，也别把「主仓本地 build 就行」套到云助手。
 > （这条**不替代**下面「三仓同轮同步」的要求，两者都要守。）
 
+## 怎么读这份文件（30 秒版）
+
+| 你要做什么 | 读哪一节 |
+|---|---|
+| 先确认改哪个仓、怎么生效 | 下面那张「本地产物 / 云端界面」表 |
+| 提交前的硬红线（敏感信息） | 🔒 敏感信息红线 |
+| 改代码前判断放哪一层 | 📐 功能板块划分（细则在 `docs/MODULES.md`） |
+| 改完怎么算合格 | ⛔ 验收铁律 + 🧹 交付卫生 |
+| 多仓同步 / 发版 | 🔁 多仓协作与发版 |
+| 查「某个功能哪一轮加的」 | `docs/CHANGELOG-INDEX.md` |
+| 引擎能用什么工具 / 能力 | 会话动态工具 + 内置能力 |
+
+> 原则：**常驻只放每轮都要用的规则**；查阅型内容（板块地图、历史流水）在 `docs/`，需要时再读。
+
 ## 🔒 敏感信息红线（2026-11-07 用户令，硬性，无例外）
 
 ⛔⛔ **禁止把下列内容写进任何仓库、提交、推送或 GitHub 可见内容**（含源码/文档/注释/脚本/截图/commit message/Release Notes/Issue/PR 正文）：
@@ -80,302 +94,24 @@ git diff --cached | grep -nE "([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f
    - **样板**：`features/remote-ipc.ts` 是唯一"只依赖 ipc"的老域，已改 `defineFeature`，照它办理其余。
    - ⛔ **守卫要等域改完再加**：此刻 59 个已插件化域里仍有 8 个用 `shell`、5 个用 `BrowserWindow`、1 个用 `ipcMain`，先加断言必然红。顺序：接缝层 → 改域 → 加棘轮守卫。
 
-## 📐 功能板块划分与接口规则（现行有效，2026-09-22 立）
+## 📐 功能板块划分与接口规则
 
-> **写/改代码前先读 `docs/ARCHITECTURE-RULES.md`**（以实测现状为基准的规范条文：板块划分判据、四条接口面契约、新增板块 checklist、红线汇总）。
-> ⚠️ `docs/ARCHITECTURE.md` 是 09-21 的**目标形态草案**（`registry.ts` / `defineFeature` / `Slot.tsx` / `lib/bus.mjs` 未落地；`gen-ipc-bridge.mjs` 已于 09-23 落地，见 ARCHITECTURE-RULES.md §0/§6），**冲突时以 ARCHITECTURE-RULES.md 为准**。
-> ✅ **10-03 更新**：**主进程侧**的 `defineFeature` + `ctx` 容器**已落地**（`electron/context.ts` + `electron/ipc-host.ts`），并已加**域组合层**（`electron/composition.json` → `npm run gen:domains` → `composition.gen.ts`，守卫【252】【253】）。**P2 批次 1–7 已迁 13 个域**（queue-timer / clipboard / phone / updates / dataDir / history / work-logs / expert-market / soul-market / drama-canvas / pet / screenshot / favorites）：`inject: ["ipc"]` + `ipcHost.handle` + `ctx.effect` 摘 handler，`main.ts` 副作用域 import 26 → **15** 行。⛔⛔ **一个板块恒等于一个域前缀**（板块 = `features/` 下的一个顶层文件**或一个顶层目录**；样板 = `features/voice-ipc/`）。批次 8 已把"一个文件两个前缀"这条例外拆掉：`skillhub-markets-ipc.ts` → `expert-market-ipc.ts` + `soul-market-ipc.ts`，`screenshot-favorites-ipc.ts` → `screenshot-ipc.ts` + `favorites-ipc.ts`。**10 处历史欠账已于 10-03 全部拆完（56 个前缀，`07397e2`）**，守卫【253】⑥ 棘轮名单**清零为 0 行** —— 只许缩不许长，缩到 0 之后也**不许再长出来**（前半段 `grew253` 仍会捕获任何新增的多前缀板块）。【253】另有「表每行 `id` == 域文件 `defineFeature` 的 `id`」断言。⛔ 域仍可从 `electron` 取 `app`/`dialog` 等宿主能力（那是 P3 白名单的事），本阶段只把「注册通道」收进容器。**渲染层**的 `Slot.tsx` / `registry.ts` **仍未落地** —— 现状见 ARCHITECTURE-RULES.md §8。
-> ⛔⛔ **09-29 用户点名的通用纪律**（细则见文档 §2.2）：**后续新增功能一律做成独立板块、留好拓展接口、并考虑后续维护与拓展** —— 不往既有域里"顺手加一块"；能力表/厂商表/类型表保持单一真相源；新增或修改时**同轮**同步它的每一处引用（守卫、文档、生成器、能力清单）。
-> ⛔⛔ **10-07 挂载时机修正（事故后定死）**：组合层生成物**不在模块作用域自动挂载** —— 只导出 `mountEnabledDomains()`，由壳 `main.ts` 在 `app.setPath("userData")` **之后**用 `process.nextTick` 调用（守卫【253】②「生成物只导出 + 壳在 setPath 后调用」与【270】真跑「require 生成物本身 0 挂载」双层钉；`electron/compaction-watch` 同款）。两条实测事故：① 模块体先于壳句体执行 ⇒ 停用域判定读**默认目录**的 app-settings.json，读失败空对象进 **app-settings 进程缓存** ⇒ 用户全部设置静默失效（实测：自动压缩比例 0.9 从未生效，config.toml 恒为默认 0.6 的阈值 629146）；② 壳被域间接 `require`（`../main` 白名单依赖）时 `ENABLED` 表尚未赋值 ⇒ 同步调用 `exports.ENABLED is not iterable`（守卫真跑实测）⇒ nextTick 推迟到调用栈展开后。app-settings 缓存同时**按文件路径归属**（`cachedFor`）—— 任何"重定向前的读"不再污染重定向后的读。【159】钉缓存归属语句。
-> 样板 = **AI 画布工作流**（`src/features/drama-canvas/`），它是五层全占的独立功能板块，见文档 §2.1。
+> **细则已外置**：`docs/MODULES.md`（板块清单 / 归属判据 / 新增板块 checklist / 四条接口面契约）。
+> 改代码前按下表定位，再读那篇的对应小节。
 
-最硬的六条（细则见文档）：
-1. **分层依赖恒为** 壳（`App.tsx`/`AppView.tsx`/`main.ts`）→ 域（`features/<域>/`、`electron/features/<域>.ts`）→ 基座（`src/lib/*.mjs`、`src/components/`、`src/hooks/`、`electron/*.ts`）；基座不反向 import 域；域↔域只经 `app` / props / 对方 barrel，**禁深链内部文件**。
-2. **三前缀同源**：目录名 = IPC 域前缀（`ipc-registry.ts` 的 `prefix`）= CSS 类前缀，全小写 kebab；`<域>:<动作>` 一个域多动作不加新前缀。
-3. **新增功能：IPC 桥走 manifest**：`electron/features/<域>.ts` handler ↔ `electron/ipc-channels.manifest.json`（单一真相源）→ `npm run gen:ipc` 自动重生成 `preload.ts` / `vite-env.d.ts` 的 gen 段（**禁手改生成物**，漏一处由守卫【2】打红）；同时 `ipc-registry.ts` 记一行。
-4. **渲染层收 `app`**（类型 = `HarnessAppApi`）按需解构，不当"几百个 props 的搬运工"；纯展示件 props ≤5；需要共享状态的页面组件**命名导出**（默认可 `lazy`），懒加载只在整页级、Suspense fallback 必须静态常量高度。
-5. **状态只挂 bag**（新状态进既有 part 或新建 part，且同轮更新自动生成的 `bag-types.ts`，**禁手改**，守卫【93】）；真相源唯一（守卫【95】）；重置挂"动作"不挂渲染分支。
-6. **改了就要留判据**：每新增一个域/接口，把该有的不变量补进 `scripts/guards/` 下对应域文件（可机器校验），并同轮同步本文与 `AGENTS.md` 的实测数字 —— **文档滞后 = 主动误导下一轮**（09-22 自检教训）。
-
-**当前落点（实测值见 `docs/archive/REFACTOR-INVENTORY-2026-09-22.md` §10；行数口径一律 `wc -l`，别用 `split("\n").length`——后者多算 1 行；⛔ 09-22 自检教训：文档数字滞后会主动误导下一轮，每轮收尾必须同步本节）**：
-- `src/App.tsx` **12 行**：仅剩 hook 调用 + earlyView 短路 + `<AppView/>`（组件体已全部落 `app-view/`）。
-- `electron/main.ts` **1,184 行**（口径 `wc -l`＝数换行符、**含空行**；⛔ 10-03 自查纠错：此处曾写 **1,017**，那是 `Get-Content | Measure-Object -Line` 的「非空行」口径，两者差 197 行 —— 本项目已两次踩在"行数口径不一致"上）：剩 5 个 handler（theme + popout×4，已证不可搬；`ipcMain.handle/on` 实测计数 = 5）+ 启动链 + 模块级单例 + `import { mountEnabledDomains } from "./composition.gen"`（域挂载唯一入口；⛔ 10-07 起挂载在 `setPath(userData)` 之后 `process.nextTick(mountEnabledDomains)`，见上方挂载时机条）。**纯副作用 import 已 14 → 0 行**、含 `features/` 的 import 合计 23 行（组合表启用 **83 个域**，10-07 实测）。⚠️ 「副作用 import」与「含 features/ 的 import」是两把尺子，别混用。
-- `src/features/app-state/useHarnessApp.tsx` **39 行（组合根）**：建 `bag` → 按序调用 9 个 part → 合并 return。
-  - 逻辑在 `parts/part01.tsx` … `parts/part09.tsx`，**9 个 part 现在每个都是「组合根 + 子 hook 目录」两层结构**：
-    - 第一层 `parts/partNN.tsx`（16–24 行）：只 `import` 子 hook → 按序调用 → 展开合并 return；
-    - 第二层 `parts/partNN/NN-*.tsx` 子 hook（`export function usePartNNx(bag: Bag)`）：真正代码在这里。
-  - `parts/bag-types.ts`：自动生成的跨段共享类型（`<Bag>`，1,378 项）；`parts/types.ts`：手写类型面。
-  - ⛔ **顺序即契约**：子 hook 内含 hook 调用，调用顺序 == 原语句顺序 ⇒ 组合根**只能按文件名前缀顺序** import / 调用 / 展开。重排会让 React 的 state 归属错位，而 **tsc 完全看不出来**。预检【92】钉死这条。
-  - ⛔ 搬迁切片用字符区间（`getFullStart..getEnd`），不用行号——同一行常有多条语句。
-  - ⛔⚠️ **全仓唯一的段间入参例外**：`parts/part03/03-restart-file-model-editor.tsx` 的签名是 `(bag: Bag, ibB: ReturnType<typeof usePart03b>)`，多收 b 段 return 只为取 `providerModels`（该名字在旧文件里声明在 c 段语句区之前）。等价性已核（同一次渲染内 b 段刚算出的 state）；这也是它相对旧文件**唯一多出的一条语句**。改它要连 `part03.tsx` 调用点一起改。
-  - ⛔ **组合根头注释里的「原 N 行 / M 条语句 / K 个子 hook」必须与实测一致**：09-22 抓到 7 处照抄模板的错数字（part03–part09 全写成 2,139/690/4）。数字对不上 = 注释在骗下一个读它的人。
-- `src/features/app-view/helpers.tsx` **36 行（barrel，09-24 实测）**：86 个符号原样 re-export；内容已切进 `src/features/app-view/helpers/` 下 9 个模块（runtime / stream / catalogs / skills / text / thread-list / paths / view-dom / components）。
-- 侧栏会话视图（09-25）：「项目（cwd）/ 分类（会话来源）」两个 view tab（⛔ 原「分组（时间）」已按用户
-  要求删除，守卫【156】有负向断言不许加回；旧偏好值统一回落到 projects）。
-  口径收在纯模块 `src/lib/thread-source.mjs`：分类（主代理 / 专家团主理人 / 团队成员子任务 /
-  专家调度 / 子智能体调度 / 专家团调度）+ 调度归属（`buildDispatchChildren`：**分类与项目两个视图共用
-  同一份渲染**，被调度会话缩进挂在发起调度的会话下面）+ **项目归属**
-  （`resolveGroupCwd`：被调度的专家/专家团/子智能体/团队成员会话跟随**发起调度那个会话的 cwd**，
-  不再各自新开项目地址）。守卫【156】**真跑**该模块断言分类判定与五条归属边界。
-- 新增/改动 part 结构后，预检【92】会守住「子模块 return 面自洽 + 三者顺序一致」；跳过它的红 = 静默丢值。
-
-### 🐾 桌面宠物（`src/features/pet/` + `electron/features/pet-*.ts`，2026-09-30 立）
-
-一只浮在桌面的小宠物，状态跟着引擎事件走。**两种包格式并存**：
-
-- **Petdex / 官方图集包**：`pet.json` + 图集；图集 **8 列 × 9 行**、每帧 **192×208**（v2 包 11 行，多两行 16 向）。
-- **动画包（10-21 起内置主用，我们自己的格式）**：`pet.json` 的 `animationSet` 给九态各一对
-  `animatedSrc`（30fps 动画 WebP）+ `stillSrc`（减少动效用），可选 `lookFrameSet` 16 向看帧，顶层 `fps: 30`；
-  **没有图集**。渲染层按 `animationSet` 是否存在分流：动画包用 `<img>` 自己播（`<picture>` 在
-  `prefers-reduced-motion` 回落静帧），图集包仍走 background-position 切帧，两套互不打架。
-- **九态行名（顺序即行序，⛔ 不可重排/增删，两种格式同一套）**：`idle / running-right / running-left / waving / jumping / failed / waiting / running / review`。
-- **四个宠物目录**（扫描面 = 协议白名单，单一真相源 `features/pet-ipc.ts` 的 `petRoots()`）：
-  `dist/pets`（内置，随包）· `public/pets`（dev）· `<userData>/pets`（用户，可写）· `~/.codex/pets` + `~/.petdex/pets`（官方/Petdex 装的，只读展示、点「导入」才复制）。
-- **内置六只全部是 30fps 动画包**：
-  · **阿焰**（`harness-fox`，细毛小狐狸，**默认宠物**）：画布 **288×312**，整包约 5.3MB；
-  · **阿糯**（`harness-mochi`，奶油猫）· **阿团**（`harness-tuantuan`，垂耳兔）· **阿柴**（`harness-chai`，柯基）·
-    **阿栗**（`harness-lizi`，小熊猫）· **阿青**（`harness-qingtuan`，小龙）：画布 **256×277**，每只约 3.3~3.9MB。
-  六只都是九态 `animationSet` + 16 向看帧（idle 带眨眼、头/尾巴分段运动）；源图在
-  `scripts/pet-art/<slug>/`（六张姿态 + `pet-meta.json` 管显示名 / 尾巴方向 / 画布 / 补毛缝），
-  `python scripts/gen-pet-animation-set.py <slug>` 生成到 `public/pets/<slug>/`。
-  旧 SDF 三只（小墨 / 阿弦 / 小枢）及其 `gen-pet-sdf-animation.mjs` / `pack-sdf-animation.py` 已删除；
-  `gen-pet-spritesheets.mjs` 只保留为 8×9 图集格式示例（`PETS` 为空）。完整制作教程见 `docs/PET-MAKING.md`。
-  默认只改 `DEFAULT_SETTINGS.active` / 空值回落；用户档案里**显式选过**别的宠物不会被改写。
-  ⛔ **必须落 `public/`（→ `dist/pets`），不能放 `src/` 让 JS import**：`before-pack` 的可达闭包只认 js/css 与 CSS 里的 `url()`，
-  JS import 的位图会被判成陈旧死块删掉（v0.0.27 事故同型）；`dist/pets` 不在裁剪面内。
-- **两个必须记住的坑（都踩过、守卫【232】钉住）**：
-  1. ⛔⛔ **CSP 里 `*` 不覆盖自定义协议** —— `img-src * data: blob: file: harness-image:` **不够**，必须显式加 `pet:`，
-     否则图集被拦成空白（症状：浮窗截图**全透明 0% 不透明像素**，而 computed style 里 url 好端端的 = 典型假绿）。
-     与当年 `connect-src` 不放行 `data:` 导致 Pixi 贴图变白方块同型；**只在构建产物 + 真实 CSP 下暴露**。
-  2. 浮窗（`?pet=1`）必须在**首帧前**摘掉启动页（`index.html` 内联脚本判定 + 内联 CSS `display:none`）——
-     启动页是不透明白底，晚一步就在桌面上闪一块白。
-- **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → **每会话一条活动**，`waiting > running > failed/interrupted > completed→review`，旁听不改流向；completed 的**活动/气泡**保留到已看，但**宠物姿态只审阅 6s 就自动回 idle** —— 10-21 用户实测「运行结束宠物不刷新，要点打开箭头才刷新」，长期占着 review 会让宠物看起来卡住）→ 两个透明置顶窗（`pet-window.ts`，**都不登记 window-bus**，主窗口关时由 window-factory 显式关掉）：宠物 `?pet=1` + 活动气泡 `?pet=activity`（独立 320px，标题/状态/最近一句 + 打开/停止）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
-  ⛔ 不放宽 `harness-image` 的可信根，那是安全回归）→ 渲染层 `src/features/pet/`（`main.tsx` 按 `?pet=1` / `?pet=activity` 分流，
-  ⛔ 不能进 `App()` 条件调用 `useHarnessApp` —— hook 调用序）。
-- ⛔ **悬停工具栏的隐藏由主进程推 hover**（10-21）：窗口移出可交互矩形后会切成穿透，页面从此收不到 `pointerleave` ⇒ 工具栏会永久挂着；`pet-window.ts` 在光标轮询里把 inside 变化推成 `pet:hover`，浮窗用 `onPetHover` 收起。工具栏底部 42px **不参与看帧**（指针停在图标上切静态 look 帧会让宠物看着像冻住）。
-- ⛔ **拖拽不要挂 `-webkit-app-region: drag`**（10-21）：drag 区属非客户区，渲染层收不到 pointermove ⇒ 做不了左右跑/竖向跳反馈，也放不下悬停工具栏。现走「渲染层指针捕获 → `pet:drag-*` → 主进程 setBounds」；拖动期间 `applyPetMouseState` 必须强制可交互，否则窗口跟随移动会被判穿透、丢事件。
-- ⛔ **活动气泡贴「宠物本体」而不是窗口上沿**（10-22 用户截图「离得太远了」）：宠物窗 230×300，精灵在窗内还有 ~97px 透明留白；`positionPetActivityWindow` 必须用 `petInteractiveRect` 算头顶/中心，拖动与矩形上报时都要重排（否则气泡甩在原地）。⛔ **hover 重跑 effect 时不许上报 `petInteractiveRect(null)`**（只在卸载时发）——null 会让主进程把整窗瞬切穿透，用户正好这一帧按下左键就「拖不动」。
-- ⛔ **活动气泡跟随当前会话**（10-22 用户「任务状态刷新慢、没有跟随会话」）：渲染层 `PetFocusBridge` 把 `thread?.id` 经 `pet:focus-thread` 报给主进程，`orderPetActivities` 把该会话顶到第一位（后台 waiting/running 保留）；切会话立即 `publish`，不等下一条引擎事件。**确认后的第一条新 item 恢复 running**（`clearWaiting`）——有些引擎版本不回 `serverRequest/resolved`，否则气泡永远卡在「等待你的确认」。
-- ⛔ **e2e 必须排除宠物浮窗 target 整族**：宠物和活动气泡都是 page target，`harness._connect()` 取 `list[0]` 会随机连错窗口
-  （实测症状：设置导航读到 0 项，看着像"设置页坏了"）。已在 `scripts/e2e/lib/harness.mjs` 里按 `pet=` 排除。
-- 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
-  —— 少总览那处会被守卫【32】打红。
-
-### 🧩 插件市场（`electron/codex-market.ts`，2026-10-01 二次换源）
-
-数据源 = **Gitee 官方镜像**（`gitee.com/yuqiaodi/claude-plugins-official-gitee`，Claude Code
-官方插件市场的国内镜像，48 个插件 100% `.claude-plugin` 兼容）。换源史：codex-marketplace.com
-（国内访问不稳）→ SkillHub（9600+ 条，实测几乎全为 DeepSeek Harness 生态装不上，用户令换）→ 本源。
-- list = `.claude-plugin/marketplace.json`（Gitee contents API base64，5 分钟缓存，客户端过滤分页）；
-  install = git trees API（recursive）+ `gitee.com/{owner}/{repo}/raw/{branch}/{path}`（302 跳转，
-  electron net 自动跟随）→ 写本地 marketplace → `plugin/install` + `plugin/list` 注册。
-- ⛔ 守卫【239】：源锚定 Gitee 镜像、SkillHub 插件 API 与 DSH 探测分支不许复活。
-- 分类中文名映射在 codex-market.ts 的 `CATEGORY_ZH`；UI 分类 tab 在 `helpers/catalogs.ts` 的
-  `pluginMarketCategoryTabs`（两处要与 marketplace.json 的 category key 对齐）。
-
-### 🧩 Codex 官方插件市场（`electron/codex-official-market.ts` + `features/codex-official-market-ipc.ts`，2026-10-03 立）
-
-插件页的**第二个数据源**：GitHub `openai/plugins`（Codex 官方市场原档，**65 条**）。与上面的 Gitee 源是两个板块、
-两套目录，插件页顶部源切换，**各用各的分类 tab**（Gitee 8 类 / 官方 10 类，key 不重叠）。守卫【254】【255】。
-
-- 清单 = `.agents/plugins/marketplace.json`（65 条，只有 name/source/policy/category）+ `.agents/plugins/api_marketplace.json`
-  （50 条子集 = ChatGPT 精选）。⛔ **简介与显示名不在清单里**，在各插件的 `plugins/<slug>/.codex-plugin/plugin.json`
-  ⇒ 文案走生成快照 `electron/codex-official-catalog.gen.ts`（**禁手改**，重跑 `node scripts/gen-codex-official-catalog.mjs`）；
-  中文名仍是手写表 `OFFICIAL_PLUGIN_ZH`（缺条目回落快照英文）。
-- 下载 = `git/trees?recursive=1` 一次拿全 + 落盘缓存（`<市场目录>/.cache/tree.json`，6h）+ raw 逐文件（8 路并发）。
-  ⛔ 镜像序 = **gh-proxy → ghfast → 直连**；前两个连 `api.github.com` 都能代理（未登录直连限 60 次/小时）。
-- 落盘 = `<codexHome>/plugins/codex-official-market/plugins/<slug>` + marker `.codex-official.json`
-  （**「已安装」的真相源**，同【245】口径）+ 本地 `.agents/plugins/marketplace.json`（照上游形态）
-  + config 段 `[marketplaces.codex-official-market]` → 引擎 `plugin/install`（清单**文件**路径）→ 重启引擎。
-- ⛔ **官方 65 条全部要鉴权**（ON_INSTALL 58 / ON_USE 7），其中 15 条还依赖 ChatGPT 应用连接器 ⇒ 每张卡片必须写
-  `authNote`（「装了 ≠ 能用」）；3 条 `source` 指向外部仓库（CrowdStrike ×2 / Qodo）⇒ 只给查看来源，不给一键安装。
-- ⛔ 62 个插件共 **51.13 MB** > 50MB 内置口径 ⇒ 不随包，按需下载；单插件最多 795 个文件 ⇒ `MAX_FILES` 不许退回 300。
-- ⛔ 安装进度事件 type = `official-plugin-install`，**不与 Gitee 的 `plugin-install` 共用**（两源 slug 有重名：linear / github）。
-- 渲染层 = `src/features/codex-official-market/`（自包含、本地 state，**不进 bag**；样板同 `component-library` 页）。
-- ⚠️ **已知边界（与 Gitee 源同款，不是本轮新欠账）**：「已安装」管理列表只补引擎已认领的插件（part04 的 union 扫的是
-  Gitee 目录）；官方源里**引擎没认领**的那批在本板块卡片上有 ✓ 与卸载，但不出现在下方「已安装」卡片区。
-  补齐它要动 part04/part05 的 bag 分流（多一个市场维度），未经用户确认不擅自扩。
-
-### 🖥 Windows 原生控件清单通道（`resources/tools/harness-uia.mjs` + `desktop-uia.ps1`，2026-10-04 立）
-
-nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口挪动 / DPI 缩放 / 自绘界面就会失手。
-本通道用 **Windows 自带的 UI Automation** 直接拿「控件清单」（元素类型、名字、AutomationId、矩形、
-支持哪些动作），按**元素序号**操作，不猜坐标。守卫【273】9 条。
-
-- ⛔ **是独立 MCP 服务器 `harness-uia`，不塞进 nuphus**：nuphus 是第三方预编译二进制，我们改不了它的工具面。
-- 4 个工具：`desktop_ui_windows` / `desktop_ui_snapshot` / `desktop_ui_invoke` / `desktop_ui_set_value`
-  （后两个是写操作，**必须显式 `confirm:true`**，与 `desktop_mouse` 同口径）。
-- 注册判据 = **win32 + 桌面总闸开 + 两个随包脚本齐备**（`shouldRegisterUia`）；不注册就是整段不写、
-  工具干净消失，⛔ 不复用 nuphus 的 `disabled_tools` 掩码（那套是为「一个服务器混装两组工具」准备的）。
-- 三条通道的分工写进了 `desktop-automation` 技能与常驻指令：**原生应用走清单；网页与 Electron/Tauri 内容走
-  `browser_*`（实测这类窗口的 UIA 树只有个位数元素）；清单拿不到才退回 OCR 坐标**。
-- ⛔ 两个实测坑（守卫已钉）：PowerShell 按 GBK 写管道，**汉字尾字节可能是反斜杠或双引号的 ASCII 码**
-  ⇒ 输出的 JSON 直接打断
-  ⇒ `.ps1` 必须纯 ASCII 且强制 `[Console]::OutputEncoding` 为 UTF-8；最小化窗口的矩形是 `Infinity`
-  ⇒ 原样写出就不是合法 JSON，坐标一律过 `Round-Geom` 归一。
-- ⛔ `harness-uia.mjs` 拉起 PowerShell 只用**参数数组、不开 shell**（title/text 是外部输入 = 注入面）。
-
-### 🖥 桌面自动化后端（11-13：agent-desktop 默认主；Nuphus / Computer Use 保留为可选兜底，守卫【274】）
-
-用户决策（11-13）：**三个后端都保留，默认只开 agent-desktop**；另两个默认关，用户显式开启后参与兜底。
-三者的优势与调用顺序（常驻指令 / 桌面技能 / 能力表三处必须一致）：
-
-| 后端 | 优势 | 角色 |
+| 板块 | 目录 | 备注 |
 |---|---|---|
-| **agent-desktop**（Vercel Labs，Apache-2.0） | OS 无障碍树 + 语义 `@ref`，不截图不猜坐标；窗口挪动 / DPI 变化都不受影响 | **默认主后端**（原生应用 / 对话框 / 表单 / 菜单） |
-| **computer-use**（open-computer-use，MIT） | 紧凑的 app state 控件清单 | 第二清单通道（Agent Desktop 不可用时） |
-| **nuphus**（@nuphus/nuphus-mcp） | 截屏 + 本地 OCR + 像素坐标；另提供 `browser_*` 浏览器回落 | 像素兜底（画布 / 自绘 / 控件树残缺） |
+| 会话与回合 | `src/features/app-state/`、`electron/main/` | 事件归约、回合容器、折叠 |
+| 设置页 | `src/features/settings-*`、`electron/features/*-ipc.ts` | 注册表一行一页（【101】） |
+| 技能 | `electron/builtin-skills*`、`electron/skill-packs-*` | 三层索引 + 描述 ≤60 字 |
+| 记忆 | `electron/memory-*.ts` | 落盘在 `codex-home/memory/`，注入有预算 |
+| 工具面 | `electron/tool-profiles.ts` | 目录 + CORE + 岗位增量 + 回滚开关 |
+| 调度 | `electron/features/delegation.ts`、`teams-ipc.ts` | 工具面在 thread/start 定死 |
+| 浏览器/桌面自动化 | `electron/automation-policy.ts`、`mcp-gateway.ts` | 三通道优先级 + MCP 懒加载 |
+| 图像/影音 | `electron/image-*`、`openfilm/`、`media-tools.ts` | 生图/剪辑各一套 IPC |
 
-- **agent-desktop 随包内置**：npm 包 32MB 自带六平台二进制，`scripts/prepare-{windows,mac}-tools.cjs`
-  用 `agent-desktop@<tools-versions.agentDesktop>` 装进 `npm-global`；装完**只留目标平台**并补执行位
-  （mac：本架构主程序 + `agent-desktop-macos-helper-darwin-<arch>`，约 4.5MB；Windows：win32 x64/arm64），
-  其余平台/架构当场裁掉。⛔ mac 两条 npm 分支都不跑 agent-desktop 的 postinstall
-  （x64 `--ignore-scripts` / arm64 只放行 nuphus）⇒ 二进制与 helper 必须由 tarball 自带 + prepare 补 `0o755`；
-  before-pack / verify-packaged-tools 硬校验「启动器 + 本平台主程序（mac 还要 helper/执行位）」且不许残留别的平台二进制。
-- **注册** = `[mcp_servers.agent-desktop]`（command = 随包 node，args = `[<launcher>, "mcp"]`）；
-  上游 75 个工具（1.3.0 实测）**只保留核心 12 个**，其余写 `disabled_tools`（不占模型上下文）。模型侧实际走 CLI：
-  `agent-desktop snapshot --app "<名>" -i` → `click @ref` / `type @ref` / `focus @ref` + `press return` /
-  `scroll @ref --direction down --amount 3`（ref 只属于最近一次 snapshot；⛔ `press` 只收组合键、`scroll` 的方向是参数，别再写成 `press @ref ENTER` / `scroll @ref down`）。
-- 关闭某后端后，常驻指令不再引导它的 CLI/工具；**Nuphus 关掉只掩 `desktop_*`，`browser_*` 永远保留**
-  （未装 Ego 时的浏览器回落）；computer-use 关掉则整段不写。
-- 三个开关在「设置 → 自动化 → 桌面自动化」与「控制台 → 通用 → 桌面自动化」读同一份 app-settings；
-  默认值：`desktopBackendAgentDesktop !== false`、`desktopBackendNuphus === true`、`desktopBackendComputerUse === true`。
-- 「开发工具 / 组件更新」里 `agent-desktop` 走 npm 国内镜像在线更新；桌面自动化卡片也带安装/检查更新入口。
-- ⚠️ **mac 真机未验证**：agent-desktop 是裸 CLI + `agent-desktop-macos-helper`（不是 .app），
-  **辅助功能授权的归属**（本应用 vs helper）与签名/公证、Gatekeeper 放行只能在 mac 上跑出来；
-  首次调用失败先看「系统设置 → 隐私与安全性 → 辅助功能」里有没有本应用/helper 并授权。
-  产物层硬校验见 `scripts/verify-packaged-tools.cjs`（主程序 + helper + 执行位 + 无外平台二进制）。
-
-### 🔁 RPA 配方（`rpa_save` / `rpa_run`，11-13 补齐，守卫 12bn）
-
-「设置 → 自动化 → RPA 自动化」= 把跑通的自动化流程存成**人话步骤**，下次按名字交给模型逐步复现。
-
-- 模型工具：`rpa_save`（同名 **upsert**，不重复新建）、`rpa_run`（不传 name 列清单；按 name 执行，**只认唯一匹配**）。
-- 两种执行：**文本配方**把 steps 回给模型逐步复现；**键鼠录制配方**（带 `actions`）由主进程原生回放，不经过模型。
-- **键鼠录制（Windows + macOS）**：设置 → RPA 自动化 →「开始录制」→ 操作目标窗口 → 停止（Windows `Ctrl+Alt+F9` / macOS `⌘⌥F9`）→ 命名保存。
-  Windows 走系统 PowerShell 轮询，macOS 走随包 Swift helper（CoreGraphics；构建期 `swiftc` 编译，用户不装 Xcode）；
-  回放停止 Windows `Ctrl+Alt+F10` / macOS `⌘⌥F10`，坐标按录制分辨率等比缩放。⛔ 录制会记录键盘（可能含密码/验证码），只存本机；
-  中文输入法逐字回放不可靠、滚轮暂不录制；mac 首次要授权「输入监控」（录制）+「辅助功能」（回放），授权后仍失败就重启应用。
-  ⛔ 配方记录 `recordedOs`，按键码/坐标不跨平台；别的平台录制的一律拒绝回放。
-- **定时**：RPA 页每条配方可设「每天 / 每周 / 一次性 / 关闭」，复用「设置 → 定时任务」的调度器；
-  录制配方到点由宿主**原生回放**（不依赖模型，应用需保持运行），文本配方到点由模型在会话里按步骤复现；
-  删除配方会级联删除它的定时任务。⛔ 后台回放要求录制里有目标应用（focus/target），否则拒绝盲点。
-- 模型工具 `rpa_schedule`（daily / weekly / once / off）用于设置/取消定时。
-- 状态只在**回合/回放结束**回写（`turn/completed` 或播放器退出码；失败/中断记 failed），并刷新设置页的「上次成功 / 运行次数」。
-- 通道：`rpa:list / save / delete / run-result` + 录制 `record-start/stop/recorder-state/record-discard` + 回放 `play-start/play-stop`（⛔ 运行结果不是 `record`）；落盘 `<userData>/rpa-recipes.json`。
-- 步骤格式 / 何时保存 / 失败处理 = 内置技能 **`rpa-recipes`**（`skill-discipline` 已点名）；设置页空态不再声称「自动沉淀」。
-- 守卫 `12bn-rpa-recipes` + 验收 `rpa-recipes` 钉住工具注册 / 分发 / 回合结算 / 去重 / 通道 / 技能。
-
-### 🎨 前端开发（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发；10-06 起画布 = 上游 + 本仓组件补丁层，守卫【283】162 条）
-
-把开源 **m3e-canvas**（Material 3 Expressive 屏摄画布，MIT）嵌进应用：侧栏「···更多」开一整屏的界面画布，
-**手机 / 电脑 / 网页**三种形态都能拼（手机屏 412×892；电脑屏显式 1280×800；`platform` 选 android/web），
-摆好的界面可一键预览、直接变成前端提示词。要点如下：
-
-- ⛔ **上游源码 + 本仓补丁层**（10-06 用户：「3800个组件你从中调一些常用的组件做成图里面这些组件啊，
-  现在默认组件太少」）：组件面板与 kind 体系写死在上游，加组件必须改上游源码 —— 做法是
-  `scripts/sketch-fork/build.mjs`：克隆上游到 `.workbuddy/tmp`（源码**不进仓**）→ checkout **钉死提交**
-  （PIN 在 build.mjs，与 `public/sketch/CANVAS-BUILD.json` 的 `fork` 字段同源）→ 拷贝 overlay
-  `scripts/sketch-fork/extra-kinds.tsx` → **29 处锚点唯一的定点补丁**（tokens/i18n/prompt/M3Node/PartInspector/agent.md）→
-  `next build` → `build-sketch-bundle --from` 出货。比官方 36 种多 **8 个常用组件**（`avatar` / `skeleton` /
-  `rating` / `tooltip` / `expansionPanel` / `segmentedButton` / `stepper` / `timeline`，从 3800 组件库里挑的常用类型）。
-  ⛔ 上游更新 = 换 PIN 重跑（锚点失配**当场报红**，不许静默套用）；加组件 = 改 overlay + 补锚点 + 重跑。
-  ⛔ 产物仍只能落 `public/sketch/`：`clean-dist.mjs` 每次 check 会 `rmSync(dist)`（手放 dist 必丢），
-  而 `before-pack` 的可达闭包只走 `dist/assets` ⇒ `dist/sketch` 天然不被裁（同 `public/pets` 口径）。
-- **刷新产物** = `node scripts/sketch-fork/build.mjs`（全程一条龙；`--no-ship` 只到 out/ 调试补丁用）。
-  它内部调 `node scripts/build-sketch-bundle.mjs`：剪掉 GitHub Pages 死文件、**把两个 Google Fonts 本地化**、
-  把 `scripts/sketch-bridge.js` 内联进 `index.html`。只改了桥时：`node scripts/build-sketch-bundle.mjs --bridge-only`。
-  ⛔ 字体必须本地化：Material Symbols 是这套 UI 的**全部图标**，外链取不到时图标退化成 `home` / `add_circle` 这样的**单词**，看着就是坏了。
-- `sketch://` 协议（`electron/sketch-protocol.ts` 声明口径 + `boot.ts` 注册 handler）：根**恒等于打包内 dist/sketch**，
-  扩展名白名单，越界 403、越类型 415。⛔ 不复用 `harness-image`/`pet`（那两个只放图片扩展名，放宽它们 = 扩大任意文件读取面，安全回归）；
-  ⛔ 不用 `file://`（产物里资源引用全是绝对路径 `/_next/…`，file:// 下会解析到文件系统根）。
-  `standard: true` 让 `sketch://app` 成为标准 origin（绝对路径解析与 `frame-src` 匹配都靠它）；
-  `secure: true` 给 `navigator.locks` —— 上游用它做"同一份草图只允许一个可写实例"的单写者锁，非安全上下文里这个 API **直接不存在**
-  ⇒ 静默降级（同 pet:// 的 CSP 事故同型，最难发现的那类）。
-- ⛔ **CSP 的 `frame-src` 必须显式加 `sketch:`**：`*` 不覆盖自定义协议（`index.html` 里已写成纪律），漏写 = iframe 静默空白。
-  这条链六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → 协议 → CSP → 产物+桥），**每一个都能在 tsc 与预检全绿时白屏**
-  ⇒ 验收项 `ui-sketch`（10-06 轮重写为三形态探针）真跑「桥握手成功」（`data-bridge="ready"`）+ 写回往返（⑦真实上游接受分享哈希 / ⑧摘要变「2 屏 / 2 部件」= 手机屏 + 电脑屏 + platform web 真落盘 / ⑨一键预览点到真键 / ⑩原样还原）：
-  跨源 iframe 读不到 DOM 也读不到存储，握手与回执是唯一可观测判据。
-- **读写通道 = `scripts/sketch-bridge.js` + postMessage**（构建时内联进产物的 index.html）：读 = 桥把草图同源的
-  `localStorage["m3e:doc"]` 回传宿主（宿主据此显示「N 屏 / M 部件」、复制 JSON、合成任务）；**写回只走上游自己的导入通道** ——
-  桥把文档编码成它的分享哈希（`#docz=` = deflate-raw + base64url；无 CompressionStream 回落 `#doc=`）挂 `location.hash`
-  → 上游 `hashchange → arrive()` 落盘（有校验、可 Ctrl+Z 撤销）。⛔ 桥自己从不 `setItem/removeItem` —— 直接改存储
-  会绕过上游校验与撤销栈（【283】静态断言 + VM 真跑两处都钉）。
-- **Codex 侧两个 dynamicTool**（10-05 立；两轮改名，用户点名「涉及手机前端开发能主动调用这个工具」+「手机电脑 网页前端UI都有」）：
-  `frontend_get_doc` / `frontend_apply_doc`（注册 part08 → 分发 part05；窗口没开自动开 + 等桥就绪 ≤15s）。
-  写侧先过**上游同口径**前置校验（`validateSketchDoc`：kind 44 种 / variant 5 种 / 必填字段，口径抄自上游 bundle 的
-  `fL`/`fz`/`fE`/`fT` + `lp`/`sZ` 两张表，守卫再从产物原文提取枚举逐字对账），失败不打开窗口、回中文原因；
-  回执以桥的 `load-doc-result` 为准（没有回执不算成功）。渲染层 `sketch-session.mjs` 是唯一的就绪态与在飞请求持有者
-  （弹窗 attach/feed；串行队列防两次 hash 写入互踩；StrictMode 重挂载不误杀在飞请求）。
-  ⛔ 配套**常驻指令第 13 条**（`electron/developer-instructions.ts` 的 `FRONTEND_CANVAS_INSTRUCTIONS`）与工具同在 ——
-  做手机 / 电脑 / 网页界面时明确让模型先 `get` 再在文档基础上 `apply`（工具在表里模型不主动用 = 白配，同第 12 条纪律）；
-  工具描述**列全 44 种 kind 名字**（守卫钉住"一个都不许缺"），字段级说明在组件手册技能里（见下条）。
-  改名代价：旧会话要切走再切回才出现新工具名（dynamicTools 只在 thread/start 与 resume 注入）。
-- **组件手册技能 `frontend-canvas`**（10-05 夜立、10-06 随补丁层扩到 44 种）：内置技能，44 种组件的
-  字段速查（含 `bottomSheet` / `datePicker` / `timePicker` / `carousel` 这四种上游 agent.md 没写的，
-  以及补丁层新增的 8 种）+ 手机 / 电脑 / 网页三形态 + 导航/主题/坐标/自查清单；`ensureBuiltinSkills` 落盘，指令第 13 条点名它。
-  ⛔ 组件面板的**新增**只能走补丁层（改 `scripts/sketch-fork/` 重跑构建）——宿主侧不许自造第二条组件通道。
-- **一键预览**（10-05 夜，用户：「加一个对话框预览这个UI界面」）：弹窗头部「预览」按钮 → 桥**代点上游工具栏的
-  play_arrow 键**（图标 ligature 是语言无关锚；跳过 disabled / 隐藏键）→ 上游自己的交互预览（点按跳转 / 滑动返回 /
-  ESC 退出）在弹窗里全屏播放；桥回 `preview-result` 回执、宿主状态条同步。⛔ 预览界面是上游渲染的，宿主不造第二层；
-  ⛔ 预览路径不碰存储（【283】VM 用例 D + 验收 ⑫ 真跑回执）。
-- 10-05 做过一版"把组件库控件送进草图"，用户实测后判「跟左边那些不适配，加进来没啥用」⇒ 整块撤掉，
-  守卫【283】留两条负向断言防复活（弹窗里不许出现组件库面板 / 纯函数层不许残留写入侧旧实现）。
-- ⛔ **界面弹窗里不要再塞并排面板**（同一条用户反馈）：iframe 必须占满整块主体，并排会把画布挤到 ~910px，
-  它自己的浮动工具栏就摆不下、右上角控件互相遮挡。标题与动作也合成一行，别多一条工具栏。
-
-### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
-
-组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：
-
-- **独立设置页「组件库」**（`component-library` 域）：浏览全部 11 类 3802 个组件，点卡片看 HTML+CSS 原文、一键复制（`writeClipboard`），给用户开发别的软件用。加载失败必须可见（`comp-lib-error`，⛔ 不许静默空白）；代码视图用 `<pre>` 文本节点（⛔ 不用 innerHTML）；预览走 `components/SkinHost`（Shadow DOM 隔离，只 preview 禁交互）。
-- **Codex 引擎查询工具**：内置 MCP（harness-dispatch）的 `ui_component_search` / `ui_component_get`（定义在 `dispatch-core.ts`，执行端 `dispatch-rpc.ts`，数据端 `uiverse-library.ts` 从 `dist/assets/<Cat>.html-*.gz` 前缀匹配定位、dev 回落 `src/lib/ui-skin/data/`）。⛔ 模型侧常驻指令第 12 条（`UI_COMPONENT_INSTRUCTIONS`）必须与工具同在——工具在表里模型不知道 = 白配。
-- ⛔ **个性化皮肤已整体删除**（10-01 用户令；09-30 首版单品散绑 → 10-01 套装化 → 当天删）。守卫【234】是负向断言防复活（皮肤文件 / 换肤分支不许回来）；其中「胶囊开关全仓统一走共享 ToggleSwitch」一条与皮肤无关，**独立有效**（新开关不许写散装实现）。localStorage 旧状态由组件库页模块体清理（`ui-skin-state-v2` / `ui-skin-bindings-v1`）。
-- 守卫【235】7 条钉住组件库全部接线。
-
-### 🎨 设计参考库（awesome-design-md；`electron/design-md-library.ts` + `features/design-md-ipc.ts` + `src/features/design-library/`，11-15 立）
-
-用户给了 <https://github.com/VoltAgent/awesome-design-md>（84 份真实网站的品牌 DESIGN.md，Google Stitch 格式：YAML tokens + 主题/排版/组件/布局/Do&Don't/响应式/迭代指南，MIT）：
-
-- **数据随包**：`resources/design-md/library.json`（生成物，`node scripts/sync-design-md.mjs --force` 从上游**整包 tarball** 重建，镜像序 gh-proxy → ghfast → 直连；⛔ 不逐个打 GitHub API —— 匿名配额 60 次/小时，84 份一次就耗光）+ `LICENSE` 原文。上游 README 漏列的 `slack` 由脚本 EXTRA 补齐（84 份完整）。打包走 `build.files` 的 `resources/design-md/**`（⛔ 不另占 extraResources，同一份数据不重复打包）。
-- **三类出口同一份实现**：Codex 工具 **`design_md`**（`list` / `search` / `get`，走 `harness_tools` 网关；常驻指令**第 20 条**只在工具表里有它时才引导）、设置 → 能力与内容 →「**设计参考**」页（`design-library`：搜索 + **分类下拉** + 卡片分页；详情**默认中文导读**（由 tokens 自动生成：中文一句话 + 字体家族 + 字号层级表 + 按用途分组的中文色板 + 圆角/间距 + 各组件的底色/文字/圆角/内边距），可切「英文原文」看完整 DESIGN.md；**展示中文、复制 / 导出 / 交给 Codex 一律英文原文**；导出目标可选当前项目 / 其它项目 / 自选目录）、内置技能 **`design-md-library`**（+ 中文导读）。
-- **导出落点** = `<项目>/design-references/<slug>.md`，⛔ 不覆盖项目根 `DESIGN.md`；「交给 Codex」= `bag.setPrompt` 填进输入框，**不自动发送**（避免误触发一轮）。
-- ⛔ **合规**：MIT 原文与版权头随包；只作**风格参考** —— 不复制品牌 logo / 商标 / 图片 / 专有字体，生成界面不冒充官方。工具描述、技能、页面文案、`THIRD_PARTY_NOTICES.md` 四处都写明。
-- 判据：守卫 **`12bs-design-md`（74 条：数据真值与中文导读全覆盖 / 同步脚本来源 / 三通道 / slug 白名单 / 工具+指令+技能 / 页面五处注册 / 中英文预览与色板分组真值表 / 分类下拉与导出项目选择 / 打包与合规）** + 验收 **`design-library`（8 条：84 份加载（中文导读 + 分类下拉）/ 搜索 / 中文导读色值 / 英文原文页签 / 复制回执 / 导出目标可选 / 真导出 / 交给 Codex 填输入框）**。
-
-### 🖼 PhotoCraft 专业图像后期（`electron/photocraft.ts` + `features/photocraft-ipc.ts`，11-15 立；11-17 改 Launcher 安装）
-
-用户给了 <https://github.com/storytold/photocraft>（纯 Rust 的开源 Photoshop 重写，MIT/Apache-2.0，7.9 万星）问怎么用。三条出口（P1 工具 / P2 MCP / P3 GUI）：
-
-- ⛔⛔ **安装归 Craft 全家桶的 Launcher（11-17 用户令：「跟其他应用一样那个软件安装，这边负责识别联动」「不要直接下载安装」）**：宿主**不再**下载 release、不再解压到 `tools/photocraft`。CLI / GUI 路径来自 `artcraft.ts` 的安装扫描（`installedCraftApp("photocraft")`，Launcher 装在哪都能认）；老安装目录只作兜底。入口与其它 App 同一层级 3 弹窗（`ArtCraftSuite`），⛔ 没有独立安装卡（`PhotoCraftCard` 已删除），工具名仍是 `photocraft`（不改成 `craft_photocraft`）。
-- **工具 `photocraft`**（7 动作）：`status` / `commands`（500+ 命令可发现）/ `info` / `run`（按序执行 ≤20 条命令）/ `convert` / `batch`（整目录）/ `open`（原生窗口）。⛔ 命令 id 走白名单正则、参数 ≤8KB/条；文件必须落在可信根或 `userData/photocraft-io`；**输出不得与输入同路径**（不覆盖原图）；一律 `spawn` 参数数组、不开 shell。
-- **MCP 连接器（P2）**：检测到才写 `[mcp_servers.photocraft]`（headless CLI，`--no-gpu`，读/写根都限 `userData/photocraft-io`），由 `custom-model-apply` 统一生成。⛔ 引擎 0.157 会**延迟暴露 MCP 工具** ⇒ 主路径永远是上面的动态工具；MCP 只作高级命令面。
-- **GUI 编辑（P3）**：图片产物卡右上角「在 PhotoCraft 中编辑」→ `photocraft:open` 启动 Launcher 装的 GUI（mac 若只装了 CLI 会提示去装 App）。⛔ 不嵌入 Electron、不重写它的界面。
-- ⛔ **许可/边界**：只识别官方发行物；不重打包、不冒充 ArtCraft 官方。项目 early alpha：命令 id 与参数随版本变化，升级由 Launcher 管。
-- 判据：守卫 **`12bt-photocraft`（35 条：不自行安装 / Launcher 路径解析 / 可信路径 / 不覆盖原图 / 命令白名单与参数上限 / MCP 段 / 工具+指令+技能+弹窗 / 图片入口 / 许可）** + 验收 **`photocraft`（三级入口 / 与其它 App 同一弹窗 / 状态与路径闸）**。
-
-### 🧰 Craft 全家桶（`electron/artcraft.ts` + `features/artcraft-ipc.ts` + `src/features/settings-devtools/ArtCraftSuite.tsx`，11-16 立）
-
-用户问「photocraft 是不是还有几个配套开源」⇒ 查明是 ArtCraft 的 **Craft App Suite**（`storytold` 组织，**19 个 App = 17 个官方 + 2 个社区**，全部 Apache-2.0 可商用）：PhotoCraft 图像 / LightCraft RAW / FilmCraft 视频 / EffectCraft 动效 / AniCraft 2D 动画 / VectorCraft 矢量 / FigCraft 原型 / DesignCraft 版式 / DeckCraft 演示 / WordCraft 文档 / GridCraft 表格 / PdfCraft PDF / CADCraft CAD / SoundCraft 音频 / MaterialCraft 材质 / TextureCraft 贴图 / Craft Anything + 社区 SolidCraft / MailCraft。每个 App 都有独立 Windows portable zip + MSI + CLI 构建，整套装齐约 **1.36GB**。
-
-- **UI = 三级弹窗**（用户令「开发工具界面一个 Craft 全家桶，弹窗里面细分到每个点击在一个弹窗」）：层级 1 = 开发工具页唯一的「Craft 全家桶」卡；层级 2 = `ArtCraftSuite`（启动器安装/更新/卸载 + 每个 App 独立的 Codex 工具行 + 19 个 App 网格）；层级 3 = 每个 App 一个弹窗（安装状态 / 能做什么 / 怎么用 / 独立工具名 / 来源）。PhotoCraft 那一层**直接复用完整 `PhotoCraftCard`**。⛔ `artcraft-apps.ts` 是 App 目录的单一真相源（id/仓库/官网/主题色/中文功能点均对照 Launcher 自带目录）。
-- **工具按 App 拆开**（11-16 用户令「跟 PhotoCraft 一样，都单独」「工具都拆开」）：每个**已装且带 `-cli.exe`** 的 App 各自一条 `[mcp_servers.<id>]`（无头 CLI `mcp` 子命令）+ 一个独立 dynamicTool `craft_<id>`（status / commands / info / run / convert / open），执行端 `artcraft:run`。⛔ 不再走「一个统一网关」；没有已装 App 就整段不写，App 卸载后其段按 `userData/artcraft-mcp-servers.json` 账本清掉。
-- **联动（装完有反馈）**：主进程扫描 Launcher 安装目录得到已装列表 + exe 版本；弹窗开着每 2.5s 轮询 + 回前台立刻刷新 ⇒ 在 Launcher 装完回来就显示「已安装 vX」；已装名单变化时**自动重写 config**（新 App 自动接上，不用手点）。
-- ⛔⛔ **安装位置不是固定的（11-17 用户实测「别的电脑装完完全识别不到」）**：扫描面 = 已知 App 名（`CRAFT_APP_IDS` ∪ Launcher 目录缓存的 id）+ Launcher **自己记录的** `install_locations`（`ArtCraftLauncherData/data/app.ron` 的 root/per_app）+ `%ProgramFiles%` / `%ProgramFiles(x86)%` / `%LOCALAPPDATA%\Programs` / `%LOCALAPPDATA%\ArtCraft` / `%APPDATA%\ArtCraft` / `%ProgramData%\ArtCraft` / Launcher 旁边；容器目录再下一层。⛔ 仍识别不到时用 **`artcraft:pick-root`** 手动指定安装目录（落 `<userData>/artcraft-root.json`，「自动检测」一键恢复）；status 回传扫过的根与自定义位置，界面写明「已扫描 N 个目录」。 **macOS**：App 是 .app 包（/Applications 与 ~/Applications）⇒ 扫描时去掉 .app 后缀认名字、可执行文件取 Contents/MacOS、*-cli 无后缀也认、版本读 Info.plist；Launcher 本身在 mac 不代装（官网 .app），只识别并带系统代理（scutil --proxy）直启 Contents/MacOS。 ⛔ **Launcher 自己下载 App 慢（实测 1MB/s）时**：它用 ureq、只认 HTTPS_PROXY / ALL_PROXY 环境变量（Windows 不读 WinINET、macOS 不读 SystemConfiguration；mac 走 scutil --proxy，.app 必须直接 spawn Contents/MacOS 才会带上）⇒ artcraft:open 会把 Windows 系统代理翻译成环境变量注入（没有就不加），status 回报 proxy 并在「打开 Launcher」行写明；⛔ 别在宿主里自己下 App（用户令）。⛔ 不要退回「只认 Program Files\ArtCraft 两个死目录」。
-- 每个 App 的 MCP 段登记为 harness 所属（`ownedMcpServers` 收当前 + 上次名单 + 清 override）；卸载 Launcher 会摘掉全部 App 段并重启引擎。⛔ 不冒充 ArtCraft 官方。
-- 判据：守卫 **`12bu-artcraft`（86 条：安装链 / 五通道 / 安装位置识别与手动指定 / 按 App 拆分 MCP / 联动轮询与自动同步 / 三级弹窗 / craft_<id> 工具接线 / 目录与文案条数一致 / 许可）** + 验收 **`artcraft`（三级弹窗真点 / 已装联动 / artcraft:run 执行端 / 状态通道）**。
-- **产出文件按格式打开**（11-16 用户令「跟 PhotoCraft 一样」）：`src/lib/craft-openers.mjs` 是格式→App 的单一真相源（只写官方文档确认过的扩展名；顺序即优先级）；产出文件卡的「打开方式」下拉、文件卡右键菜单与媒体产物卡（图片/视频/音频）只对**已安装**的 App 显示「用 X 打开」，走 `artcraft:run` 的 `open`（spawn 官方主程序带文件，不开 shell）。⛔ 图片保留 PhotoCraft 专用按钮，不再重复列。
-- **宿主只装 Launcher**（约 11MB portable zip：镜像序 + SHA256SUMS → `tools/artcraft-launcher/`，`GITHUB_UPDATEABLE.artcraft`，仅 win32）：19 个 App 的安装/卸载交给 Launcher 自己（UAC 与安装目录由它处理），⛔ 不代装不代卸；mac 是 `.app` ⇒ 不代装，只给官网指引。虽 <50MB 仍按需下载：它是第三方**应用分发器**，随包等于把外部 App 分发塞进安装包，且 mac/linux 资产形态不同。
-
-### 🧑‍🤝‍🧑 工作伙伴群编排（抄 Pachat 的「先读再说 + 按需唤醒」，11-14，守卫 11f/12be/09）
-
-工作伙伴群（`electron/features/harness-team-ipc.ts` + `electron/features/group-talk/` + `src/features/harness-team/`）的成员协作改成 Pachat 式的**确定性编排**，替掉原来的自由催办启发式（那类启发式正是「同一问题回两条 / 回得断断续续」的根因）。详细设计/取舍见 `docs/TEAM-GROUP-ORCHESTRATION-PACHAT-2026-11-14.md`。
-
-- **先读再说（Phase 1）**：每成员各记**已读游标**（`electron/group-read-cursors.ts`，键 `群::发言身份 speakerId`、只前移、落 `group-read-cursors.json`）。每轮只把它**没读过的新消息**喂进 `buildTalkInput`（拼输入前快照 `readUpTo`，拼输入期间新到的留作下轮未读），读完推进游标；`group_read` 工具仍读「最近 N 条」（**故意不同**：一个是漏看的、一个是再看更多）。
-- **去自由催办（Phase 1）**：⛔ `leadSelfNudges` / `leadTurnTaskLike` / `isInfoRequest` 已**整体移除** —— 谁说话由「被 @ / 被回复 / 工具结果回交」决定，宿主不再在「主理人没派活」时强催它一轮。团队推进靠 `mustHandBack`（成员产出/工具结果 → 回交主理人）+ 行首 @ 接力。代价（Pachat 同样接受）：主理人既不 @、不调工具、也不写「收口」，这一轮就到此为止。
-- **持久预算 + 失败重试（Phase 2）**：`electron/group-run-budget.ts` 每成员每天最多跑 **100** 次（跨轮失控保护，与单轮 `canRun`/`chainBudget` 是两套）；成员一轮失败 ⇒ 隔 **5 分钟只重试 1 次**（每成员最多 1 次直到成功才重置；新消息开跑会作废旧重试；群已清空/删除则跳过；in-memory + unref、重启即丢）。
-- **群治理（Phase 3）**：①**活跃度**（`src/lib/group-activity.mjs` 纯函数）接**群列表卡副行** `今日 N 人活跃`（⛔ 不进群头——11-08 用户把群头副标题当赘述删过）；②**群规矩** `rules` 字段每轮作为【这个群的规矩 · 必须遵守】独立注入（与「简介 memory」「记忆 memoryNotes」分开），设置页可编辑，通道 `harness-team:set-rules`；③**成员治理**（设管理员 `set-admin` / 移除 `remove-partner`）本已具备；④**群模板**（`src/lib/team-templates.mjs`，localStorage **无通道**）：群「···」菜单「存为模板」+ 建群弹窗「从模板新建」直接套用。
-- **判据**：守卫 `11f`（协作判据真值表 + 先读再说接线 + 去催办负向 + 预算/重试 + 活跃度/规矩/模板真跑）、`12be`（催办移除负向 + 主链喂未读）、`09` 棘轮（harness-team-ipc / 04-team-group-view / 03-team-settings 按实测）。
+**四条接口面契约**：① 一个板块 = 一个域前缀；② IPC 桥走生成器（勿手改生成物）；③ 断言读递归聚合面；
+④ 新增能力同轮登记（`HOST_TOOL_CATALOG` / `skill-packs-catalog` / 守卫）。
 
 ## 🧹 交付卫生（2026-11-08 用户令，硬性，守卫组 14）
 
@@ -826,156 +562,11 @@ Launcher，宿主只扫描识别并接线；PhotoCraft 仍用自己的 `photocra
 
 ## 近期功能性变更（索引）
 
-> 功能变更轮次记录整体在 **docs/CHANGELOG-ROUNDS.md**（2026-09-24 首次拆骨：AGENTS.md 曾达
-> 502KB、被截断到 13%；**2026-09-26 二次拆骨**：09-24/09-25 新堆回的历史小节再迁一次，
-> 66,650 → 38,418 字节）。下面只留条目名/索引，细节查那边。⛔ **只增不回迁**。
+> **全量流水已外置**：`docs/CHANGELOG-INDEX.md`（含每轮「用户原话 → 改了什么 → 判据」）。
+> 这里只留最近 3 条，防止 AGENTS.md 反复膨胀。⛔ 只增不回改：搬走的条目不再改写。
 
-### ⛔ 功能更新清单 = 发布数据源（2026-10-13 用户令，对所有 Agent 生效）
+- 11-19 记忆金字塔删除 + 技能清单变索引（描述 60 字）+ 工具面按会话画像（CORE/岗位）+ MCP 懒加载网关
+- 11-19 `find_skills` 工具：实时扫盘检索本地技能（新装的立即可搜到）
+- 11-19 精选技能包：Playwright / Cheat On 随包入册、支持更新、带版本号
 
-**每次新增功能或功能改动，必须同轮在 `docs/FEATURE-LEDGER.md` 末尾追加一条**（日期 /
-功能名称 / 类型 / 影响范围 / 简要描述 / 提交，六列缺一不可）。该清单是写更新日志、
-GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**——发布时直接从那里搬，
-不重翻 commit。只追加不改写（勘误另起行）；格式与分工说明见该文件头部。漏记 = 工作未完成。
-
-- 近期功能性变更（宿主行为，引擎交互相关）
-- 11-15 / 11-17 PhotoCraft 专业图像后期：改由 Craft 全家桶的 Launcher 安装（宿主只识别联动，不再直接下载）+ photocraft 工具 + MCP 连接器 + 图片卡 GUI 编辑（见「### 🖼 PhotoCraft 专业图像后期」）
-- 11-16 Craft 全家桶：开发工具一张卡三级弹窗（Launcher 11MB 按需装 / 19 个 App 目录 / 每个 App 一层弹窗）；装完联动（已装状态 + 版本自动出现），**每个已装 App 各自一条 MCP + 独立工具 `craft_<id>`**（用户令「工具都拆开」）；`artcraft:run` 是执行端（见「### 🧰 Craft 全家桶」）
-- 11-14 工作伙伴群编排抄 Pachat：先读再说 + 去自由催办 + 每成员每日预算/失败隔 5 分钟重试 + 群治理（活跃度/群规矩/成员治理/群模板）（见「### 🧑‍🤝‍🧑 工作伙伴群编排」）
-- 11-15 设计参考库：84 份品牌 DESIGN.md 随包（工具 design_md + 设置页「设计参考」浏览/预览/导出/交给 Codex）（见「### 🎨 设计参考库」）
-- 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）
-- 10-21 长会话滑动窗口（全量加载后仍只挂 5 个回合，切会话不再变慢）+ 刻度尺当前阅读位置波浪 / 绿线等长可点击
-- 10-22 办公室恢复为原像素卡通办公室（用户「删了，还是做成原来那种卡通人物+办公室场景」；照片/3D 白板退役）
-- 10-25 办公室分间：每间 6 人，超出自动开下一间（同底图/座位、每间独立 sim），老员工留在原办公室，底部「办公室 N / M」切换
-- 10-22 右栏标签撤掉「终端」、审阅顶到第二位（终端仍可 Ctrl+J）
-- 10-22 云账号登录即用：登录自动配齐模型/知识库/记忆，页面简化为就绪清单 + 手动流程折叠，新手教程两处入口
-- 10-22 Qoder 式本轮产物文件卡（最多 7 张 / 打开方式下拉）+ 正文文件引用同款卡 + 右栏「工作区文件」树与预览联动
-- 10-24 供应商自动配置大弹窗：云账号/中转站/OpenAI 订阅/自定义 API 登录后自动检测模型 → 勾选（一键全选）→ 保存启用（旧供应商自动停用）→ 倒计时重启；模型页新增大面板入口（守卫 12ac；验收 provider-autosetup / provider-login-autosetup）
-- 10-24 模型供应商页改版：大卡片网格 + 点击卡片打开二级配置弹窗（测试/添加移到页头；旧小行与常驻表单模板删除，功能不删）
-- 10-24 供应商卡片：卡片内「测试 / 编辑 / 更新模型」；401/403 标出「密钥失效」（云端自动重签并重启，其它提示更新 Key）；云账号「一键同步 / 修复」重启引擎并刷新模型页；自动压缩并进页头工具栏
-- 10-24 外观与体验四页统一版式：控制台/外观/个性化/桌面宠物共用头图 + 分组小标题 + 卡片皮肤，按「常用 → 进阶 → 维护」重排；桌面宠物目录/导入/自制收进高级折叠
-- 10-24 设置全页统一简洁风（参照 Qoder）：平面页头（标题+一句说明）、灰色小分组标题、白卡细线、中性灰图标；模型/用户中心/中转站/OpenAI/开发工具/拓展/备份一并扁平化，入口卡改一列长卡；模型供应商卡保持多列小卡、高度随内容，「更新模型」在卡片底部与测试并排、点击直接刷新并保存重启，编辑只留右上角铅笔；切页先卸旧页再回顶（守卫 12ad 60 条；验收 settings-unified 全设置页 8/8）
-- 10-24 技能/插件更新收成两个总开关：控制台默认只露「技能自动更新 / 插件自动更新」，逐项行收进「其他组件更新」折叠区；插件新增 pluginAutoUpdate 后台循环（Gitee 镜像 + Codex 官方市场，有新版才重装）。插件页删掉两块市场更新面板，「已安装」只留一份列表 + 一个「检查更新」按钮（两市场都查、逐个更新）。守卫 12j/12k；验收 updates-simplified 5/5
-- 10-24 技能本地导入批量管理：批量条只在「本地导入」分组内，白卡样式（全选/计数/启用停用一行）；批量范围只覆盖本地导入，市场安装与内置技能卡片不可勾选；顶部只留总览（内置/市场/本地/停用）。守卫 12ad 64 条；验收 skills-bulk 3/3
-- 10-24 思考强度改四档绿→蓝渐变滑杆：只留低/中/高/极高，厚圆角轨道 + 常显白色圆点；历史 minimal/ultra/max 在滑杆上映射到相邻档；拖动仍只跟手、释放才提交（守卫 07；验收 effort-slider 4/4）
-- 10-24 控制台更新收口：删掉独立「Codex 引擎更新」卡，引擎只在组件清单留一行；顶部其他组件开关列表删除（与逐行开关重复）；「一键更新全部」按钮删除，只留刷新/逐行更新；引擎取源提示并入组件更新卡（守卫 03/11u/12l；验收 updates-simplified 6/6）
-- 10-24 provider-activated 同步当前会话模型选择：显式启用/保存供应商后不再继续发旧 model id（云端 activate 也广播同一事件）
-- 09-21 深色模式下「独立会话窗口」的系统钮看不见但能点（已修）
-- 09-21 内置第三方写作技能 + 文档转换（markitdown）
-- 09-21 「工具输出裁剪」的真相：不是文本工具，是生图内联 base64（已修）
-- 09-21 「当前能力链路」：同一件事多个后端时，"现在走哪条"终于有唯一来源
-- 09-21 配置面安全扫描：把 agent 自己的配置当攻击面（预检【86】+ `npm run scan:config`）
-- 09-21 计划可编辑构件 + 新鲜上下文的 reviewer
-- 09-23 「排队消息自动启动后，聊天区里看不到那条消息」（已修）
-- 09-23 两条正文之间的过程归成一个「带概要统计」的折叠块
-- 09-23 运行中显示增强按钮 + 消息区底部留白归零
-- 09-23 折叠/展开后自动把内容底部贴回视口底
-- 09-23 四个元技能内置 + 技能安装门禁（提交 `961827b` / `b520164`）
-- 09-23 「用户手动停止 ⇒ 排队消息不得被自动发送」（守卫【115】）
-- 09-23 WorkBuddy 日志对照后的 P0 四项（构建指纹 / Ctrl+Enter / 听写不吞字 / 每轮当前时间）
-- 09-23 「正文之间的过程折叠」——需求冲突，口径以「整段运行过程折叠」为准
-- 09-23 晚：钉顶回归（我下午的折叠提交触发的竞态）+ 运行态过程自动折叠
-- ⚙️ 2026-09-24 IPC 强化 + 主题注册表（守卫【2】组新增 8 条）
-- 手写 invoke 全量收敛（09-24 上午，守卫【2】再扩 5 条）
-- 🧭 设置页「拓展接口」（09-24，守卫【128】）
-- 🪟 任务栏图标 = AUMID 配对问题（09-24，守卫【2】新增 4 条）
-- （09-24 下午 ~ 09-25 的详细记录已迁往 `docs/CHANGELOG-ROUNDS.md`，2026-09-26 二次拆骨；本处只留索引）
-- 🧠 知识库 Laya 软增强（10-04 立项，10-05 校准定案）：knowledge_add 写入门禁（knowledge/chatter 问法）+ 重复内容拦截可用；**检索相关性过滤校准证明不可用已砍**；判定置信读 answer_confidence；校准脚本 scripts/calibrate-laya-kb.mjs；守卫【kb】判据 8 十条（docs/KNOWLEDGE-BASE.md §9）
-- 🧊 3D 模型预览（10-05 立项，model-viewer 域）：harness_tools 网关 preview_3d（.glb/.gltf，可信根+白名单+256MB 闸）→ 应用内可旋转弹窗（@google/model-viewer 懒加载 ~1MB 独立分块）；技能 3d-modeling + 鲁班种子同轮接入；守卫【mv】13 条（scripts/guards/12-model-viewer.mjs）
-- 🖊 界面草图写入通道（10-05 下午）：dynamicTools 加 `sketch_get_doc` / `sketch_apply_doc`；写回只走上游分享哈希导入（`#docz=`，桥不碰 localStorage）；渲染层会话单例 `sketch-session.mjs`（串行队列 / 关窗拒绝 / StrictMode 语义）；守卫【283】67 → 131 条（含桥 VM 真跑三用例）；验收 ⑨⑩⑪ 真跑写回往返与还原
-- 📱 手机前端UI 改名 + 一键预览（10-05 夜，用户：「名字改一下叫手机前端UI…加一个对话框预览这个UI界面」）：展示名「界面草图」→「手机前端UI」全量改（域 id / 协议 / 存储键不动）；工具改名 `mobile_ui_get_doc` / `mobile_ui_apply_doc` + 描述改「手机前端开发主动用」；常驻指令第 13 条；弹窗「预览」按钮 → 桥代点上游 play_arrow（交互预览是上游自带）；守卫【283】131 → 149 条（VM 用例 D 预览触发真跑 + 弱断言加强）；验收 ⑫ 真跑回执
-- 🧩 前端开发画布组件补丁层（10-06，用户：「3800个组件你从中调一些常用的组件做成图里面这些组件啊，现在默认组件太少」）：画布从"官方产物原样嵌"升级为**上游钉死提交 + 本仓补丁层**（`scripts/sketch-fork/`：overlay + 29 处定点补丁 → next build → 出货一条龙），面板新增 8 个常用组件 `avatar` / `skeleton` / `rating` / `tooltip` / `expansionPanel` / `segmentedButton` / `stepper` / `timeline`（36 → **44 种**）；kind 枚举 / 工具描述 / 组件手册 / 指令全部同轮跟到 44；上游 758 项测试全过；守卫【283】158 → 162 条（补丁层来源/清单/产物中文名对账）；验收探针加 avatar 真落盘（2 屏 / 3 部件）
-- 🗂 文件更改汇报卡补交互（10-06，用户对照 Qoder 效果图：「汇总消息底部显示文件…这个生成文件直接打开预览就行，和右键打开文件地址和复制文件路径…还有生成的图片」）：回合底部「已更改 N 个文件」卡升级 —— 行**点击直接打开预览**（图片走灯箱）、行**右键复用**文件卡菜单（新增「复制文件路径」，原「在文件夹中显示」即打开文件地址）、超 6 行折叠「再显示 N 个文件」、图片行缩略图、新增文件「新增」徽标；守卫新增 **11p**（16 条，5 处变异全抓）；验收 `file-summary` 8 条（真事件驱动真卡：点行预览 / 右键两项 / 复制成功回执 / 折叠往返 / 缩略图）
-- 🩹 文件汇报卡**真链路修复**（10-06，用户真机实测：「汇报底部没有出现你的新改动」——上一轮的注入式验收放过了三处静默缺陷）：① 渲染层 `turn-file-changes.mjs` 监听的 `window "message"` 通道**全仓无发送方**（死信道）⇒ 改走真通道 `window.codex.onHarnessEvent`（裸 payload）；② 主进程追踪器广播的 `turnId` 是**线程 id**、卡片按**回合 id** 取 ⇒ 快照记下回合 id、广播改用它（线程 id 只当快照/结算键）；③ 工作区遍历是深度优先 ⇒ 大子目录（AppData…）烧光 4000 文件预算、根级新文件永远不进快照 ⇒ 改**文件优先两趟遍历**。守卫 11p 16 → 24 条（id 链/真通道/遍历顺序，5 处变异全抓）；验收 `file-summary` **重写为零注入真回合全链路**（真起回合 → 测试进程落盘 8 文件 → 追踪器 diff → 真广播到达且 turnId == 真回合 id → 卡+交互 12 条，约 12s）
-- ⚡ 运行中**实时编辑行**（10-06，用户对照 WorkBuddy 并纠正口径：「**运行中是运行中的 —— 在编辑板块对应文件后面 +-n 数字；汇总是汇总，两个不要搞错了**」）：模型走 shell/MCP 写文件时引擎一个 fileChange 都不发（实测本环境工具面没有 apply_patch，模型自己说的）⇒ 宿主每 2.5s **轻量重扫**（`walkLight` 只 stat、异步并发、不阻塞主进程）→ 对比回合开始快照 → 广播 `turn-file-changes-live`（**回合 id**，与最终报告同链）→ 回合视图渲染**扁平行**「✏ 编辑 (类型图标) 文件 … +N -M」（数字变化重放 live-tick 动画；**不是卡片、无总计头**——那是汇总的形态）；收尾先发空 live 清场、汇总卡接管。新基座 `src/components/FileTypeIcon.tsx`（扩展名→图标+配色，一处真相源；汇总卡行的彩色文字块已换掉）；编辑卡（fileChange 路径）行头同步加图标+行级实时徽章。守卫 **11q** 19 条（7 处变异全抓）；验收 `file-summary` 扩到 **14 条**（③④ 真回合里断言实时行出现 + 第二批写入后行数 3→8 增长 = 实时在更新，21s）
-- 🧭 三处用户实测修复（10-06 深夜，同一轮里用户连报三个）：① **粘贴附件消息「渲染两次」**——纯附件消息两侧可见文本都为空，旧 `userMessageMatchesInput` 直接落空到图片分支返回 false ⇒ 乐观气泡永不合并（运行中一条消息显示两遍）；修法 = 两侧按 `parseUserRefs().files` **附件文件列表**逐项同序比对（`src/lib/user-refs.ts`），且文本比较同时要求 filesMatch。② **编辑行改就地锚定**（用户：「在哪个地方就展示在哪个地方，不是一直在新消息下面，这样多丑」）——`TurnFoldStream` 订阅 live、按「文件首次出现时刻流里最后一条工具项」定锚（`liveAnchorsRef`），`CappedToolSequence/CappedToolRun` 加 `renderAfter` 把行挂在对应项后面；`LiveFileChanges`（底部块）退役为哑组件 `LiveFileRows`。③ **审查弹窗关不掉 + 思考板块回合结束重放缩放**：前者真因是 `.turn-group` 上的**恒等 transform**（= containing block）让 `position:fixed` 遮罩退化成 481px 回合盒、弹窗头部被顶出屏幕 —— 修法 `createPortal` 到 body（右键菜单同病同修）+ 头部常驻/内滚 + Esc 兜底；后者是回合结束大折叠重挂载时残留的 `bufferedReasoningRevealStarts` 标记让 revealing 复位活 ⇒ 浮窗凭空 spawn→suck 一遍（animationstart 实测三连）—— 修法三重：初始揭示只在 running 用标记、非直播态清标记且不读、回合结束后浮窗只认用户显式点开（守卫【161】+3 条、11p 28 条；`file-summary` 扩到 15 条含「粘贴附件中途单气泡」③b）。④ **夜补**：新电脑实测「运行中行有、收尾汇总卡没有」（本机同场景复现全绿 → 疑引擎版本间结束事件形态差异）——收尾双保险 `settleTurnByTurnId`（按快照自存的回合 id 反查结算），boot 先线程键、再回合键，正常路径下兜底为 no-op（11p 30 条）。⑤ **思考浮窗层级账**（用户：「办公室预览会被思考板块遮住，其他窗口也是」）：浮窗 portal 到 body 时以 z-index:8 参加**根层**竞争 —— `app-shell` 是 `isolation` 层、壳内一切 z（办公室 400 / 设置 80~97 / 画布 90）只在壳内比较 ⇒ 全被外面那个 8 压住。修法 = 新增壳内宿主 `.reasoning-float-host`（**60 档**：高于消息流 <30、低于设置页/画布/整屏浮层），浮窗 portal 到它（挂 app-shell 壳根，⛔ 不许进回合卡——.turn-group 有恒等 transform 会让 fixed 退化）；DESIGN.md 层级表加 60 档 + 第 5 条硬规则「壳内浮层不许 portal 到 body 参加根层竞争」；守卫【198】+6 条（宿主 60 档相对画布/模态、挂壳根、portal 目标、穿透层配套），elementFromPoint 实测：办公室在浮窗之上 ✓、body 级对照仍能压住壳 ✓
-- 🖼 应用壁纸（10-05 立项，wallpaper 域）：外观设置「壁纸」段五档（关/图案/粒子/3D 背景/自定义图）；图案 = 原创 SVG mask + --accent 上色；动效 = tsparticles + vanta（MIT，React.lazy 整块懒加载独立 chunk，vanta try/catch 降级）；层挂 timeline-wrap（absolute z-1 pointer-none，只在聊天区透出）；减动效偏好自动退回图案；守卫【wp】13 条（scripts/guards/14-wallpaper.mjs）
-- 📄 运行中「N 个文件已修改」胶囊 + 汇总卡行悬停 diff 预览（10-06 深夜 · Round J，用户对照 WorkBuddy 图三/图四 + 三条追加令「弹窗不能被裁剪」「不要靠左」「放上去展示的那个也要居中」）：
-  ① **胶囊**（`src/features/status/LiveEditedFilesCard.tsx`）贴输入框上方、询问/审批卡**之上**（卡片栈里普通一行，⛔ 不 portal —— 上下排序不互相遮从形态上保证）、**居中**（`text-align:center`）；悬停展开文件清单（类型图标 + 文件名 + 每文件 +N -N / 已删除），数据 = 同一条 `turn-file-changes-live` 源随运行实时刷新，回合结束**自动消失**（收尾由汇总卡接管）。弹层位置**自适应**：按上下空间选边（`pop-above/pop-below`）+ maxHeight 收窄（内滚）+ 左右钳进视口；**以胶囊中心居中**（⛔ absolute 基准是卡片，left 必须写「相对卡片偏移」，写视口坐标会叠卡片左缘画歪——实测 358→716；锚点取 `pillRef` 中心，贴边被钳住时豁免居中）。
-  ② **汇总卡行悬停 diff 预览**（`Status.tsx` 的 `CompletedChanges`）：260ms 意图延时出、160ms 离开延时关（滚轮/离开即关），portal 到 body、位置自适应（先量后画：`Math.max(M, Math.min(rect.left, vw - width - M))` + 竖向钳制）、内容 = `ToolCodeBlock language="diff"`。
-  ③ **弹窗自适应普查**（用户令：「凡事弹窗类都要加自适应…没其他窗口顺便也检查一下」）：ComposerMenu（上开 + maxHeight）/ FileCardMenu（翻转）/ ThreadRowMenu（钳制）/ AppSelect（翻转，守卫 197 已钉）核对无越界；**画布右键菜单**（`DramaCanvas.tsx`）此前未钳制 → 本轮补 `Math.max(8, Math.min(menu.x, innerWidth - 168))` 同款钳制。
-  ④ 判据：守卫 11q **28 条**（+4：胶囊居中 CSS / 弹层相对卡片偏移 / 胶囊中心锚点 / 接线序在审批卡上）+ 11p **32 条**（+2：悬停预览 portal 与自适应 left / `maxHeight={diffHover.codeMax}`）；验收 `file-summary` 扩到 **19 条**（④b 真回合胶囊出 + 悬停清单 fits + **centered**（gap≤2px，贴边豁免）、⑮ 回合结束 `.edited-files-card` 归零、⑯ 汇总行悬停预览可见 + fits + 与行左缘对齐 ≤2px + 含 `@@`、⑰ 移开即关）+ 新验收项 **`popup-fits`**（登记 10-06 轮：逐个开合弹出类面板验 fits，⛔ `--only` 单跑缺前置时按提示走默认轮）。五条变异全抓（去居中 / 写视口坐标 / 固定 left / 断偏移 / 锚点回左缘）。
-- 🧊 编辑行冻结 + 汇总卡持久化 + diff 预览升级（10-06 夜二改，用户实测三连 + 一条追加令）：
-  ① **「运行结束后，我查看过程没有 +N -M」**——实时行原按设计在收尾时**清场**（只留底部汇总卡）⇒ 现在**收尾不清场**：行换成**最终报告的定格数字**，收成**一块始终可见**的 `frozenEditRows`，落在过程与最终答复之间（⛔ 不塞回折叠组——收起状态下视觉/文本都是空的、等于没显示，截图实锤后定稿；运行中的就地锚定不动）；主进程不再发空 live 清场、最终报告**无条件广播**（渲染层收到 final 才清 live）。
-  ② **「重启应用，那个下面已修改的文件那个板块不见了」**——报告原来只活在内存（广播即弃）⇒ `electron/turn-file-watch.ts` 按线程落盘 `<userData>/turn-file-changes/<threadId>.json`（每线程 40 回合 / 单文件 1.5MB 防呆上限；目录由 `bootApp` 内 `setTurnFileWatchStore` 注入，⛔ 不在模块顶层求值 `app.getPath`）⇒ `codex-ipc` 在 `thread/resume` 时把存量报告**按原事件形态重播**（渲染层收件零改动）⇒ 重启/切回会话后卡片与冻结编辑行复活。
-  ③ **「没有 Qoder 这种 diff 预览好看，他鼠标放上去还能左右滚动和上下滚动」**——根因是悬停面板的**捕获级 scroll 监听一律关窗**（想滚先关窗）+ 正文是裸文本块 ⇒ 新增纯函数 `src/lib/diff-view.mjs`（`parseDiffLines`：hunk 头解析旧/新行号，`---`/`+++` 只在进 hunk 前算文件头）+ `src/features/status/DiffPreview.tsx`（双行号槽 + 增删符号 + 彩色行底），面板 `overflow:auto` 两轴滚动（行 `white-space:pre` 不折行）、**面板内滚动不关窗**（`panel.contains(event.target)` 豁免）、头部加「打开完整 diff」展开钮。
-  ④ 追加令「已修改那个文件…最多一次展示 2 行，多了的自动放进收纳里面（这个是汇总消息下面的）」⇒ 汇总卡列表 `COLLAPSE_LIMIT = 6 → 2`（收纳 = 原「再显示 N 个文件」折叠钮，形态不动）。
-  ⑤ 判据：守卫 **11p 47 条**（32→47：2 行收纳 / 预览滚动豁免 / DiffPreviewBody / 两轴滚动 CSS / color-mix 行底 / parseDiffLines / 落盘 API / boot 注入位置 / resume 重播 / parseDiffLines 真值表 3 条 / 删除入口清落盘）+ **11q 32 条**（28→32：收尾不清场 / 冻结块取最终报告 / 落点在最终答复之前 / 运行锚定保持 / 锚点 localStorage 方案撤掉负向）；验收 `file-summary` 扩 **⑤b**（收尾后冻结行仍在）/ **⑤c**（读盘对账 `<threadId>.json`）/ **⑯b**（行号槽 + 两轴滚动 + 面板内滚动不关窗 + 展开钮）+ ⑧⑨⑭ 改 2 行口径；【118】锚点随重构更新；【265】棘轮 accept.mjs 1122→1189（实测；+13 等滚动静默 +12 悬停重试）。
-- 🫧 回合状态胶囊 + 输入框拖动把手（10-06 夜三轮，用户对照 Qoder 截图：「步骤 0/6 · 5 个文件已修改 +177 -8」+ 图二的拖动条）：
-  ① **合并胶囊**（`src/features/status/TurnStatusCapsule.tsx`，由 LiveEditedFilesCard 重构改名）：左区「步骤 N/M」= Codex 自己维护的任务清单（悬停展开步骤清单，todo ○ / doing ⟳ / done ✓），右区「X 个文件已修改 +A -D」= 运行中实时文件改动（悬停展开文件清单）；**两区各自独立可显示（单独存在即居中）、同时在才拼接「·」**（用户定稿：「都是可以独立居中展示的，只是多了另一方展示的时候，就拼接展示」）；⛔ 文件区只在运行中显示（收尾由汇总卡接管），任务清单区有清单就有（收尾后仍在）。（⛔ 10-06 夜六轮改：两区都只活在运行中 —— 见下方夜六轮条目）
-  ② **旧「目标与进程」UI 整体撤掉**（用户令「把原来的目标和任务清单图标和浮窗移除」）：顶栏 Target 入口（tb-goals-entry）+ goals-pop 面板 + goals-handle + 相关 CSS（goals-pop/handle/summary/section/task-list、plan-steps/plan-dot/plan-check；⚠️ 裸 `.plan-step`/`.plan-step.done` 与 `@keyframes pulse` 有别的消费方，**保留**）+ chat-search 的 Esc goalsOpen 分支（留着会吞掉启动后第一次 Esc）；任务清单的唯一常驻入口 = 胶囊。bag 里 goals* 状态暂留（无 UI 消费者，未清——收口见 logs 条目）。
-  ③ **任务清单由 Codex 维护 + 实时同步**：tasks-ipc 每次 add/update/delete 后广播 `tasks-changed` → 渲染层（part02c1）订阅刷新 bag.taskList（胶囊即刻跟上；原来只有工具分发处手动重拉）；`developer-instructions.ts` 新增**第 14 条** TASK LIST（多步任务先建清单、开工标 doing、完成一步立刻 done、别攒最后）；task_add/task_update 工具描述同步强化。
-  ④ **输入框上下拖动把手**（02-composer-form.tsx + CSS）：顶部细条 + 居中胶囊视觉，拖动改输入区高度；**下限 48px（=编辑器 min-height）/ 上限 min(55vh,560px)** 硬钳；`window` 级监听拖动（⛔ 不用 pointer capture —— 合成事件下 setPointerCapture 直接抛；真拖与合成同路径）；localStorage 持久化（重启恢复、读回也钳上限）、双击复位；高度经 `--composer-editor-h/-max` 两个 CSS 变量下发（未拖动 = 原「内容自适应 + min(42vh,360px)」行为不变）。
-  ⑤ 判据：守卫 11q 32→38（胶囊双分区 / 独立-拼接 / 三态 / 负向防复活）+ 新建 **11s-composer-resize（9 条）** + 【48】上限判据接受 var 形态 + 【160】白名单 + 【265】棘轮 accept.mjs 1189→1304（实测）；验收 file-summary 扩 ①b（任务播种走 tasks-changed 真链路）/ ④b 拼接 / ④c 文件区 / ④d 步骤区 / ⑮ 改「文件区消失但步骤区保留」（⛔ 10-06 夜六轮再改为「双消失」，见下条）/ ⑱ 删净收口 + 新验收项 **`composer-resize`**（合成 PointerEvent 真拖 + 上下限钳制 + 落盘 + 双击复位）。
-- 🫧 任务清单生命周期修正（10-06 夜四轮，用户实测两条：「Codex 任务跑完，任务清单小胶囊没有自动消失」+「新的任务清单里叠着旧清单」）：
-  （⛔ 10-06 夜六轮改：全完成隐藏保留；但「跑完/停掉就该消失」与「新回合清旧账」由夜六轮的运行门 + tasks:clear 接管 —— 见下条）
-  ① **全部完成 ⇒ 胶囊自动隐藏**（`TurnStatusCapsule`：`hasSteps = steps.length > 0 && steps.some(s => s.state !== "done")`；悬停分区同步清掉）；
-  ② **新一轮开工自动开新清单**（`rpa-store.addTask`：清单**全部完成**时再 add ⇒ 先清掉全完成清单，再落新任务；⛔ 只清全 done —— 批内 todo/doing 属同轮补步，不许动）；
-  ③ 步骤改按**创建顺序**展示（store 接口序是 updatedAt 倒序，胶囊里重排，①②③④ 自上而下）；常驻指令第 14 条补「新任务开工先清与本轮无关的旧项；全完成会自动隐藏、下一次 task_add 自动开新清单」。
-  ④ 判据：11q 38→41（全完成隐藏 / 创建序 / store 全完成清理）+ 验收 `file-summary` 扩 **①b2**（旧轮哨兵：全完成清单被新 task_add 自动清掉，count=2）+ **⑱a**（全部完成 ⇒ 胶囊自动隐藏）/ ⑱ 拆 a/b；⑯ 悬停目标改**本回合自己的卡**（⛔ 全局首个 `.completed-changes` 是最老历史、常在视口上方 2000+px，长列表布局漂移让 scrollIntoView 落点失真 —— 悬停假红三次全败的真根因，改作用域后 attempts=1 稳过）；【265】棘轮 accept.mjs 1310→1323。
-- 🎯 /goal 目标条 Qoder 化（10-06 夜五轮，用户对照 Qoder 截图：「跟输入框一样长，贴在输入框上面，展示内容和展示效果和功能按键和跟这个qoder一样，目标 时间 ，目标内容 尾部 编辑，删除，暂停」）：
-  ① 旧「目标模式横幅」（`.mode-banner.goal-loop`）+ 输入框内目标小圆片（`.mode-chip-float.chip-goal`）整体撤除，换成新 `GoalBar`（`src/features/status/GoalBar.tsx`）：软粉底圆角条、**width:100% 与输入框同宽**、贴输入框上方卡片栈；左「🎯 目标 · 计时」+ 内容（单行省略）+ 状态词（自动推进中/已暂停/受阻/已完成），尾部三键 **编辑 / 删除 / 暂停-继续**（完成态隐藏暂停键）。`.mode-banner` 全族随最后一个消费方一起删净（plan-confirm 变体此前已无消费方，全仓 grep 确认零引用）。
-  ② **计时 = 引擎侧**（`thread/goal/get` 的 `timeUsedSeconds` + 活动态按 `updatedAt` 差值每秒外推；暂停/完成冻结）—— ⛔ 不本地记挂载起点（切会话/重启后必须仍准）；`updatedAt` 缺失/为 0 时**不外推**（按 epoch 差值加会变几十万小时）。格式化纯函数 `src/lib/goal-time.mjs`（3秒 / 2分5秒 / 2小时2分，非法回落 0秒）。
-  ③ **暂停/继续走 `thread/goal/set` 的 status 字段**（10-06 隔离引擎实测：set 接受 status；⛔ 引擎**没有** thread/goal/pause|resume 两个方法，别改回去）；暂停时若回合在跑补一发 `interrupt`（引擎的 paused 只停「下一次自动续跑」）；编辑目标经 `openAppPrompt` 弹窗、**保持原暂停态**（不误触发续跑）；删除 = 既有 stopGoalLoop → `thread/goal/clear`。
-  ④ 判据：新建守卫 **11t-goal-bar（14 条）**（布局 / 引擎计时+不外推 / status 暂停路径 + 负向不许复活 goal/pause RPC / interrupt 接线 / 编辑保态 / 旧 UI 负向 / 样式与同宽 / formatGoalTime 真值表；6 处变异全抓）+ 新验收项 **`goal-bar`（7 条）**（真回合全链路：无目标不渲染 → set(paused) 出现 → 编辑往返保态 → 继续后计时真跳 + 真续跑 → 暂停真中断 → 删除后引擎 goal 清空）；【265】棘轮 accept.mjs 1323→1410（实测）。
-- 🫧 任务清单生命周期收口（10-06 夜六轮，用户实测两条：「清单不会自动消失」「新会回合，旧的任务清单还在」—— 夜四轮的修法只覆盖「全完成」一种状态，停在半路（被 /stop）的清单全漏）：
-  ① **步骤区与文件区同款：只活在回合运行中**（`TurnStatusCapsule` 的 `hasSteps` 加 `Boolean(runningTurnId)` 门）—— 回合跑完 / 被 /stop 停 / 切走会话，整卡即消失；配套两处：回合结束清悬停 `zone`（不清会在「渲染 null 的空档」里留着，下一回合一出现就凭空弹旧面板）；全部完成仍隐藏（夜四轮令，运行中同样生效）。
-  ② **新回合开工清上一轮清单**：新 IPC `tasks:clear`（manifest 单一真相源 → tasks-ipc handler（清空后广播 tasks-changed）→ rpa-store.clearTasks），挂在 send.tsx 的**空闲直发路径、首个 startTurn 之前 await 落地**（排队分支不清 —— 旧回合还在跑、清单要用；goal 引擎自续回合不走 send()，天然不受影响）。⛔ 必须用 `window.codex.clearTasks()` **类型化宿主方法** —— `codex.request()` 是**引擎 RPC**，真跑实测把 tasks:clear 转给 app-server 报 `unknown variant`、被 catch 吞成「清了但没清」（首版就这么栽的，探针实测 2 任务一次清空才是对的）。
-  ③ 判据：守卫 **11q 41→46**（hasSteps 运行门 / zone 清理 / 通道贯通 / 清空广播 / 直发挂钩顺序与「不用 request()」负向；6 处变异全抓）+ 验收 `file-summary` 重排为 **31 条**：①c 没在跑不渲染 → ①d 真发送清旧账（真 end-to-end）→ ④a 运行中重播种出「步骤 0/2」（独立居中）→ ④b 悬停步骤清单 → ④c/④d 运行中全完成隐藏 + 还原回显（旧位置在收尾后，夜六轮起会退化成恒真，必须搬进运行中）→ ④e 悬停文件清单 → ④f 拼接（**页内 300ms 采样日志**）→ ⑮ 收尾后**双消失**（清单仍在库里 = 隐藏不是删除）；⑱a 删除（恒真化）。
-  ④ ⛔ **慢工作区两处治本**（本轮实测教训：cwd = 用户主目录这类大树，walkLight 一圈远超 2.5s，把窗口类断言整段推过回合结束）：③④ 实时行查询**作用域到本回合组**（`#turn-<turnIdLive>` —— 全局查询把历史回合的冻结行数进来，实测 3→16/24 的假增长，连「没广播也过」都能发生）+ 胶囊拼接改读页内采样日志（与 CDP 轮询时序解耦）；sleep 8→12 给运行中断言留余量；【265】棘轮 accept.mjs 1410→1483（实测）。
-- 📁 顶栏标题区整改（10-06 夜七轮，用户截图圈出右侧 📁 并令「把文件图标放到最前面；标题长度固定，太长的就省略，不要撑长对话框上面左上角的名字」）：
-  ① 工作区按钮（`.ctx-picker`，📁 FolderOpen）从右侧操作簇挪到 `.task-title` **最前**（AppView.tsx；part09 的 topbarActionsNode 不再渲染它，⛔ 不许加回 —— 两份会叠出双菜单）；点击行为不变（工作区上下文菜单，portal 到 body）。
-  ② 标题定长 **300px** + 省略号（原 `min(42vw, 380px)` 随窗口变）；重命名输入框同宽（编辑时不跳宽）。
-  ③ 搬家连带四处同步：窄屏（≤760px）隐藏规则前缀 `.topbar-actions` → `.task-title`；守卫【250】覆盖率清单与「窄屏收浮层」正则跟着换 + 新三条（📁 在 strong 之前 / 不许加回操作簇 / 定长 300px，4 处变异全抓）；守卫 11e 的 ctx-menu portal 断言与计数扩到 AppView（26/26）；part09 清掉 FolderOpen/basename 死导入（【94】）。
-- 🧭 工作区菜单三修 + 顶栏标题 6 字截断（10-06 夜八轮，用户实测连报 + 一条补充令）：
-  ① 用户报「项目地址弹窗一出来，点图标都不会自动消失、其他地方都点不了、关都关不掉」—— 根因＝原来靠 `.menu-backdrop`（fixed inset:0）当遮罩，而它挂在**顶栏拖拽区**（`-webkit-app-region: drag`）子树里：未豁免拖拽的子元素整块算拖拽区，真实鼠标点击被 OS 拿去拖窗口、页面收不到 onClick；遮罩又把整个视口圈进拖拽区 ⇒ 全屏点不动 + 菜单关不掉。修法＝工作区菜单**撤掉遮罩改非阻塞**（`window mousedown` 判外部：弹层内用 `closest('.ctx-menu')` 判、📁 按钮用 `ctxBtnRef` 判 —— DispatchMenu 同款范式；点图标一次就关闭**且图标照常生效**）+ Esc 兜底 + `.menu-backdrop` 全局豁免拖拽（搜索面板 / 任务菜单的遮罩共用此类一并救回）。⛔⛔ **这类缺陷 CDP 探针永远测不出**（合成点击绕开 OS 拖拽判定，验收全绿、真机一按就中）—— 守卫 11e ⑨ 四条结构判据钉（5 处变异全抓）。
-  ② 菜单新增「**打开项目地址**」行（用户点名）：`window.codex.shellReveal(workspace)` —— shell-ipc 对目录走 `shell.openPath` 在文件管理器打开（工作区在可信根内，主进程放行）。
-  ③ **顶栏标题按字符数截断：最多 6 个字、超出补「…」**（用户令「那个会话窗口左上角那个字最多 6 个字，其他省略」）—— AppView 模块级 `truncateThreadTitle`（`[...value]` 展截，⛔ 别用 slice 劈开 emoji 代理对；⛔ 只包顶栏 render 处，别套进 `cleanThreadDisplayTitle` 连侧栏一起截）；夜七轮的 300px 定宽保留为护栏。守护卫 04【250】第四条（3 处变异全抓）。
-  ④ 验收 `popup-fits` 扩 ④-⑧：工作区菜单开 → fits → **点外面即关** → 重开 → Esc 关 → 无残留；【265】棘轮 accept.mjs 1483→1505（实测）。真机探针亲验：给测试会话改名「一二三四五六七八九十」→ 顶栏显示「一二三四五六…」。
-- 🎚 输入框拖动把手改「骑边框」（10-06 夜九轮，用户令「放到输入框边框上，不要放里面，可以稍微长一点点，现在有点短」）：
-  ① 把手从**框内顶部**的内嵌细条改成**骑在输入框顶边框上**：绝对定位 + 水平居中 + 纵向一半在框外（`top: 0; left: 50%; translate(-50%,-50%)`，锚 = `.composer` 新加的 `position: relative`）；命中面 96×12（胶囊本体之外留白），`touch-action: none` 保留（真机拖动不被滚动手势吃掉）。
-  ② 胶囊 40→56px（「稍微长一点点」）；默认色 `--line`→`--faint`（骑在 --line 边框线上，同色会隐形）、hover `--muted`。
-  ③ 顺手补偿：`.composer` 的 `padding-top 14→24`（= 原 14 + 把手去流前的净占位 10）—— 编辑区与顶边框的距离保持原样，不动观感。
-  ④ 判据：守卫 11s 9→12 条（骑边框定位 / `.composer` 定位锚 / 56px）—— ⛔ 变异实测连抓两处**假绿**并当场收紧：`[\s\S]{0,N}` 窗口跨过 `}` 撞上邻居规则的同名属性、`\.composer \{` 首匹配撞上 `.docked-center` 变体 ⇒ **一律 `[^}]*` 规则体内匹配 + 行首锚定**；3 处变异全抓。验收 `composer-resize` 扩 **①b**（真 DOM：把手中点 == 顶边框线 ±2px、胶囊 ≥50px）；【265】棘轮 accept.mjs 1505→1514（实测）。
-- 🧭 新手引导板块 + 首启「环境体检」弹窗整体删除（10-07 用户两条令：先要「侧栏底部加新手引导常驻板块，点击弹窗，/左选项右内容/迷你版设置界面；模型配置/开发工具/人格市场三个映射 + 版本更新日志置底；留好 UI 拓展接口，你从专业角度给新手定制」+ 追问「这个新手引导不能被对话选项遮住」；后追加「把那个首次安装启动的引导弹窗删了，反正现在也新手引导选项了」）：
-  ① 新板块 `src/features/newbie-guide/`（自包含、不进 bag，样板同 component-library）：侧栏底部常驻入口 `.guide-entry`（在 `.thread-list` **之外**、账户行之上 —— ⛔ 放进列表会随滚动被内容压住（用户点名）；`flex:none` 防窄窗压扁）+ 迷你设置弹窗（`.modal-backdrop` 全局模态 400 档；左 `.guide-nav` / 右 `.guide-body`；三路关闭 = ✕ / 遮罩 / Esc）。**七节注册表 `GUIDE_SECTIONS`**（拓展接口 = 数组加一项：`action.kind="settings"` 跳真设置页 + `changelog:true` 渲染版本日志 + 纯说明节；**日志约定置底**）：快速上手（默认页）/ 配置模型 / **功能地图（10-11 增，全应用能力分类导览，入口名按 settingsNav 与侧栏实测核实）** / **进阶技巧（10-11 增，斜杠命令与按会话选模型，以 builtinCommandCatalog 为据）** / 开发工具 / 人格市场 / 更新日志。
-  ② 版本日志 = **单一真相源**：新 IPC `whatsnew:history`（manifest → whats-new-ipc → registry → gen:ipc 生成物；数据仍是 `whats-new-notes.ts` 的 WHATS_NEW_ENTRIES，GitHub Release 链接在主进程拼好）；渲染层只画不抄（守卫 11x 负向钉「组件里无硬编码版本/日期数据」）。
-  ③ **首启「环境体检」弹窗整体删除**：EnvCheckDialog 组件 + 自动弹出触发（part06 的 1.4s 定时检查）+ 体检/一键补齐/后台角标（installEnvMissing 并发队列、env-skip 等一组 localStorage 状态）+ 三处 CSS + bag 16 个字段全下线（part02/05/06/08 + timeline/main-stage/AppView 逐点切除；bag-types 1407→1386 项）。守卫翻**负向防复活**：04-misc【首启体检】段 + 07-turn-fold【32】三处（组件文件不许回来 / app-ui 层 env 状态与样式清零 / **删旧必须有新** = 侧栏 NewbieGuide 仍在位）。
-  ④ 判据：新守卫 **11x-newbie-guide（17 条）**（入口在列表外 / 三映射与 settingsNav 真值对账 / 日志置底 / history 单源贯通 / 4 处变异全抓）+ 验收新项 **`newbie-guide`（6 条，10-07 轮）**（入口不被遮用 elementFromPoint 命中自身 —— ⛔ 必须**先等 boot-splash 摘掉**，否则命中启动页假红；弹窗开合 / 三映射+日志置底 / 跳转真落 model 页 / 日志真数据 / Esc 关）；**LATEST_ROUND = 10-07**（默认轮即本项；10-06 五项转回归证据）。真机实拍：首启无任何引导弹窗、`__envCheckDbg` 消失、侧栏底部入口 + 迷你设置弹窗完整。
-  ⑤ ⛔⛔ 本轮两个真教训（都写进了守则注释）：**(a) 大段 CSS 区间删除会夹带共用规则** —— 环境体检块里混着 `.runtime-progress-bar` 一族（知识库页 / 开发工具页在用），整块删完【66】当场红，从 HEAD 按规则逐条回捞才补全；删 CSS 区前必须按**规则选择器**逐条过一遍，别只按区间切。**(b) preflight 会被更早的守卫红整段遮住** —— npm run check 是 `&&` 链，11h（并行会话在途）红了以后 check-preflight / bag-types 根本不会执行，`--ic-page`（08-settings-sheet 内联注入型，一直漏在【160】白名单外）这类陈年漏网就被一直遮着 —— 单跑下游检查才发现；【160】白名单已补登记 `--ic-page`。
-- 🗜 上下文压缩链重建（10-07 夜十一轮，用户三条实证要求：「运行中会按压缩阀值自动触发模型侧真实压缩吗」「压缩线常驻、跟着历史消息往上走」「压缩完自动继续会话，上下文不丢」+ 授权调低阈值在真实大会话上实测）：
-  ① **引擎侧实测取证**（隔离实例 + 真 rollout 文件）：当前引擎对压缩**不发任何 item 事件**（只有一条 turn/started+completed；压缩 item 只落 rollout）——且**自动压缩是内联完成的**：ContextCompaction 记录的 `turn_id` == **用户回合** id（手动 thread/compact/start 才是独立空回合）。命中阈值 = config.toml 顶层 `model_auto_compact_token_limit`（= 窗口 × autoCompactRatio，applyCustomModel 与启动漂移自愈两处同源写入）。⚠️ **11-09 起改**：阈值随模型进 `model-catalog.json` 每个条目的 `auto_compact_token_limit`（= 该模型自己的窗口 × 比例），**顶层不再写** —— 11-09 隔离探针（0.167.0）实测「顶层一旦存在就盖掉逐模型值」（顶层 9000000 + 目录 2000 ⇒ 引擎不压），小窗口模型会因此永远等不到压缩；宿主那层 `compactBeforeTurn` 也一并拆掉，自动压缩只走引擎原生。守卫【190】【28】+ 12aw 钉住。
-  ② **宿主侦测**（新 `electron/compaction-watch.ts` + worker op `check-compaction`）：每个 turn/completed 增量扫该线程 rollout **新增段**（worker 维护逐线程读取偏移 + 8KB 重叠 —— 压缩记录写在回合开头，之后同回合还能写几百 KB 工具输出，只读"尾部 N 字节"会被挤出窗口）→ 按**记录自己的 turn_id 归因**（== 刚完成回合 id）→ 落盘 `<userData>/compaction-records/<threadId>.json`（30 条/线程）+ 广播 `thread-compacted-host` + resume 重播（codex-ipc）+ 删除会话清落盘。⛔ 首版判据「非渲染层回合才查」被大会话实测**证伪**（自动压缩内联在用户回合里 ⇒ 真压缩全丢、存储恒空）——守卫留负向禁止复活。
-  ③ **渲染层第三来源**：`src/lib/compaction-records.mjs`（内存镜像 + `useSyncExternalStore` 订阅，记录到达即重渲染）+ timeline 三源互斥（引擎 item → 宿主记录 → toast 兜底）；**锚点 10-07 改**「压缩记录**自己所在回合**（含）之前最近一条用户消息正上方」——新消息到来线不动、随历史往上走（旧口径"永远黏最新一条用户消息"= 用户实测点出的毛病）。
-  ④ **压缩比例下限 0.5 → 0.1**（ModelSettingsSection 档位 0.1~0.95；⛔ 别退回 0 值区 —— 阈值变 0 会每轮都压）。⚠️ 真实档案 D:/11 里的 0.9 曾**从未生效**，真因是下面那条挂载时机事故，修好后 0.9 会真生效。
-  ⑤ **实测证据**：大会话 01a11136（326,200 tokens / 1M 窗口）ratio=0.25 → 阈值 262,144 → 发一条消息 → 引擎真压缩（rollout ContextCompaction 实锤）→ 宿主广播 + 落盘 → `.compact-divider`「上下文已自动压缩」**在运行中出现、锚在用户消息上方、回合继续跑完**（59s）→ 重启重开会话线仍在（resume 重播）。判据：守卫【165】16 条（含 worker 增量扫描归因 / 负向禁旧判据 / 订阅接线）+【159】缓存归属与下限；验收新项 **compact-line**（新会话两条短回合 + 手动 compact 真链路 → 线出现/锚点/落盘）。
-- 🧨 组合层挂载时机事故修复（10-07 夜十一轮挖出，由压缩实测触发）：`composition.gen` 的域挂载从**模块作用域**挪到壳在 `app.setPath("userData")` 之后 `process.nextTick(mountEnabledDomains)` —— 原方式在 userData 重定向前用**默认目录**的 app-settings.json 做停用域判定，读失败空对象进**进程级缓存** ⇒ **用户设置读取全部拿到空值**（实测：D:/11 的 autoCompactRatio 0.9 从未写进 config.toml，恒为默认 0.6 的 629146）；app-settings 缓存同时**按文件路径归属**（`cachedFor === file` 才命中，任何"重定向前的读"不再污染之后）。判据：【253】②「生成物只导出 + 壳在 setPath 后调用（认 nextTick/裸调两种形态）」+【270】真跑「require 生成物本身 0 挂载」+【159】「两条读取路径 + 保存路径都带路径命中」。⛔ 另一个坑：壳被域间接 require（`../main` 白名单依赖）时 `ENABLED` 表未赋值 ⇒ 同步调用 `exports.ENABLED is not iterable`（守卫真跑实测）⇒ 必须 nextTick 推迟到调用栈展开后。
-- 🛠 开发工具安装体验改版（10-11，用户三条令：「每个下载的工具的卡片内加一个提示词复制功能图标，常驻」+「工具安装报错或者失败，会出现换行内容被剪切，展示不全，报错和失败做成弹窗」+「注意弹窗顺序」）：① 常驻图标 `.runtime-prompt-copy`（每个 `fallbackPrompt` 且非 guide 的工具卡都有，不等失败才出现；提示词正文仍是主进程 `runtime:list` 下发的原文，渲染层只复制）；② 失败呈现改版：`bag.runtimeModal` 加 `error` 字段（安装/卸载 catch 都写**完整报错原文**，此前这个 state 是死状态没人渲染）→ `DevtoolsSettingsSection` portal 渲染「完整报错」弹窗 `.devtools-error-*`（pre-wrap 全文可滚动可复制 + 复制错误信息 + 复制提示词交给 Codex + 关闭）；卡片留一行失败摘要 `.runtime-failed` 点开重看（从 runtimeProgress 同一前缀行重建，弹窗关了报错不丢）；旧内联块 `.runtime-fallback` 整体退役；③ **弹窗顺序**：错误弹窗 z-index **950** 严格大于二级 SettingsDialog 的 900 + portal 到 body（挂设置页树里会被 sheet stacking context 压住）+ Esc 在**捕获阶段** stopPropagation（否则同一个 Esc 把底下弹窗一起关掉）；④ 审查抓到并修掉：`.runtime-row` 是 4 列 grid，第 5 个子元素（失败摘要）必须 `grid-column: 1/-1` 否则挤进 22px 首列（旧 `.runtime-fallback` 同病，失败态少见从未暴露）。判据：守卫 11y **23 条**（新增 6：常驻图标/弹窗接线/z 950>900/Esc 拦截/pre-wrap/文案单源负向）+ 新验收项 **devtools-install-ux** 五条（LATEST_ROUND 10-07→10-11）；棘轮 accept.mjs 1689→1733（实测）。
-- 🧭 新手引导内容扩容（10-11，用户令「优化新手引导界面里面的内容」+ 走「功能扫描 → 代码图谱 → 写内容 → code review」流程）：`GUIDE_SECTIONS` 5 节 → **7 节** —— 新增 **功能地图**（map：把 AI 变强 / 记住你 / 自动干活 / 派一群 AI / 创作与设计 / 声音陪伴 六组，全部按 settingsNav 页名与侧栏「···更多」实测入口名写，零编造）与 **进阶技巧**（tips：/plan /goal /compact /doctor、按会话独立选模型、任务清单与文件汇总卡、/archive 归档 —— 命令名以 builtinCommandCatalog 为据）；快速上手加「看左边的功能地图」交叉引用、配置模型补「调思考强度（/effort）」步。纯内容改动：组件/CSS/DOM 零变化，守卫 11x 17/17 绿、验收 `newbie-guide` 六条不受影响（默认停「快速上手」/ 三映射 / 日志置底全保留）。判据：check 全绿 + `--only newbie-guide`。
-- 🧭 新手引导扩成「新手 / 高级」双教程（10-18，用户两条令：「前端UI开发、组件库、生图工作流、视频工作流、专家/专家团/子智能体、codex个性化、人格市场…这些你都没写」+「功能拓展那些接口，怎么做自己加自己的功能…基础教程有，高级教程也要有，写好看一点，分新手和高级教程」）：15 → **22 节**，按 `tier` 分两组（新手 12 / 高级 9 / 更新日志不分组置底）：新增 **前端开发**（44 组件 / 三种形态 / 一键预览 / 交给 Codex 实现）、**组件库**（11 类 3802 / 复制代码 / `ui_component_search`）、**生图**（生图插件 / 图像工坊 / 生图工作流 / 改图 vs 重画）、**视频**（8 家厂商 / 异步提交不干等 / 拼接 / 白模与短剧 / HTML→MP4）、**专家团队**（专家 / 专家团 / 子智能体 / 调度 / 办公室）、**记忆知识**、**个性化**（称呼 / 回复风格 / 自定义指令 / 语气自适应）、**拓展开发**（「设置 → 拓展接口」四组；manifest → `npm run gen:ipc` → registry → `ipcHost.handle` → `window.codex.*`；界面 / 工具 / 主题 / 命令扩展；守卫 + 验收 + FEATURE-LEDGER）；重写人格市场口径（写入全局个性化、**下一个新会话**生效，不是在会话里选）。左导航加组标题、正文加层级徽章与 12 条重点提醒卡；守卫 11x **45 条**、验收 `newbie-guide` **11/11**（②a 分组 / ②e 拓展开发真接口名）。
-- 🧠 Laya 局部判断工具（10-18，用户令「给 codex 加一个调用 laya 判断的工具…如果安装了 laya 模型，就再暴露这个工具给 codex」）：新增专用 dynamicTool **`laya_judge`**，**只在 pip 装了 Laya 时注册**（`buildDynamicTools` 读 `layaStatus().installed`；没装连 schema 都不出现；装好后新开会话/切回会话才出现 —— dynamicTools 的既有生效时点）。三档 preset：`knowledge_gate`（知识价值，判据与 `knowledge_add` 共用 `electron/laya-judge.ts` 的常量，⛔ 不许两处各写一份）/ `duplicate`（新内容 vs 已有内容；10-18 探针实测：两段都塞 state 会误判 new 0.94，**已有内容必须放 instructions**，新内容放 state）/ `custom`（模型自定义 2~6 个选项）。输入校验（state ≤4000、reference ≤1500、选项 2~6、阈值 0.5~0.95、等待 3~30s、选项名/含义长度）；低置信返回**「弃权」**文案（⛔ 不把猜测当结论）；执行端**绝不自动安装**，未装明确拒绝、未就绪最多等 15s 并回报「正在预热」（服务后台继续拉起）；`pip show` 30s 缓存（新开会话不反复阻塞）。工具面文案列明适用场景（知识入库前判断/重复判断/意图与分流粗分类）与禁用场景（安全/法律/医疗/财务/不可逆操作/事实核查/长文本/开放生成）；`developer-instructions.ts` 配 `LAYA_INSTRUCTIONS`（带「only if laya_judge is in your tool list」）。通道 `laya:judge`（manifest → registry → gen:ipc → preload），执行端 `layaJudgeForTool`。真机实测（标定环境 `python.fat-laya`）：知识 97% / 闲聊 87% / 重复 55% / 意图 task 98%；本机应用 Python **未装 Laya** ⇒ 验收走未安装分支（3/3，工具按设计不出现、直接调用拒绝且不自动安装）。判据：守卫 **12s-laya-judge 29 条** + 验收 `laya-judge`；云助手与 PPcode 同轮同步。
-- 🖥 HTML 实时预览独立板块（10-18，用户令「写 html 文件的时候，自动打开右边浏览器，会话窗口可以自动缩小一点比例，把右边展示全，实时渲染 html 内容」）：新独立域 **`html-preview`**（`electron/features/html-preview-ipc.ts` + `src/features/html-preview/`）。主进程 `html-preview:watch/unwatch` 只盯一个 HTML 文件（**可信根** + `.html/.htm/.xhtml` 白名单；监听**目录**按 basename 过滤，原子保存不跟丢；120ms 防抖；`persistent:false`；换文件/卸载/退出 close），变更广播 harness 事件 **`html-preview:changed`**；主进程**不读正文**（渲染交给 webview）。渲染层 `HtmlPreviewBridge`（`AppView` 主窗口挂一次，独立弹窗不挂）在当前会话的 `turn-file-changes-live` / `turn-file-changes` 里检测 HTML（**只认当前会话回合**，后台专家写 HTML 不抢右栏；seen 集合防累计报告在两个 HTML 间来回跳）⇒ 自动 `openInBrowserPane` + 右栏加宽到窗口 **45%（360~560px）** + 开始 watch。`BrowserPane`（基座）订阅**基座** `src/lib/html-preview-store.mjs`，文件变了用 **`reloadIgnoringCache()`** 重载当前标签（普通 reload 会吃 file:// 缓存；用户导航到别处不抢）。`toFileUrl` 下沉 `src/lib/file-url.mjs`（中文逐段编码 / 盘符冒号保留的 10-17 修复；`helpers/paths.ts` 原位置 re-export，⛔ 不再重复实现）。判据：守卫 **12t-html-preview 33 条**（纯函数真值表 / 可信根 / 目录 watch / 防抖 / 当前会话过滤 / **只认本会话 live 过的回合**（history replay 不自动打开）/ 基座不反向 import 域 / 域不深链 app-state / 组合表与生成物）+ 验收 `html-preview` **8/8**（右栏先收起 → 真回合写 HTML → 自动打开并加载 → 宽度 308→560 → webview guest 标题 v1→v2 实时刷新 → 切走再切回时历史报告重播**不**自动打开已有 HTML）。
-- 🧾 右栏「变更」四个范围实修（10-18，用户截图问「未暂存 / 已暂存 / 全部分支更改 / 上一轮更改是不是真实的」）：**全部分支更改**旧版只是 `git diff HEAD`（与未暂存同类，分支已提交的改动看不到）⇒ 改为「`@{upstream}` → `origin/HEAD` → `main` → `master` → `merge-base` → `git diff`」，含分支已提交 + 工作区；无基准时退回 HEAD 并在面板里说明。Git 缺失 / 不是仓库 / 无 HEAD / 超时都回可操作中文原因；缺 Git 时给「一键安装 Git」（接 `runtime:install`，装完自动刷新）；cwd 过**可信根**闸；四个范围加真实语义提示。坑：`git:diff` 曾因 preload `minArgs` 把 12 条通道拒死 ⇒ 同轮修生成器。判据：守卫 **12u-git-review 25 条** + 验收 `git-review` **7/7**（临时仓库真跑：分支上 +two + 工作区 +three，head 两段都在、unstaged 只后一段、staged 只暂存区）。
-- 🖱 汇总卡 diff 预览悬停不再闪没（10-18，用户实测「鼠标放上去，这个框框闪一下就没了，鼠标放在上面就要一直展示」）：行上 160ms 关闭宽限在指针走到预览面板**之前**就把面板关了 ⇒ 改为 **500ms**，并让面板 `mouseenter` + `mousemove` 持续取消关闭计时（行与面板共用 `keepHoverOpen`）；鼠标离开面板仍立即收起。判据：守卫 11p 加一条（500ms + enter/move 取消）+ 验收 `file-summary` **⑯c**（真悬停预览后 900ms 仍在）；⑰ 移开即关保留。
-- 🧮 压缩后上下文用量归零（10-18，用户：「这个压缩完，跑一会又自动到 50% 了，有点奇怪」）：自动压缩只走宿主 `thread-compacted-host`（当前引擎不发 `thread/compacted` / 压缩 item），10-17 的「作废用量快照 + 清 total/derived」只挂在引擎两条事件上 ⇒ 压缩请求自身那份 ~50 万 `last` 用量继续显示并被重新落盘，面板停在压缩前的 50%。修法：**三条压缩路径统一清理** —— 宿主（新）、压缩 item completed、`thread/compacted`；宿主事件只对 `at` 在 2 分钟内的**新鲜**记录生效（resume 重播历史压缩不清当前用量）；清空时面板给「压缩请求自身用量不算当前占用，下一轮重新统计」的解释，环等下一轮 `tokenUsage` 推送再更新。判据：守卫 **12z-compaction-usage 10 条**。
-- 🔍 回合文件追踪：预算截断修复 + mac 断点诊断（10-07 夜十二轮，用户报「mac 上消息汇总下面的已编辑文件不展示」）：mac 侧链路**全平台同构**、断点藏在静默跳过点里而打包版 stdout 不可见 ⇒ 新增 `electron/debug/turn-files-debug.ts`（诊断落盘 `<userData>/turn-files-diag.log`，JSON 行、512KB 上限）＋ 追踪器六个诊断点（快照跳过含 cwd 不在磁盘 / 根目录读取失败【mac TCC 权限的实锤点：EPERM/EACCES】/ 快照为空 / 收尾无快照 / 每次收尾心跳含 `truncated` 标记）+ boot 注入 `setTurnFileWatchDiag`；`thread/start` 的 cwd 登记改**引擎回执优先**（请求参数空串此前会赢 ⇒ 该线程追踪全程失明）。**同轮挖出真 bug（清档后验收复现）**：全局 4000 文件预算被 `release/win-unpacked`（约 5 万文件）整段吃光 ⇒ 真写的文件进不了快照、深处图标集文件被**误报「已删除」**；修法 = 单目录上限 `MAX_PER_DIR=600`（walk 与 walkLight 同口径）+ IGNORE 补 `release`/`*-unpacked`/`dist-electron` 等构建产物目录 + **截断时抑制删除判定**（截断点随本轮文件数漂移，删除只能"明确扫过却消失"才算）。判据：守卫 11p 扩 **57 条**（含「两处口径一致」「截断抑制 ×2」变异全抓）+ 验收 `file-summary` 31/31（显式断言目标会话 cwd==工作区根 —— 清档重播种后旧写法会点开别目录的老会话、diff 恒 0 假红）。
-- 🎬 550C 开机动画（10-12，用户「我也想要这种启动动画」+ 拍板「完整 16 秒 / 琥珀 / 设置页一行 + 预览」）：移植 DSH 插件 **dsh-550c-boot@0.3.3**（MIT；动画与 HTML 原稿 Voidpoket，工程与移植 Ziyang Song）—— **逐字移植**其样式表 / 标记 / 驱动（`assets.ts` 的 CSS_550C + ENHANCE_CSS + BOOT_MARKUP + APP_MARKUP、`show.mjs` 只加 `export`）。落点 = 外观域下属 `src/features/settings-appearance/boot550c/`（Shadow DOM 隔离；⛔ 不新建顶层域 —— 用户指定归「外观」）+ 纯函数 `src/lib/boot-intro.mjs`（档位 simple/full/off + 配色 amber/green/cyan/white）+ `36-boot-550c.css` + 外观页「开机动画」段（档位三选一 + 配色四选一 + 预览）。三个「看起来接好了、其实会出事」的坑（全钉在实现 + 守卫）：① ⛔ 宿主必须 **portal 到 body** —— 祖先带 transform / filter / backdrop-filter 会成为 containing block，把 `fixed` 从「相对视口」降级成「相对该祖先」（实测预览只盖住设置内容列，**截图抓到而断言全绿**）；② ⛔ 挂载必须 **useLayoutEffect** —— `useEffect` 在首帧绘制之后才跑 ⇒ **先闪一帧主界面**再被片头盖住（用户实测报障），宿主底色同色是第二道保险；③ 四套配色的 CSS 在**增强层 ENHANCE_CSS** 里（只搬 CSS_550C 会丢配色），且必须**排在移植 CSS 之后**注入。启动首帧 = 动画底色纯黑（上游同款口径：做不到早于 Electron 窗口首帧）；`?pet=1` / 减弱动效 / 关闭档 三条不播判据。判据：守卫 **20-boot-intro 34 条**（含 7 处变异全抓）+ 新验收项 **boot-intro 八条**（影子树成形 / 铺满视口且挂 body / 驱动真在描边 / Esc 跳过 / 档位落盘）；e2e harness 钉 `boot-intro=off`（否则 16 秒片头盖住整套验收）。
-- 🌐 汇总卡「网页来源」条（10-12 立）：回合右下角 favicon 圆标 ≤3 + 「···」全量弹层（portal body / Esc / 点外关），点条目走 openExternal 默认浏览器。数据 = 纯函数 `src/lib/turn-web-sources.mjs` 从回合 items 提取（webSearch query/结果 + 工具参数 + 命令行 URL；⛔ 不扫工具输出防噪音；host 去重 + 滤本机地址）；零文件改动的纯检索回合也显示（独立条形态）。favicon 链 favicon.im → google s2 → 首字母色块（国内可达性实测：google s2 直连不通、favicon.im 走 Cloudflare 可达）。判据：守卫 **12g 17 条**（真值表 + 接线 + CSS；6 处变异全抓）+ 验收项 **web-sources 4 条**（真回合 4 curl → 3 圆标 + 弹层 ≥4 条 + Esc 关）。同轮顺手解锁 check 链四笔并行会话存量红：11s 技能通道 12→14 对账 / 11z 通知断言 CRLF 兼容（autocrlf 检出后 \n}\n 失配抓空）/ 12e 更新镜像锚点跟 releases LIST API / 删 12f 已 revert 的死链引用 + UpdateReadyToast 死导入。
-- 🎨 壁纸主题色适配 + 星野替代 3D 背景（10-11，用户三连报：「3D 背景跟自定义的主题有些没做主题色适配，太丑了」「必须完全主题色适配」→「**黑夜→星空；白天→动态点；点之间不要连线**」→「**都要动态星空、跟着鼠标动，不是静态的**」）：① ⛔ **vanta/three 整体退役** —— vanta NET 的形态就是「点+连线」的网，**调参调不出「无连线的点阵」**；改成 `WallpaperLayer.tsx` 自绘 2D canvas **星野**（零依赖、零连线、ResizeObserver 跟尺寸、DPR 缩放、减动效只画一帧），配色取 `--text`（深色=浅色星带缓慢明灭 / 浅色=深色点稳定可见），**鼠标缓动视差 + 纵深系数**（近层位移大、远层小，实测指针两角重心位移 dx≈55px）＋缓速自漂（⛔ 鼠标不动也不静止）；模式 id `vanta` → `stars` 且**旧值自动迁移**（老档案存着 vanta 的用户不会突然没壁纸）。② **自定义图 / 精选渐变的「雾」按主题分档**（深色 82%→54%，浅色保持 46%→18%）—— 浅色预设不再把深色界面染成米黄。③ **粒子档**接上那个写着却没人用的 `useThemeColor`（原来切主题不换色）。判据：守卫 14-wallpaper **37 条**（含「canvas 里不许出现 moveTo/lineTo/stroke」与「vanta 不许复活」两条负向；5 处变异全抓）＋渲染探针实拍（深浅两档 + 指针两角位移实证视差）。⛔ **「你这也叫修好了？」那次真因 = 我只同步了源码没重建 dist**（用户跑的是旧产物）⇒ 流程已补「收尾默认重建 dist」。
-
-### 📣 自媒体工作台（`resources/media-desk/` + `electron/features/media-desk/` + `src/features/media-desk/`，11-09 立）
-
-侧栏入口（新建任务 / 指挥中枢 / **工作伙伴** / 自媒体工作台 同一组快捷入口）—— 11-11 用户令「在工作伙伴下面加一个选项，做主界面一样的弹窗大小，设置那边就不要了」：点它开**独立窗口**（`?mediaDesk=1`），窗口尺寸默认取主窗口当前 bounds、单例、随主窗口关闭；⛔ 设置页入口已整体撤掉（导航 / 帮助总览 / 页面注册三处都不许加回）。**界面与流程 = 开源 dsh-media-desk 2.6.2 原样嵌入**（DSH/Cordis 插件、MIT；用户令「开源啥样就复刻啥样」）—— 客户端 bundle、宿主源码、封面素材都随包（`resources/media-desk/`，extraResources 映射到 `media-desk/`），我们不重写它的 UI。
-- 运行：主进程 `media-desk/embed.ts` 起一个**只绑 127.0.0.1** 的本地服务：`/media-desk/*` 交给它自己的 `host/host.js`；`/` 是最小页面（`index.html` + `glue.js` + `react.bundle.js`）把它的 main 组件挂出来。独立窗口里用 iframe 打开（`media-desk:endpoint` 拿地址；CSP frame-src 已放行 127.0.0.1）；窗口由 `media-desk:popout` → `createMediaDeskPopoutWindow()`（window-factory）建，与工作伙伴同款窗框/尺寸语义。
-- ⛔ 安全面（11-10 审查加固）：页面与接口都挂在**随机令牌前缀** `/t/<TOKEN>/` 下（每次进程换一次）+ 校验 Host 头必须是 `127.0.0.1:<port>`（防本机 CSRF / DNS rebinding）；`index.html` 的脚本引用必须是**相对路径**（`./react.bundle.js`），否则令牌前缀下取不到。
-- ⛔ 上游 `host.js` 是 **ESM + file://**：tsc(CommonJS) 会把 `import()` 降级成 `require()` ⇒ 必须用 `new Function("specifier","return import(specifier)")` 的原生动态 import（`nativeImport`），否则整个工作台加载失败。
-- 宿主适配只有三样：`llm`（`prepareCall().stream()` → 用应用当前供应商跑一轮，Key 走 secure 接缝）、`agentDefaultModel`（当前模型）、`connection`（本地放行）。数据经 `DSH_HOME` 落到 `<userData>/media-desk-host/media-desk/state.json`。⛔ 解不开 Key（密钥库换过 / 档案拷来）按「无 Key」继续，不许让整页起不来。
-- 上游 op 是**扁平字段**（`{op:"add_item", title, body…}`），⛔ 不是 `{op, item:{…}}`；工具请求路径必须拼 `media-desk/` 前缀（上游路由全在这个前缀下）。
-- Codex 工具：`harness_tools({name:"media_desk", args:{action,…}})`（dispatch-rpc 走 `mediaDeskRequest`，与界面**同一份**数据/流程）：state / capture / draft / produce / schedule / metric / insights / style / delete / undo。capture 带 url 走上游 `capture-url`（抓标题/摘要/封面）；draft 的 `styleId` 走 `set_style`（切换当前写作风格）；schedule 带 `postId` 改已有条目排期（`schedule_item`），不带则新建；metric **必须带 platform**（上游会丢掉非法平台并报「数据需要平台」）；insights 读复盘（播放/互动率/平台分布/Top 内容）。
-- ⛔ **工具必须在能力网关 description 里点名**（`part08/01-seg.tsx` 的 `harness_tools` 描述）：工具在 `dispatchMcpTools` 里有、描述里没写 = 模型不知道它能用（`name="list"` 只有它主动去查才会看到）。守卫 12bi 钉住。
-- ⛔ 文本模型**两种协议都要支持**：`wireApi === "responses"` 走 `/responses`，否则 `/chat/completions`（同 `prompt-polish.ts` 口径）；只认 chat 会让 responses 供应商的成稿静默退化成「结构草稿 + notice」。
-- ⛔ 成稿结果只回摘要（status/error/notice/article 前 5000 字/图片数）：上游 production 原文可达 20 万字，原样塞 JSON 会撑爆并被截断成非法 JSON；failed / cancelled 必须回 `ok:false`，⛔ 不许当成功。
-- ⛔ 排期只是本地计划、不会自动发布；数据是手动记录。页面底部有**开源声明**（dsh-media-desk / MIT / 数据只存本机 / 排期不自动发布）与**「开源项目」跳转按键**（走 `window.codex.openExternal` 打开上游仓库；⛔ 别改成 iframe 内跳转或手写 URL 白名单）。
-- ⛔⛔ **DSH 宿主主题变量必须在 `resources/media-desk/index.html` 里补齐**（客户端用到 26 个 `--dsw-alias-*` / `--dsw-elevation-*` / `--dsw-radius-*` / `--dsw-font-family`）：缺了就是「背景透明 + 文字默认黑 + 弹窗遮罩透明」—— 暗色下看不见，点开弹窗后**整页被透明遮罩挡住，表现成「按键全点不了」**（11-11 用户实测）。页面必须写 `body { background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary) }` 并带 `@media (prefers-color-scheme: dark)` 一整套。升级上游后**重新核对 token 清单**（守卫 12bi 会逐个比对 client.js 里出现的名字）。
-- **风格页网格自适应**（11-11 用户「排版做好自适应，这么大空白呢」）：上游 `.md-style-grid` 用 `auto-fill`，分类只有 2 张卡时第 3 列整列留空 ⇒ `index.html` 里用 `.md-root .md-style-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important }` 覆盖（auto-fit 会收起空列，卡少自动铺满、窄窗自动降列）。⛔ 这是**宿主侧 CSS 覆盖**，不动上游 client.js。
-- **生图默认复用内置生图插件**（11-10 用户令「调用生图插件更方便」）：embed.ts 把内置插件包装成上游 `ctx.get('tools')` 执行接口（`image_generate`），走 source:'tool'；产物落 `<DSH_HOME>/plugins/subscriptions/images` 供上游 realpath 校验。仅当用户没配 HTTP 生图时才默认切 'tool'（⛔ 不覆盖已配的图片 API）；没配内置插件时成稿只出文字+画面描述、不报错。也可仍在工作台设置配 OpenAI 兼容接口。
-- 升级上游 = 用 npm 包 `dsh-media-desk@最新` 覆盖 `resources/media-desk/{host,assets,client.js}`，并用 `node node_modules/vite/bin/vite.js build`（临时 lib 配置：iife / name=MDReact / define `process.env.NODE_ENV="production"` / minify）重建 `react.bundle.js`（生产包 ~219KB；⛔ 别用 dev 包，1.2MB 还带 DevTools 提示）。守卫 `12bi-media-desk`（38 条：入口在侧栏·设置页已撤 / 独立窗尺寸与单例 / 风格页自适应 / 随包产物 / 令牌+Host / 原生 import / 扁平 op / 解密兜底 / 采集拒绝内网 / 工具接线 / 生图复用内置插件）+ 验收项 `media-desk`（开独立窗 → 尺寸对照 → iframe target 读 DOM，证明原版界面真渲染）。
+更早的条目（10 月至今，含每条的用户原话与守卫编号）→ `docs/CHANGELOG-INDEX.md`。
