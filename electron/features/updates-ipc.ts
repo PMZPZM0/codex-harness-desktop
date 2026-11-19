@@ -33,6 +33,7 @@ import {
   pruneOldInstallers,
   downloadUpdate,
   downloadUpdateDifferential,
+  hasDifferentialBaseline,
   fileExists,
   hasPendingDifferential,
   quitAndInstallDifferential,
@@ -247,7 +248,10 @@ export const updatesFeature = defineFeature<null>({
           receivedBytes: info.receivedBytes, totalBytes: info.totalBytes, version,
         });
       };
-      sendToWindow("updates:download-state", { active: true, phase: "download", percent: 0, version });
+      /* 11-19 用户令 A：选「补丁」但本机无基线时必须**明说**本次是整包（⛔ 不许静默回退）。 */
+      const baseline = hasDifferentialBaseline();
+      const noBaselineNote = !baseline && input?.mode !== "full";
+      sendToWindow("updates:download-state", { active: true, phase: "download", percent: 0, version, noBaseline: noBaselineNote });
       silentDownloading = true;
       try {
         // 10-25 差分优先；失败继续走下面的完整包
@@ -264,7 +268,7 @@ export const updatesFeature = defineFeature<null>({
         sendToWindow("updates:download-state", { active: false, phase: "download", percent: 1, version });
         // ⛔ 主动推一条事件：渲染层可能没打开设置页，只能靠事件弹窗（需求 3）。
         sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: info.path });
-        return { ok: true, version: lastUpdateInfo?.version, path: info.path, differential: false };
+        return { ok: true, version: lastUpdateInfo?.version, path: info.path, differential: false, noBaseline: noBaselineNote };
       } catch (err: any) {
         sendToWindow("updates:download-state", { active: false, phase: "download", percent: 0, version });
         return { ok: false, error: err?.message || String(err) };

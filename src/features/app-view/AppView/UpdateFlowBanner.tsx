@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, LoaderCircle } from "lucide-react";
+import { Download, LoaderCircle, X } from "lucide-react";
 import { UpdateProgressBar } from "../../../components/UpdateProgressBar";
 
 type UpdateFlowState = {
@@ -21,6 +21,8 @@ type UpdateFlowState = {
   receivedBytes?: number;
   totalBytes?: number;
   version?: string;
+  /** 11-19：选了补丁但本机无差分基线 ⇒ 本次必然是完整包，界面要明说。 */
+  noBaseline?: boolean;
 };
 
 /** 字节 → 人类可读（进度条副行用；未知大小返回空串）。 */
@@ -33,9 +35,12 @@ function sizeText(bytes?: number): string {
 /** 更新下载进度条 / 安装遮罩（自订阅，无数据时不渲染）。 */
 export function UpdateFlowBanner() {
   const [state, setState] = useState<UpdateFlowState | null>(null);
+  /* 11-19 用户令：「这个更新弹窗关都关不掉」—— 收起来只影响显示，下载继续跑；
+     下次开始新一轮（active 从 false 变 true）或进入安装阶段时自动恢复显示。 */
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
-    const off = window.codex.updateOnState?.((next) => setState(next));
+    const off = window.codex.updateOnState?.((next) => setState(next as UpdateFlowState));
     const onLocal = (event: Event) => {
       const detail = (event as CustomEvent<UpdateFlowState>)?.detail;
       if (detail) setState(detail);
@@ -46,6 +51,11 @@ export function UpdateFlowBanner() {
       window.removeEventListener("harness:update-state", onLocal);
     };
   }, []);
+
+  /* 收起只在「这一轮下载」里有效：下载结束 / 换版本 / 进入安装阶段，自动恢复显示。 */
+  useEffect(() => {
+    if (!state?.active || state.phase !== "download") setHidden(false);
+  }, [state?.active, state?.phase, state?.version]);
 
   if (!state || typeof document === "undefined") return null;
 
@@ -63,13 +73,14 @@ export function UpdateFlowBanner() {
     );
   }
 
-  if (!state.active) return null;
+  if (!state.active || hidden) return null;
   const percent = Math.max(0, Math.min(1, Number(state.percent) || 0));
   const pct = Math.round(percent * 100);
   const received = sizeText(state.receivedBytes);
   const total = sizeText(state.totalBytes);
   return createPortal(
     <div className="update-flow-banner" role="status" aria-live="polite">
+      <button type="button" className="update-flow-close" title="收起提示（下载继续）" aria-label="收起更新提示，下载继续" onClick={() => setHidden(true)}><X size={13} /></button>
       <span className="update-flow-icon"><Download size={14} /></span>
       <div className="update-flow-body">
         <div className="update-flow-title">
@@ -79,7 +90,7 @@ export function UpdateFlowBanner() {
         <UpdateProgressBar active progress={percent} />
         <div className="update-flow-sub">
           {received && total ? `${received} / ${total} · ` : ""}
-          后台进行中，不影响你继续使用
+          {state.noBaseline ? "本次为完整包（本机无差分基线，装完自动建立）" : "后台进行中，不影响你继续使用"}
         </div>
       </div>
     </div>,

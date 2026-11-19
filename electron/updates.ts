@@ -14,11 +14,11 @@
  *      （https + sha256 + 镜像序重试）→ installUpdate() 运行安装包
  */
 import fs from "node:fs/promises";
-import { existsSync, createWriteStream, createReadStream, readdirSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, createWriteStream, createReadStream, readdirSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import https from "node:https";
-import { shell } from "electron";
+import { app, shell } from "electron";
 import { URL } from "node:url";
 import { mirrorCandidates } from "./gh-mirror";
 import { guardedFetch } from "./net-guard";
@@ -348,6 +348,47 @@ export async function downloadUpdate(
 
 export type DifferentialDownloadResult = { path: string; version: string; differential: true };
 
+/** 差分缓存自愈（11-19 用户令：「我要的是用户差分更新」）。
+ *
+ *  electron-updater 的 NSIS 差分靠**成对**的本地缓存：`<updater 缓存目录>/installer.exe`
+ *  ＋同目录 `current.blockmap`。只要其中一份缺失或与新 blockmap 配不上对，它会静默回退整包
+ *  —— 用户侧看到的就是「每次更新都下 668MB」，而且这个状态会一直保持（缓存不会自己修好）。
+ *  实测：本机缓存里只有 2026-10-12 的 `installer.exe`（386MB），没有 `current.blockmap`
+ *  ⇒ 配对失效 ⇒ 从那时起每次更新都是整包。
+ *
+ *  ⇒ 下载前先自愈：**缺任一份就两份都删**。下一轮 updater 重新拉一次完整包并写回成对的缓存，
+ *    从此这一台机器就进入「几十兆差分」；⛔ 不删安装目录、不删用户数据，只动自家 updater 缓存。
+ *  真删失败（文件被占用）只跳过，不阻断更新。 */
+function healDifferentialCache(): void {  try {
+    const localAppData = process.env.LOCALAPPDATA || process.env.APPDATA || "";
+    if (!localAppData) return;
+    const dir = path.join(localAppData, `${app.getName()}-updater`);
+    const installer = path.join(dir, "installer.exe");
+    const blockmap = path.join(dir, "current.blockmap");
+    const hasInstaller = existsSync(installer);
+    const hasBlockmap = existsSync(blockmap);
+    if (hasInstaller === hasBlockmap) return;
+    if (hasInstaller) rmSync(installer, { force: true });
+    if (hasBlockmap) rmSync(blockmap, { force: true });
+  } catch {
+    /* 自愈是尽力而为：失败不影响正常下载 */
+  }
+}
+
+/** 本机是否已具备差分基线（`installer.exe` 与 `current.blockmap` 成对存在）。
+ *  用途：用户选了「补丁」但本机没有基线时，界面必须**明说本次会下完整包**，
+ *  ⛔ 不许静默——11-19 用户实测「明明选的差分更新，还是下了 668MB」。 */
+export function hasDifferentialBaseline(): boolean {
+  try {
+    const localAppData = process.env.LOCALAPPDATA || process.env.APPDATA || "";
+    if (!localAppData) return false;
+    const dir = path.join(localAppData, `${app.getName()}-updater`);
+    return existsSync(path.join(dir, "installer.exe")) && existsSync(path.join(dir, "current.blockmap"));
+  } catch {
+    return false;
+  }
+}
+
 /** ⛔⛔ 11-15 用户实测「点重启安装，应用关了、安装提醒一闪就没装」的根因在这里：
  *  差分包是 electron-updater 下的，**它不是"一个可以随便 spawn 的 exe 路径"** ——
  *  直接 `spawn(pending.exe)` 起的是**交互式 NSIS 向导 + UAC 提权框**（11-16 起
@@ -382,10 +423,16 @@ export async function downloadUpdateDifferential(
   if (process.platform !== "win32") throw new Error("differential_unsupported_platform");
   const version = String(info.version ?? "").trim();
   if (!version) throw new Error("differential_no_version");
+  /* 先自愈缓存：缺一份就两份都删，让本轮重新建立成对基线（下一版用户才拿到几十兆差分）。 */
+  healDifferentialCache();
   const releaseBase = `https://github.com/${GITHUB_REPO}/releases/download/${String(info.tag ?? `v${version}`)}`;
   const { autoUpdater } = await import("electron-updater");
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  /* ⛔ 11-19 审查发现：这里原本是 false，等于「下载完只等用户点重启安装」。
+     用户中途关掉应用 / 重启，`differentialUpdater` 这个内存句柄就没了，
+     下次点安装只能走 spawn 老路（不经过 updater 的安装器）⇒ 配对缓存永远写不回去 ⇒ 每版整包。
+     改为 true：即使不点按钮，退出时也由 updater 自己装完并写回 installer.exe + current.blockmap。 */
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowDowngrade = false;
   let lastError: unknown = new Error("differential_failed");
   for (const feedUrl of mirrorCandidates(releaseBase)) {

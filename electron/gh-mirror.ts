@@ -30,8 +30,11 @@
  *   ⛔⛔ 带令牌的请求**绝不允许**走镜像（令牌会泄露给第三方）：见 updates.ts 的 token 门。
  */
 
-/** 大文件资产/源码包的前缀序：**直连优先**，镜像只作兜底（空串 = 直连，必须排第一）。 */
-export const GH_MIRROR_PREFIXES = ["", "https://hk.gh-proxy.com/", "https://gh-proxy.com/"] as const;
+/** 大文件资产/源码包的前缀序：**直连优先**，镜像只作兜底（空串 = 直连，必须排第一）。
+ *  11-19 用户实测「镜像下载一分钟 1M」⇒ 重新实测 4MB Range 吞吐（`curl -r 0-4194303`）：
+ *  ghfast.top **0.82 MB/s** > gh-proxy.com 0.42 MB/s > hk.gh-proxy.com 302 后不可用（objects 直连被墙）
+ *  ⇒ ghfast 加回第二档（11-15 因 Range 403 删过一次，现已恢复 206）。 */
+export const GH_MIRROR_PREFIXES = ["", "https://ghfast.top/", "https://hk.gh-proxy.com/", "https://gh-proxy.com/"] as const;
 
 /** 元数据 API 的前缀序：镜像优先（api.github.com 直连在国内常 403/超时）。 */
 export const GH_API_MIRROR_PREFIXES = ["https://gh-proxy.com/", "https://hk.gh-proxy.com/", ""] as const;

@@ -1156,7 +1156,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <div className="account-menu-row"><span className="account-menu-label">更新方式</span>
                         {/Win/.test(navigator.platform) ? (
                           <span className="update-mode-switch" role="group" aria-label="更新方式">
-                            <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>补丁<span className="update-help" title="只下载变化部分（blockmap），体积小、安装快；没有补丁或下载失败时自动改用完整包" onClick={(event) => event.stopPropagation()}>?</span></button>
+                            <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>补丁<span className="update-help" title="只下变化部分（blockmap）：需要本机已有上一次的差分基线；没有基线时会下完整包，进度条上会写明「本次为完整包」" onClick={(event) => event.stopPropagation()}>?</span></button>
                             <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包<span className="update-help" title="每次下载完整安装包，体积大但最稳；补丁更新异常时选这个" onClick={(event) => event.stopPropagation()}>?</span></button>
                           </span>
                         ) : (

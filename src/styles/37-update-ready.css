@@ -111,7 +111,7 @@
   display: flex;
   gap: 9px;
   align-items: flex-start;
-  padding: 10px 12px;
+  padding: 10px 28px 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -119,6 +119,24 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 .update-flow-icon { color: var(--accent); margin-top: 1px; }
+/* 11-19 用户令：「这个更新弹窗关都关不掉」—— 右上角收起键（只收起提示，下载继续）。 */
+.update-flow-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.update-flow-close:hover { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
 .update-flow-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .update-flow-title { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
 .update-flow-title strong { font-weight: 600; }
