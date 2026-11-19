@@ -869,6 +869,27 @@ ${st.hint}`);
                 const compactThread = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
                 if (compactThread) bag.deferredCompactRef.current.add(compactThread);
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已把压缩加入队列：**本回合结束后**自动执行（回合中压缩会中断当前回合，所以不能立刻做）。届时界面会出现压缩状态线，压缩完成后上下文显著缩短。" }], success: true });
+              } else if (event.params?.tool === "mcp_tools") {
+                /* 11-19 MCP 懒加载：先查名字/参数，再 mcp_call。 */
+                try {
+                  const hits = await window.codex.mcpServersTools({ query: String(args.query ?? ""), service: args.service ? String(args.service) : undefined, limit: Number(args.limit ?? 20) });
+                  const text = hits.length
+                    ? hits.map((hit: any, index: number) => {
+                        const head = `${index + 1}. ${hit.name}${hit.service ? `（${hit.service}）` : ""}｜${hit.desc || "无说明"}`;
+                        return hit.inputSchema ? `${head}\n   参数：${JSON.stringify(hit.inputSchema)}` : head;
+                      }).join("\n")
+                    : "没有匹配的 MCP 工具（可能没连接，或关键词不对）。";
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+                } catch (error) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `查询 MCP 工具失败：${String((error as { message?: unknown })?.message ?? error)}` }], success: false });
+                }
+              } else if (event.params?.tool === "mcp_call") {
+                try {
+                  const result = await window.codex.mcpServersCall({ name: String(args.name ?? ""), args: args.args ?? {} });
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: String(result?.text ?? "") }], success: Boolean(result?.ok) });
+                } catch (error) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `MCP 调用失败：${String((error as { message?: unknown })?.message ?? error)}` }], success: false });
+                }
               } else if (event.params?.tool === "find_skills") {
                 /* 11-19：技能检索（只读）。结果直接回给模型，卡片按普通工具卡展示。 */
                 try {

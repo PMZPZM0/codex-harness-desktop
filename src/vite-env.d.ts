@@ -867,6 +867,10 @@ interface Window {
     layaUninstall(): Promise<{ ok: boolean; log: string }>;
     /* app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
     readMcpServerOverrides(): Promise<Record<string, boolean>>;
+    /* MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema */
+    mcpServersTools(input: { query?: string; service?: string; limit?: number }): Promise<Array<{ name: string; service: string; desc: string; inputSchema?: Record<string, unknown> }>>;
+    /* MCP 懒加载：按名字转发调用 */
+    mcpServersCall(input: { name?: string; args?: unknown }): Promise<{ ok: boolean; text: string }>;
     /* 各 MCP 服务器的按工具权限档位：{ 服务器: { 工具: "deny"|"ask"|"allow" } } */
     readMcpToolPermissions(): Promise<Record<string, Record<string, "deny" | "ask" | "allow">>>;
     /* 统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎 */

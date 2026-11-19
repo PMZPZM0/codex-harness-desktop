@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（123 个能力域 / 721 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（123 个能力域 / 723 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -345,9 +345,9 @@ Codex 官方插件市场（GitHub openai/plugins 走国内镜像：清单/分类
 MCP 连接器（外部 app/服务接入：增删改查、启停、OAuth）
 通道：connectors:list, connectors:oauth-cancel, connectors:oauth-start, connectors:remove, connectors:save, connectors:set-enabled, connectors:templates
 
-### mcp-servers（4 通道）
+### mcp-servers（6 通道）
 MCP 服务器管理（配置/状态）
-通道：mcp-servers:overrides, mcp-servers:permissions, mcp-servers:set-enabled, mcp-servers:set-tool-permission
+通道：mcp-servers:tools, mcp-servers:call, mcp-servers:overrides, mcp-servers:permissions, mcp-servers:set-enabled, mcp-servers:set-tool-permission
 
 ### personalization（6 通道）
 个性化（昵称/自定义指令，落 personalization.json 并写入引擎 AGENTS.md）

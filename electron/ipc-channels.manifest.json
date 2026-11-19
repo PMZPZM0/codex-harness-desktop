@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 721,
+  "count": 723,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -2392,6 +2392,26 @@
       "invokeArgs": "",
       "cast": null,
       "note": "app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用"
+    },
+    {
+      "name": "mcpServersTools",
+      "channel": "mcp-servers:tools",
+      "paramsImpl": "input: { query?: string; service?: string; limit?: number }",
+      "paramsDecl": "input: { query?: string; service?: string; limit?: number }",
+      "returns": "Promise<Array<{ name: string; service: string; desc: string; inputSchema?: Record<string, unknown> }>>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema"
+    },
+    {
+      "name": "mcpServersCall",
+      "channel": "mcp-servers:call",
+      "paramsImpl": "input: { name?: string; args?: unknown }",
+      "paramsDecl": "input: { name?: string; args?: unknown }",
+      "returns": "Promise<{ ok: boolean; text: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "MCP 懒加载：按名字转发调用"
     },
     {
       "name": "readMcpToolPermissions",

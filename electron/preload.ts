@@ -455,6 +455,10 @@ contextBridge.exposeInMainWorld("codex", {
   layaUninstall: () => __ipc("laya:uninstall", 0, []),
   /* app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
   readMcpServerOverrides: () => __ipc("mcp-servers:overrides", 0, []),
+  /* MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema */
+  mcpServersTools: (input: { query?: string; service?: string; limit?: number }) => __ipc("mcp-servers:tools", 1, [input]),
+  /* MCP 懒加载：按名字转发调用 */
+  mcpServersCall: (input: { name?: string; args?: unknown }) => __ipc("mcp-servers:call", 1, [input]),
   /* 各 MCP 服务器的按工具权限档位：{ 服务器: { 工具: "deny"|"ask"|"allow" } } */
   readMcpToolPermissions: () => __ipc("mcp-servers:permissions", 0, []),
   /* 统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎 */

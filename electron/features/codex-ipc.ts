@@ -98,12 +98,20 @@ export const codexFeature = defineFeature<null>({
            ⛔ 只合并、不覆盖调用方传进来的那批（memory_recall / team_member_invoke 等）。
            ⛔ 失败静默：拉不到工具不能挡住 thread/start。 */
         try {
-          const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
-          const mcpTools = toDynamicTools(await listMcpDynamicTools());
+          /* 11-19：MCP 懒加载 —— 不逐个注册（实测 62 个工具 48k 字符 ≈ 13k tokens），
+             改用 mcp_tools / mcp_call 两个网关工具。回滚：MCP_LAZY=false。 */
+          const { MCP_LAZY, buildMcpGatewayTools } = await import("../mcp-gateway");
+          let mcpTools: Array<Record<string, unknown>> = [];
+          if (MCP_LAZY) {
+            mcpTools = buildMcpGatewayTools();
+          } else {
+            const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
+            mcpTools = toDynamicTools(await listMcpDynamicTools());
+          }
           if (mcpTools.length) {
             const existing = Array.isArray((params as any)?.dynamicTools) ? (params as any).dynamicTools : [];
             (params as any).dynamicTools = [...existing, ...mcpTools];
-            console.log(`[mcp-bridge] thread/start 注入 ${mcpTools.length} 个 MCP 工具`);
+            console.log(`[mcp-bridge] thread/start 注入 ${mcpTools.length} 个 MCP 工具（${MCP_LAZY ? "懒加载网关" : "逐个注册"}）`);
           }
         } catch (error: any) {
           console.warn("[mcp-bridge] 注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
@@ -193,8 +201,13 @@ export const codexFeature = defineFeature<null>({
                修法：resume 时把同样的三批并回来再写首行。 */
             const extras: any[] = [];
             try {
-              const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
-              extras.push(...toDynamicTools(await listMcpDynamicTools()));
+              const { MCP_LAZY: lazyMcp, buildMcpGatewayTools: buildGateway } = await import("../mcp-gateway");
+              if (lazyMcp) {
+                extras.push(...buildGateway());
+              } else {
+                const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
+                extras.push(...toDynamicTools(await listMcpDynamicTools()));
+              }
             } catch (error: any) {
               console.warn("[tool-surface] resume 合并 MCP 工具失败：", String(error?.message ?? error).slice(0, 160));
             }

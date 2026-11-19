@@ -79,6 +79,28 @@ export const mcpServersFeature = defineFeature<null>({
       return { ok: true, updated };
     });
 
+    /* 11-19 MCP 懒加载：模型用这两个通道代替逐个注册的 MCP 工具 schema（实测 62 个工具 48k 字符）。 */
+    ipcHost.handle("mcp-servers:tools", async (_event, input: { query?: string; service?: string; limit?: number } = {}) => {
+      const { listMcpDynamicTools } = await import("../mcp-bridge");
+      const all = await listMcpDynamicTools();
+      const query = String(input?.query ?? "").trim().toLowerCase();
+      const service = String(input?.service ?? "").trim().toLowerCase();
+      const limit = Math.max(1, Math.min(60, Number(input?.limit ?? 20) || 20));
+      const scoped = service ? all.filter((tool) => String(tool.serverId ?? "").toLowerCase().includes(service)) : all;
+      if (!query) return scoped.slice(0, limit).map((tool) => ({ name: tool.name, service: tool.serverId, desc: String(tool.description ?? "").slice(0, 100) }));
+      const exact = scoped.find((tool) => tool.name.toLowerCase() === query);
+      if (exact) return [{ name: exact.name, service: exact.serverId, desc: String(exact.description ?? ""), inputSchema: exact.inputSchema }];
+      const hits = scoped.filter((tool) => (tool.name + " " + String(tool.description ?? "")).toLowerCase().includes(query));
+      return hits.slice(0, limit).map((tool) => ({ name: tool.name, service: tool.serverId, desc: String(tool.description ?? "").slice(0, 100) }));
+    });
+
+    ipcHost.handle("mcp-servers:call", async (_event, input: { name?: string; args?: unknown } = {}) => {
+      const { callMcpTool } = await import("../mcp-bridge");
+      const name = String(input?.name ?? "").trim();
+      if (!name) return { ok: false, text: "缺少工具名" };
+      return callMcpTool(name, input?.args ?? {});
+    });
+
     ipcHost.handle("mcp-servers:permissions", async () => {
       const overrides = await readMcpOverrides();
       const view = Object.fromEntries(
