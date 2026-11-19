@@ -103,6 +103,8 @@ async function packState(pack: SkillPackDef) {
     experts: pack.experts ?? [],
     /* 随包内置：装没装由磁盘算，界面据此隐藏下载/卸载按钮。 */
     bundled: Boolean(pack.bundled),
+    /** 市场原位注册的内置包：界面不提供「更新」（随应用升级）。 */
+    bundledMarket: Boolean(pack.bundled?.market),
     installed: pack.bundled ? present.length > 0 : Boolean(marker) && present.length > 0,
     installedSkills: present,
     installedAt: marker?.installedAt ?? "",
@@ -156,6 +158,9 @@ type InstallResult = { installed: string[]; skipped: string[]; rejected: string[
 
 /** 随包内置包「更新」：把 resources 里的技能同步到技能目录（覆盖本包旧拷贝，跳过他人同名）。 */
 async function syncBundledPack(pack: SkillPackDef, emit: (stage: string, message: string) => void): Promise<InstallResult> {
+  /* ⛔ 市场原位注册的包（cheat-on-content）：文件已在 resources 里被 config.toml 注册，
+     再拷一份到 skills 目录 = 同一技能被两处发现（本项目踩过）。这里只如实回报。 */
+  if (pack.bundled?.market) return { installed: [], skipped: [], rejected: [], bytes: 0 };
   const root = skillsRoot();
   const dir = pack.bundled?.dir ?? "";
   const base = bundledBaseDir(dir);

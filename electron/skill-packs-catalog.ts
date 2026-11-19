@@ -28,8 +28,10 @@ export type SkillPackDef = {
   experts?: string[];
   /** 上游版本：有 release 用标签（v2.5.1），没有就用最近推送日期（2026-11-19）；内置包写「随包」 */
   version?: string;
-  /** 随包内置（resources/expert-skills/<dir>）：随应用分发，界面只展示不下载 */
-  bundled?: { dir: string };
+  /** 随包内置（resources/expert-skills/<dir>）：随应用分发，界面只展示不下载。
+   *  market=true 表示该目录已由 config.toml 的 [marketplaces.expert-skills] **原位注册**
+   *  ⇒ ⛔ 不要再拷进 skills 目录（否则同一技能会被市场与目录各发现一次）。 */
+  bundled?: { dir: string; market?: boolean };
 };
 
 export const SKILL_PACKS: SkillPackDef[] = [
@@ -142,6 +144,6 @@ export const SKILL_PACKS: SkillPackDef[] = [
     category: "视频与内容",
     skills: ["cheat-bump", "cheat-init", "cheat-predict", "cheat-persona", "cheat-learn-from"],
     experts: ["创意搭档", "自媒体工作台"],
-    bundled: { dir: "cheat-on-content" },
+    bundled: { dir: "cheat-on-content", market: true },
   },
 ];
