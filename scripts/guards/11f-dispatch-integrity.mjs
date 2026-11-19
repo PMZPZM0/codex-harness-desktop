@@ -783,7 +783,7 @@ try {
   ok(/if \(leadOfTeam(?:\s*\|\| reaSpec)?\) \{\s*try \{ await syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegationSrc)
     && delegationSrc.indexOf("syncToolSurfaceAsync") < delegationSrc.indexOf('server.request("thread/resume"'),
     "⛔ 复用会话在 thread/resume **之前**同步工具面（老会话升级唯一路，见附录 Z；REA 装好后专家会话同样要升级）");
-  ok(/dynamicTools: desiredTools/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
+  ok(/dynamicTools: (desiredTools|filterToolSurface\(desiredTools)/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
     "新建与复用共用同一份工具面，且都登记主理人身份（team_member_invoke 的硬闸认它）");
   ok(/kind: leadOfTeam \? "team" : target\.kind/.test(delegationSrc),
     "主理人本尊的会话级指令按 team 写（⛔ 别让「自己干别转派」压过主理人 SOP）");

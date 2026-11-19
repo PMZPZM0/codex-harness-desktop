@@ -281,7 +281,7 @@ try {
     /* ⛔⛔ 11-07：工具面提到 `desiredTools` 单一真相源（新建 + resume 同步共用一份）。
        复用会话必须在 thread/resume **之前**同步，否则老会话首行还是旧工具面 ⇒ 主代理喊不动成员。 */
     ok(/const desiredTools = withStepParam\(\[\s*\.\.\.teamTools, buildDelegateHarnessTool\(\)/.test(delegation)
-      && /dynamicTools: desiredTools/.test(delegation)
+      && /dynamicTools: (desiredTools|filterToolSurface\(desiredTools)/.test(delegation)
       && /syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegation),
       "被委派会话（子智能体 / 专家 / 团主理人）拿到能力网关，复用会话的工具面在 resume 前同步");
     ok(/const desiredTools = withStepParam\(/.test(delegation),
