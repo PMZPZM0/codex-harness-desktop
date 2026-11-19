@@ -35,6 +35,17 @@ export function BrowserSettingsSection(props: BrowserSettingsSectionProps) {
       .catch(() => { if (alive) setEgo({ installed: false, version: "" }); });
     return () => { alive = false; };
   }, []);
+  /* 11-19 用户令：「Playwright 在哪？这里没有」——浏览器自动化页要能直接看到技能包。
+     数据来自 skill-packs:list（单一真相源），只取本分类。 */
+  const [packs, setPacks] = useState<Array<{ id: string; name: string; description: string; bundled?: boolean; installed?: boolean; category?: string }>>([]);
+  useEffect(() => {
+    let alive = true;
+    void window.codex.listSkillPacks()
+      .then((rows) => { if (alive) setPacks((rows ?? []) as never); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+  const browserPackCards = packs.filter((pack) => pack.category === "浏览器自动化");
   const installed = ego?.installed === true;
   const checking = ego === null;
   /* 主进程给的 version 形如 `ego-browser 0.6.2.8`；卡里已在代码块写了名字，这里只留版本号。 */
@@ -97,6 +108,26 @@ export function BrowserSettingsSection(props: BrowserSettingsSectionProps) {
               <p><code>nuphus-call browser_*</code>（browse-skills）驱动默认浏览器，不需要额外安装。</p>
             </article>
           </div>
+
+          {browserPackCards.length > 0 && (
+            <div className="browser-cap-grid">
+              {browserPackCards.map((pack) => (
+                <article className="browser-cap-card is-on" key={pack.id} data-skill-pack={pack.id}>
+                  <div className="browser-cap-head">
+                    <span className="browser-cap-icon is-green"><Globe2 size={15} /></span>
+                    <strong>{pack.name}</strong>
+                    <em className="browser-cap-tag">{pack.bundled ? "随包内置" : pack.installed ? "已安装" : "可安装"}</em>
+                  </div>
+                  <p>{pack.description}（<code>{pack.id}</code> 技能已随应用内置，模型在需要脚本化抓取时会自动读它）</p>
+                  {onOpenDevtools && (
+                    <button type="button" className="browser-cap-action" onClick={onOpenDevtools}>
+                      去开发工具看技能包<ArrowUpRight size={12} />
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
 
           {browserTools.length > 0 && (
             <div className="tool-card-grid">

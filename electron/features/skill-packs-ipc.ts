@@ -135,10 +135,17 @@ async function bundledSkillsOf(dir: string): Promise<string[]> {
   const fallback = path.join(app.getAppPath(), "resources", "expert-skills", dir);
   const base = existsSync(root) ? root : fallback;
   if (!existsSync(base)) return [];
-  if (existsSync(path.join(base, "SKILL.md"))) return [path.basename(base)];
+  /* 有的包**同时**有根 SKILL.md 和 skills/ 子技能（cheat-on-content 就是：根 + 15 个子技能）
+     ⇒ 两边都收，按名字去重，别只取根目录那一个。 */
+  const out: string[] = [];
+  if (existsSync(path.join(base, "SKILL.md"))) out.push(path.basename(base));
   const inner = path.join(base, "skills");
-  if (!existsSync(inner)) return [];
-  return (await fs.readdir(inner).catch(() => [] as string[])).filter((name) => existsSync(path.join(inner, name, "SKILL.md")));
+  if (existsSync(inner)) {
+    for (const name of await fs.readdir(inner).catch(() => [] as string[])) {
+      if (existsSync(path.join(inner, name, "SKILL.md")) && !out.includes(name)) out.push(name);
+    }
+  }
+  return out;
 }
 
 type InstallResult = { installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean };
