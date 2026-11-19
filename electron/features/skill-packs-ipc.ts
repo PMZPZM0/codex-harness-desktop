@@ -130,10 +130,14 @@ async function findSkillDirsInRepo(root: string): Promise<string[]> {
 }
 
 /** 随包内置技能：扫 resources/expert-skills/<dir>（根 SKILL.md 或 skills/<n>/SKILL.md）。 */
-async function bundledSkillsOf(dir: string): Promise<string[]> {
+function bundledBaseDir(dir: string): string {
   const root = path.join(process.resourcesPath ?? "", "expert-skills", dir);
   const fallback = path.join(app.getAppPath(), "resources", "expert-skills", dir);
-  const base = existsSync(root) ? root : fallback;
+  return existsSync(root) ? root : fallback;
+}
+
+async function bundledSkillsOf(dir: string): Promise<string[]> {
+  const base = bundledBaseDir(dir);
   if (!existsSync(base)) return [];
   /* 有的包**同时**有根 SKILL.md 和 skills/ 子技能（cheat-on-content 就是：根 + 15 个子技能）
      ⇒ 两边都收，按名字去重，别只取根目录那一个。 */
@@ -150,11 +154,54 @@ async function bundledSkillsOf(dir: string): Promise<string[]> {
 
 type InstallResult = { installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean };
 
+/** 随包内置包「更新」：把 resources 里的技能同步到技能目录（覆盖本包旧拷贝，跳过他人同名）。 */
+async function syncBundledPack(pack: SkillPackDef, emit: (stage: string, message: string) => void): Promise<InstallResult> {
+  const root = skillsRoot();
+  const dir = pack.bundled?.dir ?? "";
+  const base = bundledBaseDir(dir);
+  if (!existsSync(base)) throw new Error("随包技能目录缺失（安装包不完整）");
+  const sources: Array<{ name: string; from: string }> = [];
+  if (existsSync(path.join(base, "SKILL.md"))) sources.push({ name: path.basename(base), from: base });
+  const inner = path.join(base, "skills");
+  if (existsSync(inner)) {
+    for (const name of await fs.readdir(inner).catch(() => [] as string[])) {
+      if (existsSync(path.join(inner, name, "SKILL.md"))) sources.push({ name, from: path.join(inner, name) });
+    }
+  }
+  if (!sources.length) throw new Error("随包目录里没有可同步的技能");
+  await fs.mkdir(root, { recursive: true });
+  const installed: string[] = [];
+  const skipped: string[] = [];
+  for (const [index, item] of sources.entries()) {
+    const target = path.join(root, item.name);
+    let ownedByMe = !existsSync(target);
+    if (existsSync(target)) {
+      try {
+        const owned = JSON.parse(await fs.readFile(path.join(target, ".skill-pack.json"), "utf8")) as { packId?: string };
+        ownedByMe = String(owned?.packId ?? "") === pack.id;
+      } catch { ownedByMe = false; }
+      if (!ownedByMe) { skipped.push(item.name); continue; }
+      await fs.rm(target, { recursive: true, force: true }).catch(() => undefined);
+    }
+    emit("install", `正在同步 ${item.name}（${index + 1}/${sources.length}）…`);
+    await fs.cp(item.from, target, { recursive: true });
+    await fs.writeFile(path.join(target, ".skill-pack.json"), JSON.stringify({ packId: pack.id, repo: "bundled", installedAt: new Date().toISOString() }, null, 2), "utf8").catch(() => undefined);
+    installed.push(item.name);
+  }
+  if (installed.length) {
+    emit("restart", "正在让引擎重新扫描技能…");
+    await server.restart();
+  }
+  return { installed, skipped, rejected: [], bytes: 0 };
+}
+
 async function installPack(id: string, signal?: AbortSignal, options: { update?: boolean } = {}): Promise<InstallResult> {
   const pack = SKILL_PACKS.find((entry) => entry.id === id);
   if (!pack) throw new Error("未知的技能包");
   const emit = (stage: string, message: string, extra: { percent?: number; speed?: string; host?: string } = {}) =>
     sendToWindow("harness:event", { type: "skill-pack-install", packId: id, stage, message, at: Date.now(), ...extra });
+  /* 随包内置包没有下载：直接走同步分支（同样支持 update，覆盖本包旧拷贝）。 */
+  if (pack.bundled) return syncBundledPack(pack, (stage, message) => emit(stage, message));
   const cancelled = () => Boolean(signal?.aborted);
   const work = path.join(app.getPath("temp"), `skill-pack-${id}-${Date.now()}`);
   const archive = path.join(work, "pack.zip");

@@ -27,7 +27,7 @@ type SkillPackRow = {
   id: string; name: string; repo: string; license: string; licenseUrl: string; size: string;
   description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string;
   /* 11-19：分类分组 / 包内技能（「拆开」后逐条可见）/ 配套专家 */
-  category?: string; skills?: string[]; experts?: string[]; bundled?: boolean;
+  category?: string; skills?: string[]; experts?: string[]; bundled?: boolean; version?: string;
 };
 
 /** 分类展示顺序（先工程、再设计、再内容，浏览器自动化与视频各自归口）。 */
@@ -180,6 +180,7 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                   <span className="skill-pack-line1">
                     <strong>{row.name}</strong>
                     {row.category ? <em className="skill-pack-cat">{row.category}</em> : null}
+                    {row.version ? <em className="skill-pack-cat">{row.version}</em> : null}
                     {row.installed ? <em className="skill-pack-state">已装 {row.installedSkills.length} 个</em> : null}
                   </span>
                   <span className="skill-pack-line2" title={row.description}>{row.description}</span>
@@ -215,7 +216,14 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                 </span>
                 <span className="skill-pack-actions">
                   {row.bundled ? (
-                    <em className="skill-pack-state">随包内置</em>
+                    /* 11-19 用户令：「精选技能包都要支持更新」——随包内置也能更新：
+                       把 resources 里的技能同步进技能目录（覆盖本包旧拷贝）并重启引擎。 */
+                    <span className="skill-pack-actions-pair">
+                      <button type="button" className="secondary-setting" disabled={isBusy} title="把随包技能同步到技能目录（应用升级后点这里刷新）" onClick={() => void install(row, true)}>
+                        <RefreshCw size={13} />更新
+                      </button>
+                      <em className="skill-pack-state">随包内置</em>
+                    </span>
                   ) : row.installed ? (
                     <span className="skill-pack-actions-pair">
                       <button type="button" className="secondary-setting" disabled={isBusy} title="重新下载并覆盖本包装的技能（上游更新后点这里）" onClick={() => void install(row, true)}>

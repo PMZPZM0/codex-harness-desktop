@@ -26,6 +26,8 @@ export type SkillPackDef = {
   skills?: string[];
   /** 配套专家 / 专家团：装了包之后，这些专家做对应任务会自动用上 */
   experts?: string[];
+  /** 上游版本：有 release 用标签（v2.5.1），没有就用最近推送日期（2026-11-19）；内置包写「随包」 */
+  version?: string;
   /** 随包内置（resources/expert-skills/<dir>）：随应用分发，界面只展示不下载 */
   bundled?: { dir: string };
 };
@@ -33,6 +35,7 @@ export type SkillPackDef = {
 export const SKILL_PACKS: SkillPackDef[] = [
   {
     id: "matt-pocock-skills",
+    version: "v1.3.2",
     name: "Matt Pocock 工程技能包",
     repo: "mattpocock/skills",
     license: "MIT",
@@ -45,6 +48,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
   },
   {
     id: "diagram-design",
+    version: "2026-11-19",
     name: "Diagram Design 图表设计",
     repo: "cathrynlavery/diagram-design",
     license: "MIT",
@@ -57,6 +61,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
   },
   {
     id: "how-to-live-better",
+    version: "epub-latest",
     name: "高性价比人生指南",
     repo: "eternity4719/HowToLiveBetter",
     license: "内容 CC BY 4.0",
@@ -70,6 +75,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
     /* 上游核实：GitHub Leonxlnx/taste-skill（MIT），主打单技能 design-taste-frontend；
        技能目录在仓库根/一层子目录（不在 skills/ 下）⇒ 安装器走「仓库内扫描 SKILL.md」分支。 */
     id: "taste-skill",
+    version: "v2.5.1",
     name: "Taste 反模板设计",
     repo: "Leonxlnx/taste-skill",
     license: "MIT",
@@ -85,6 +91,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
   {
     /* 上游核实：GitHub greensock/gsap-skills（GSAP 官方，MIT），skills/ 下 8 个技能。 */
     id: "gsap-skills",
+    version: "2026-07-29",
     name: "GSAP 官方动效",
     repo: "greensock/gsap-skills",
     license: "MIT",
@@ -108,6 +115,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
   {
     /* 11-19：Playwright（微软开源）归「浏览器自动化」；上游是库、没有 skills/ ⇒ 用随包技能。 */
     id: "playwright-browser-automation",
+    version: "随包",
     name: "Playwright 浏览器自动化",
     repo: "microsoft/playwright",
     license: "Apache-2.0",
@@ -123,6 +131,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
   {
     /* 11-19：cheat on 早在随包 resources/expert-skills/cheat-on-content ⇒ 只做展示。 */
     id: "cheat-on-content",
+    version: "随包",
     name: "Cheat On 内容评分",
     repo: "",
     license: "随包分发",
