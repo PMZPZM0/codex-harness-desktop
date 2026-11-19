@@ -485,7 +485,7 @@ export async function run() {
   (/disabledVariantOf\(dir\) \?\? activeFile/.test(bs74) && /for \(const fn of \[SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED\]\)/.test(bs74) ? ok : fail)(
     "【74】ensureBuiltinSkills 尊重停用态（两种停用名都认 + 写入目标停用态优先，否则用户停用的技能每次启动被写回）"
   );
-  (/existing\.replace\(\/\\r\\n\/g, "\\n"\) !== content\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bs74) ? ok : fail)(
+  (/existing\.replace\(\/\\r\\n\/g, "\\n"\) !== (content|body)\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bs74) ? ok : fail)(
     "【74】技能内容比对归一化行尾（否则每次启动都白写一遍盘）"
   );
 

@@ -225,10 +225,11 @@ export async function ensureBuiltinSkills(skillsDir: string) {
       const existing = await fs.readFile(target, "utf8").catch(() => "");
       // 比对前归一化行尾：停用/启用会把文件重写成 LF，与常量里的行尾不同，
       // 逐字比会每次启动都重写一遍（无意义写盘，且让「内容未变就别动」的判据失效）。
-      if (existing.replace(/\r\n/g, "\n") !== content.replace(/\r\n/g, "\n")) {
+      /* ⛔ skill-audit 的 description 是判据词库（守卫【113】按「不得安装」等词比对）⇒ 不截断。
+         ⛔ 比对必须拿**截断后**的 body：拿原文比会在"磁盘是未截断版本"时判等 ⇒ 永远不重写。 */
+      const body = name === "skill-audit" ? content : clampSkillDescription(content);
+      if (existing.replace(/\r\n/g, "\n") !== body.replace(/\r\n/g, "\n")) {
         await fs.mkdir(dir, { recursive: true });
-        /* ⛔ skill-audit 的 description 是判据词库（守卫【113】按里面的「不得安装」等词比对）⇒ 不截断。 */
-        const body = name === "skill-audit" ? content : clampSkillDescription(content);
         await fs.writeFile(target, body, "utf8");
       }
       /* 中文导读（09-30 用户：「内置技能都加上中文注释」）：旁挂 README.zh-CN.md，
@@ -343,10 +344,12 @@ export async function ensureBuiltinSkillDirs(skillsDir: string): Promise<void> {
          只认前者的话，被池停用的目录型技能会在每次升级同步时被写回 SKILL.md。 */
       const off = rel === SKILL_FILE ? disabledVariantOf(target) : null;
       const dest = off ?? path.join(target, rel);
+      /* 同一个截断口径：SKILL.md 写截断版，其它文件原样；比对也用最终要写的字节。 */
+      const body = rel === SKILL_FILE ? Buffer.from(clampSkillDescription(content.toString("utf8")), "utf8") : content;
       const existing = await fs.readFile(dest).catch(() => null);
-      if (existing && existing.equals(content)) continue;
+      if (existing && existing.equals(body)) continue;
       await fs.mkdir(path.dirname(dest), { recursive: true });
-      await fs.writeFile(dest, content);
+      await fs.writeFile(dest, body);
     }
   } catch (error) {
     console.warn("[skills] 目录型内置技能同步失败（不阻塞启动）:", error);
