@@ -106,7 +106,8 @@ export async function ensureEgoBrowserSkill(skillsDir: string): Promise<void> {
  * 长描述（实测最长 610 字）等于每轮重复付费。这里**只截 frontmatter 的 description**：
  * 超过 120 字在最近的标点处断开并加省略号；正文一个字不动（技能内容照旧完整）。
  */
-function clampSkillDescription(content: string, max = 120): string {
+/* 11-19 阶段 1：描述再收到 **60 字**——清单只当索引（触发词 + 路径），细节靠 read_file 读正文。 */
+function clampSkillDescription(content: string, max = 60): string {
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return content;
   const head = m[1];
