@@ -344,7 +344,7 @@ bag.loadBaseInstructions = loadBaseInstructions as typeof bag.loadBaseInstructio
          不再往对话里发可见告知（10-25 用户：「不要每次切换还发个消息出去」）。 */
       announceOn: getAnnounceGlobalEnabled() !== false && !isAnnounceMutedForThread(threadId) ? "1" : "0",
     };
-    const base = await bag.loadBaseInstructions();
+    /* 11-19：⛔ 不再加载整份基础指令 —— 引擎已应用 config 里那份，这里只发增量（否则重复注入 ~12k tokens）。 */
     return {
       // 签名带上语气档：只有语气真的变了才重新下发（浮点不进签名，否则每回合都发一次 RPC）
       /* 签名带上回复风格：切到「需求询问」要立刻重下发 instructions（否则要等下次开新会话才生效） */
@@ -358,7 +358,7 @@ bag.loadBaseInstructions = loadBaseInstructions as typeof bag.loadBaseInstructio
         settings: {
           model,
           reasoning_effort: effortValue || null,
-          developer_instructions: [composeMoodInstructions(composeScopeInstructions(base, sessionScopeBlock(values)), bag.adaptiveToneRef.current ? moodBlock(bag.readMood(threadId)) : ""), inquiryInstruction(bag.personality), challengeInstruction(bag.personality), essenceInstruction(bag.personality), handoffNudge()].filter(Boolean).join("\n\n"),
+          developer_instructions: [composeMoodInstructions(composeScopeInstructions("", sessionScopeBlock(values)), bag.adaptiveToneRef.current ? moodBlock(bag.readMood(threadId)) : ""), inquiryInstruction(bag.personality), challengeInstruction(bag.personality), essenceInstruction(bag.personality), handoffNudge()].filter(Boolean).join("\n\n"),
         },
       },
     };

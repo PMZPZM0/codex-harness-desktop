@@ -250,7 +250,7 @@ export async function run() {
   (/moodSignature\(readMood\(threadId\)\)/.test(sigLine57) ? ok : fail)(
     "【57】下发签名含语气档（漏了 = 状态变了也不重新下发，功能看着像没生效）"
   );
-  (/composeMoodInstructions\(composeScopeInstructions\(base, sessionScopeBlock\(values\)\)/.test(appSrc57Code) ? ok : fail)(
+  (/composeMoodInstructions\(composeScopeInstructions\((""|base), sessionScopeBlock\(values\)\)/.test(appSrc57Code) ? ok : fail)(
     "【57】语气块随会话作用域一起下发（同一通道 = 天然按会话隔离）"
   );
   (/bumpMood\(params\.threadId, "turn-ok"\)/.test(appSrc57Code) ? ok : fail)("【57】回合顺利收尾记「向好」");
