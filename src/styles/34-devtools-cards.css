@@ -334,3 +334,63 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
   flex-direction: column;
   gap: 4px;
 }
+
+/* 11-19 预览：每行右侧一枚「预览」图标键（唯一入口，⛔ 正文区不再另设点击面 —— 会出现两个同名控件）。
+   正文区只留 hover 提示，不再承担点击。 */
+.skill-pack-actions-group { display: inline-flex; align-items: center; gap: 6px; }
+.skill-pack-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+.skill-pack-preview-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.skill-pack-preview-btn:disabled { opacity: .45; cursor: default; }
+
+/* 预览弹窗正文：定位句 → 元信息 → 两列（包内技能 / 配套专家）→ 三步 → 底部固定动作条 */
+.skill-pack-preview { gap: 14px; }
+.skill-pack-preview-lead { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text); }
+.skill-pack-meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.skill-pack-preview-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.skill-pack-preview-block { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.skill-pack-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.skill-pack-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--muted);
+}
+.skill-pack-extra { border-top: 1px solid var(--line); padding-top: 10px; }
+.skill-pack-extra > summary { font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.skill-pack-extra[open] > summary { margin-bottom: 8px; }
+.skill-pack-dialog-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}

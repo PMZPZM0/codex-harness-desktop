@@ -1747,20 +1747,21 @@ const CHECKS = [
   },
   {
     id: "content-prediction-card",
-    name: "知微内容预测 · 本机检测和修复指引",
+    name: "精选技能包预览 · 知微本机检测和修复指引（11-19：知微不再单独成卡，入口在包里）",
     run: async (h) => {
       await h.eval(`document.querySelector('.sidebar-settings')?.click()`);
       await h.waitFor(`!!document.querySelector('.settings-nav')`, { label: '设置导航' });
       await h.eval(`[...document.querySelectorAll('.settings-nav button')].find(b => b.textContent.trim() === '开发工具')?.click()`);
-      const open = '.devtools-card[data-card="cheat-on-content"] .devtools-card-open';
-      await h.waitFor(`!!document.querySelector(${JSON.stringify(open)})`, { label: '知微工具入口' });
-      await h.eval(`document.querySelector(${JSON.stringify(open)}).click()`);
-      const ready = `document.querySelector('.settings-dialog .runtime-row')?.textContent.includes('已就绪')`;
-      await h.waitFor(ready, { label: '随包文件就绪' });
-      h.check('显示本机安装位置', await h.eval(`document.querySelector('.settings-dialog .tool-list-preview')?.textContent.includes('cheat-on-content')`));
-      await h.eval(`document.querySelector('.settings-dialog details summary').click()`);
-      h.check('可预览修复指引', await h.eval(`document.querySelector('.settings-dialog details[open] pre')?.textContent.includes('SKILL.md')`));
-      await h.eval(`document.querySelector('.settings-dialog .runtime-row button').click()`);
+      /* 11-19：知微卡删了 ⇒ 开包列表 → 点那一行开预览；断言一律取最后一层 .settings-dialog（别取到包列表那层）。 */
+      const card = '.devtools-card[data-card="skill-packs"] .devtools-card-open', row = '.skill-pack-row[data-pack="cheat-on-content"] .skill-pack-preview-btn';
+      await h.waitFor(`!!document.querySelector(${JSON.stringify(card)})`, { label: '精选技能包入口' }); await h.eval(`document.querySelector(${JSON.stringify(card)}).click()`);
+      await h.waitFor(`!!document.querySelector(${JSON.stringify(row)})`, { label: '知微技能包行' }); await h.eval(`document.querySelector(${JSON.stringify(row)}).click()`);
+      const top = `[...document.querySelectorAll('.settings-dialog')].pop()`; await h.waitFor(`!!${top} && (${top}.textContent||"").includes('怎么用')`, { label: '预览弹窗' });
+      const ready = `${top}?.querySelector('.runtime-row')?.textContent.includes('已就绪')`; await h.waitFor(ready, { label: '随包文件就绪' });
+      h.check('显示本机安装位置', await h.eval(`${top}?.querySelector('.tool-list-preview')?.textContent.includes('cheat-on-content')`));
+      await h.eval(`${top}?.querySelector('details summary')?.click()`);
+      h.check('可预览修复指引', await h.eval(`${top}?.querySelector('details[open] pre')?.textContent.includes('SKILL.md')`));
+      await h.eval(`${top}?.querySelector('.runtime-row button')?.click()`);
       await h.waitFor(ready, { label: '点击后重新检测' });
     },
   },

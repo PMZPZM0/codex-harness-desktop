@@ -15,8 +15,11 @@
  *   · 有删不掉的目录必须报红（不能假装卸载成功）。
  */
 import { useEffect, useMemo, useState } from "react";
-import { CircleCheck, ExternalLink, FolderOpen, PackageOpen, RefreshCw, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { CircleCheck, ExternalLink, Eye, FolderOpen, PackageOpen, RefreshCw, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { SettingsDialog } from "../../components/SettingsDialog";
+import { PredictionCard } from "../settings-devtools";
 
 const errText = (error: unknown) => String((error as { message?: unknown })?.message ?? error);
 
@@ -141,11 +144,66 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
   }) : null;
 
+  /* 11-19 用户令：「这个精选技能包加一个预览弹窗，跟飞书 CLI 一样弹窗界面」。
+     ⛔ 只记 id 不存整行快照：装完 refresh() 会换掉 rows，存快照会显示旧状态。 */
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const preview = previewId ? rows?.find((row) => row.id === previewId) ?? null : null;
+
+  /** 一行右侧的动作（列表行与预览弹窗共用同一份 —— ⛔ 不各写一份，否则两处口径迟早漂移）。
+   *  列表行前面固定一枚「预览」图标键（用户 11-19：「加上预览按键图标」）；
+   *  弹窗底部那道动作条里 ⛔ 不再重复放它（人已经在预览里了，再点一次没有任何意义）。 */
+  const renderAction = (row: SkillPackRow, withPreview = true) => {
+    const isBusy = busy === row.id;
+    let action = null as ReactNode;
+    if (row.bundled && row.bundledMarket) action = <em className="skill-pack-state">随包内置 · 随应用更新</em>;
+    else if (isBusy) action = <button type="button" className="secondary-setting skill-pack-cancel" onClick={() => void cancel(row)}>取消</button>;
+    else if (row.bundled) {
+      /* 11-19 用户令：「精选技能包都要支持更新」——随包内置也能更新：
+         把 resources 里的技能同步进技能目录（覆盖本包旧拷贝）并重启引擎。 */
+      action = (
+        <span className="skill-pack-actions-pair">
+          <button type="button" className="secondary-setting" disabled={isBusy} title="把随包技能同步到技能目录（应用升级后点这里刷新）" onClick={() => void install(row, true)}>
+            <RefreshCw size={13} />更新
+          </button>
+          <em className="skill-pack-state">随包内置</em>
+        </span>
+      );
+    } else if (row.installed) {
+      action = (
+        <span className="skill-pack-actions-pair">
+          <button type="button" className="secondary-setting" disabled={isBusy} title="重新下载并覆盖本包装的技能（上游更新后点这里）" onClick={() => void install(row, true)}>
+            <RefreshCw size={13} />更新
+          </button>
+          <button type="button" className="secondary-setting skill-pack-remove" disabled={isBusy} onClick={() => void uninstall(row)}>
+            <Trash2 size={13} />卸载
+          </button>
+        </span>
+      );
+    } else action = <button type="button" className="primary-setting" onClick={() => void install(row)}>安装</button>;
+    return (
+      <span className="skill-pack-actions-group">
+        {withPreview ? (
+          <button
+            type="button"
+            className="skill-pack-preview-btn"
+            title={`预览 ${row.name}`}
+            aria-label={`预览 ${row.name}`}
+            disabled={isBusy}
+            onClick={() => setPreviewId(row.id)}
+          >
+            <Eye size={14} />
+          </button>
+        ) : null}
+        {action}
+      </span>
+    );
+  };
+
   return (
     <div className="settings-section stack">
       <div className="skill-pack-head-row">
         <p className="settings-card-hint">
-          第三方技能包：装到本机技能目录，Codex 在合适的任务里自动照它做。下载走国内镜像，装完自动重启引擎。
+          第三方技能包：装到本机技能目录，Codex 在合适的任务里自动照它做。下载走国内镜像，装完自动重启引擎。点右侧眼睛看预览。
         </p>
         <button
           type="button"
@@ -198,7 +256,7 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                     {row.repo ? (
                       <>
                         {" · "}
-                        <button type="button" className="skill-pack-link" title="打开仓库" onClick={() => void window.codex.openExternal(`https://github.com/${row.repo}`)}>
+                        <button type="button" className="skill-pack-link" title="打开仓库" onClick={(event) => { event.stopPropagation(); void window.codex.openExternal(`https://github.com/${row.repo}`); }}>
                           {row.repo}<ExternalLink size={10} />
                         </button>
                       </>
@@ -214,39 +272,89 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                   ) : null}
                   {result ? <span className={`skill-pack-result ${result.tone}`}>{result.text}</span> : null}
                 </span>
-                <span className="skill-pack-actions">
-                  {row.bundled && row.bundledMarket ? (
-                    <em className="skill-pack-state">随包内置 · 随应用更新</em>
-                  ) : row.bundled ? (
-                    /* 11-19 用户令：「精选技能包都要支持更新」——随包内置也能更新：
-                       把 resources 里的技能同步进技能目录（覆盖本包旧拷贝）并重启引擎。 */
-                    <span className="skill-pack-actions-pair">
-                      <button type="button" className="secondary-setting" disabled={isBusy} title="把随包技能同步到技能目录（应用升级后点这里刷新）" onClick={() => void install(row, true)}>
-                        <RefreshCw size={13} />更新
-                      </button>
-                      <em className="skill-pack-state">随包内置</em>
-                    </span>
-                  ) : row.installed ? (
-                    <span className="skill-pack-actions-pair">
-                      <button type="button" className="secondary-setting" disabled={isBusy} title="重新下载并覆盖本包装的技能（上游更新后点这里）" onClick={() => void install(row, true)}>
-                        <RefreshCw size={13} />更新
-                      </button>
-                      <button type="button" className="secondary-setting skill-pack-remove" disabled={isBusy} onClick={() => void uninstall(row)}>
-                        <Trash2 size={13} />卸载
-                      </button>
-                    </span>
-                  ) : isBusy ? (
-                    <button type="button" className="secondary-setting skill-pack-cancel" onClick={() => void cancel(row)}>取消</button>
-                  ) : (
-                    <button type="button" className="primary-setting" onClick={() => void install(row)}>安装</button>
-                  )}
-                </span>
+                <span className="skill-pack-actions">{renderAction(row)}</span>
               </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* 预览弹窗（11-19）：版式与「飞书 CLI」那张卡一致 —— 同款标题栏（图标 + 名称 + 副标题 + 关闭）
+          + 独立滚动的正文；正文只写这一行为准的事实（清单字段），⛔ 不在这里另写一份仓库/许可文案。 */}
+      {preview ? (
+        <SettingsDialog
+          elevated
+          size="md"
+          title={preview.name}
+          icon={preview.installed ? <CircleCheck size={15} /> : <PackageOpen size={15} />}
+          hint={[preview.category, preview.version].filter(Boolean).join(" · ") || "精选技能包"}
+          onClose={() => setPreviewId(null)}
+        >
+          <div className="settings-section stack skill-pack-preview">
+            {/* 一行定位 + 元信息：先给「这是什么」，再给可核对的字段（许可 / 体积 / 仓库）。 */}
+            <p className="skill-pack-preview-lead">{preview.description}</p>
+            <p className="skill-pack-meta">
+              <span className="skill-pack-chip">{preview.category || "其它"}</span>
+              <span className="skill-pack-chip">{preview.version || "随包"}</span>
+              <span>{preview.companion}</span>
+              <span>· {preview.license} · {preview.size}</span>
+              {preview.repo ? (
+                <button type="button" className="skill-pack-link" title="打开仓库" onClick={() => void window.codex.openExternal(`https://github.com/${preview.repo}`)}>
+                  {preview.repo}<ExternalLink size={10} />
+                </button>
+              ) : null}
+            </p>
+
+            {preview.skills?.length || preview.experts?.length ? (
+              <div className="skill-pack-preview-cols">
+                {preview.skills?.length ? (
+                  <div className="skill-pack-preview-block">
+                    <div className="feishu-cli-guide-head"><strong>包内技能（{preview.skills.length}）</strong><small>装完逐个可见，可按需停用某一个</small></div>
+                    <span className="skill-pack-chips">
+                      {preview.skills.map((skill) => <em className="skill-pack-chip" key={skill}>{skill}</em>)}
+                    </span>
+                  </div>
+                ) : null}
+                {preview.experts?.length ? (
+                  <div className="skill-pack-preview-block">
+                    <div className="feishu-cli-guide-head"><strong>配套专家</strong><small>装好后做对应任务会自动用上</small></div>
+                    <span className="skill-pack-chips">
+                      {preview.experts.map((expert) => <em className="skill-pack-chip" key={expert}>{expert}</em>)}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* 「怎么用」按步骤写（与飞书 CLI 同一套 feishu-cli-guide-steps），不堆成一段话。 */}
+            <div className="skill-pack-preview-block">
+              <div className="feishu-cli-guide-head"><strong>怎么用</strong><small>三步，不用记命令</small></div>
+              <ol className="feishu-cli-guide-steps">
+                <li><b>{preview.bundled ? "已就位" : "安装"}</b><span>{preview.bundled ? "随包内置，技能已在本机目录；应用升级后点「更新」同步新拷贝。" : "点「安装」下载到本机技能目录（走国内镜像），装完自动重启引擎。"}</span></li>
+                <li><b>生效</b><span>引擎重启后自动加载，不需要手动配路径或改配置。</span></li>
+                <li><b>使用</b><span>在对话里用 # 引用技能，Codex 碰到合适的任务就照它做。</span></li>
+              </ol>
+            </div>
+
+            {preview.id === "cheat-on-content" ? (
+              /* 知微的本机检测与修复指引默认收起：它是排障用的，不该盖过「装什么 / 怎么用」。 */
+              <details className="skill-pack-extra">
+                <summary>本机检测与修复指引（知微专用）</summary>
+                <PredictionCard />
+              </details>
+            ) : null}
+          </div>
+
+          {/* 动作条固定在弹窗底部（body 滚动、动作不跟着滚走）。 */}
+          <div className="skill-pack-dialog-actions">
+            <button type="button" className="secondary-setting" onClick={() => preview.skillsRoot && void window.codex.shellReveal(preview.skillsRoot)}>
+              <FolderOpen size={13} />打开技能目录
+            </button>
+            <span className="skill-pack-actions">{renderAction(preview, false)}</span>
+          </div>
+        </SettingsDialog>
+      ) : null}
     </div>
   );
 }
