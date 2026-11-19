@@ -99,8 +99,11 @@ export function filterToolSurface<T>(tools: readonly T[], allowed: readonly stri
   const dropped: string[] = [];
   for (const tool of tools) {
     const name = String((tool as { name?: unknown })?.name ?? (tool as { function?: { name?: unknown } })?.function?.name ?? "");
-    /* ⛔ 只裁**已知宿主工具**；未知名字（MCP 连接器 cloud_kb__* / cos_mcp__*、插件工具）默认保留。 */
-    if (!name || !catalog.has(name) || allow.has(name)) kept.push(tool);
+    /* 11-19 白名单模式（用户：「保留几个官方自带的，其他看看怎么优化」）：
+       · MCP 连接器（名字以 mcp_ 开头，含 mcp_server_tapd__* / cloud_kb__*）一律保留 —— 删了用户接的 MCP 就没了；
+       · 其余**必须**在 CORE/岗位白名单里，不在就收进网关（schema 不常驻，能力仍可由 harness_tools 调到）。
+       ⛔ 这是 schema 可见性，不是权限：执行闸仍在各 handler。 */
+    if (!name || name.startsWith("mcp_") || allow.has(name)) kept.push(tool);
     else dropped.push(name);
   }
   if (dropped.length) {
