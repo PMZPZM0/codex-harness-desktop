@@ -18,6 +18,7 @@ import { senderFromDispatch, senderLineOf, taskLineOf, normalizeSender } from ".
 import { SUBCONV_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
+import { allowedToolsFor, filterToolSurface } from "../tool-profiles";
 import { binOnPath, buildCliRolePrompt, cliCodexHome, cliCodexHomeReady, cliModelEnv, readUsableCliAgents } from "../cli-agents";
 import { isLocalBaseUrl, cliProtocolOf } from "../../src/lib/cli-provider-config.mjs";
 import { augmentedPath } from "../toolchain";
@@ -325,7 +326,8 @@ export async function runDelegatedTask(input: {
     //    （详见 delegate-harness-tool.ts 文件头）；⛔ 无条件挂（带开关条件 = 中途变化不生效）。
     // 10-21：`withStepParam` 给这批工具注入可选的「这一步在干什么」参数（卡片标题）。
     // ⛔ 主进程自己发的 thread/start **不经过** codex-ipc 的拦截 ⇒ 这里必须各自包一层。
-    dynamicTools: desiredTools,
+    /* 11-19 阶段 2：按岗位（产品/工程/设计）收窄；识别不出岗位时回落 CORE。 */
+    dynamicTools: filterToolSurface(desiredTools, allowedToolsFor("expert", `${displayName} ${String(target.kind ?? "")}`)),
   });
   threadId = String(started?.thread?.id ?? "");
   }

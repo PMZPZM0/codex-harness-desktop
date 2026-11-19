@@ -1,0 +1,108 @@
+/**
+ * 工具面画像（11-19 用户令：「工具很多都不是必须要的，保留几个官方自带的；工具和技能都可以按专家和普通会话来，
+ * 普通会话不需要常驻这么多工具，专家都有自己一套工具和技能」「专家会话也按岗位（产品/工程/设计）给子集」）。
+ *
+ * 做法：**不删工具实现**，只按会话类型决定「哪些 schema 进 tool surface」——
+ *   普通会话 = CORE；专家/团队会话 = CORE + 岗位增量。其余能力仍可通过 `harness_tools` 网关调用
+ *   （网关只有一个 schema，成本固定）。
+ *
+ * ⛔ 两个不变量：
+ *  1. **CORE 必须自足**：任务管理、记忆、技能安装、调度、网关 —— 少一个就会出现"普通会话干不了活"。
+ *  2. **画像只影响 schema 的可见性，不影响权限** —— 执行闸仍在主进程各 handler 里，不允许拿这里当安全边界。
+ *  3. 回滚开关：把 `TOOL_PROFILES_ENABLED` 置 false 即恢复全量（不删任何代码）。
+ */
+
+/** 是否启用画像裁剪。⛔ 关掉 = 恢复旧行为（全量工具面），用于线上出问题时的紧急回滚。 */
+export const TOOL_PROFILES_ENABLED = true;
+
+/** 普通会话常驻（模型每轮都看得到 schema 的那些）。⛔ 加名字前先问：普通会话真的每一轮都可能用它吗？ */
+export const CORE_TOOLS: readonly string[] = [
+  // 调度与网关（其余能力都从网关进）
+  "harness_tools",
+  "agent_invoke",
+  "agent_ask",
+  "agent_list_children",
+  "agent_archive_sessions",
+  // 会话自身
+  "compact_context",
+  // 记忆
+  "memory_recall",
+  "memory_write",
+  // 任务清单
+  "task_add",
+  "task_update",
+  // 技能（装之前必须过 skill_audit，规则在指令里）
+  "skill_search",
+  "skill_install",
+  // 图像（用户日常用得最多的一件）
+  "image_generate",
+  "image_view",
+];
+
+/** 已知的宿主工具名目录（只裁这些；⛔ MCP 连接器工具名带 `__` 前缀，一律保留）。
+ *  新增宿主工具时加进这里，否则它会「默认保留」——等于没裁。 */
+export const HOST_TOOL_CATALOG: readonly string[] = [
+  "harness_tools", "agent_invoke", "agent_ask", "agent_list_children", "agent_archive_sessions",
+  "compact_context", "memory_recall", "memory_write", "task_add", "task_update",
+  "skill_search", "skill_install", "laya_judge", "image_generate", "image_view", "image_edit", "image_info",
+  "media_search", "media_detail", "media_preview", "photocraft", "frontend_get_doc", "frontend_apply_doc",
+  "connector_search", "connector_install", "feishu_cli", "filee_convert", "openmaic", "apkstart", "husk",
+  "rpa_save", "rpa_run", "rpa_schedule",
+  "openfilm_status", "openfilm_make_film", "openfilm_check", "openfilm_render", "openfilm_get", "openfilm_skill",
+];
+
+/** 岗位增量：按专家 profession / 团队 category 里的关键词匹配，命中即并入。 */
+export const ROLE_EXTRAS: Record<string, readonly string[]> = {
+  // 产品 / 运营 / 内容
+  product: ["media_search", "media_detail", "media_preview", "skill_search", "memory_recall"],
+  // 工程 / 研发 / 后端 / 前端
+  engineering: [
+    "frontend_get_doc", "frontend_apply_doc",
+    "connector_search", "connector_install",
+    "feishu_cli", "filee_convert", "openmaic", "apkstart", "husk",
+    "rpa_save", "rpa_run", "rpa_schedule",
+  ],
+  // 设计 / 视觉 / 影音
+  design: [
+    "frontend_get_doc", "frontend_apply_doc",
+    "image_edit", "image_info", "photocraft",
+    "media_search", "media_detail", "openfilm_status", "openfilm_make_film", "openfilm_get",
+  ],
+};
+
+/** 把一句自由文本（专家 profession / 岗位 / 团队名）映射成岗位 key；识别不出时返回 null（= 不收窄）。 */
+export function roleKeyOf(text: string): string | null {
+  const raw = String(text ?? "");
+  if (/设计|视觉|美术|影音|剪辑|UI|UX/i.test(raw)) return "design";
+  if (/工程|研发|开发|后端|前端|架构|测试|运维|DevOps|程序员/i.test(raw)) return "engineering";
+  if (/产品|运营|内容|市场|增长|文案|自媒体|编辑/i.test(raw)) return "product";
+  return null;
+}
+
+/** 允许集合：普通会话 = CORE；专家会话 = CORE + 岗位增量；null = 不裁剪（回滚/未知角色）。 */
+export function allowedToolsFor(kind: "normal" | "expert", roleText = ""): readonly string[] {
+  if (!TOOL_PROFILES_ENABLED) return [];
+  if (kind === "normal") return CORE_TOOLS;
+  const key = roleKeyOf(roleText);
+  if (!key) return CORE_TOOLS;
+  return [...CORE_TOOLS, ...(ROLE_EXTRAS[key] ?? [])];
+}
+
+/** 过滤工具面：只按名字筛，⛔ 不改工具对象本身（step 注入等由调用方负责）。 */
+export function filterToolSurface<T>(tools: readonly T[], allowed: readonly string[]): T[] {
+  if (!allowed.length) return [...tools];
+  const allow = new Set(allowed);
+  const catalog = new Set(HOST_TOOL_CATALOG);
+  const kept: T[] = [];
+  const dropped: string[] = [];
+  for (const tool of tools) {
+    const name = String((tool as { name?: unknown })?.name ?? (tool as { function?: { name?: unknown } })?.function?.name ?? "");
+    /* ⛔ 只裁**已知宿主工具**；未知名字（MCP 连接器 cloud_kb__* / cos_mcp__*、插件工具）默认保留。 */
+    if (!name || !catalog.has(name) || allow.has(name)) kept.push(tool);
+    else dropped.push(name);
+  }
+  if (dropped.length) {
+    console.log(`[tool-profile] 收窄工具面：保留 ${kept.length} 个，收进网关 ${dropped.length} 个（${dropped.slice(0, 12).join(",")}${dropped.length > 12 ? "…" : ""}）`);
+  }
+  return kept;
+}

@@ -134,6 +134,14 @@ export const codexFeature = defineFeature<null>({
               合并失败时渲染层自己那批照样能拿到（漏掉就是"工具卡有时没标题"的幽灵差异）。
            ⛔ 只在有工具面时动：`thread/start` 也可能不带 dynamicTools（引擎侧纯空会话）。 */
         if (Array.isArray((params as any)?.dynamicTools)) {
+          /* 11-19 阶段 2：普通会话按 CORE 画像收窄 schema（其余能力从 harness_tools 网关调用）。
+             ⛔ 只裁已知宿主工具，MCP 连接器（带 __ 命名空间）原样保留；rollback 见 tool-profiles.ts。 */
+          try {
+            const { allowedToolsFor, filterToolSurface } = await import("../tool-profiles");
+            (params as any).dynamicTools = filterToolSurface((params as any).dynamicTools, allowedToolsFor("normal"));
+          } catch (error: any) {
+            console.warn("[tool-profile] 收窄失败（按全量继续）：", String(error?.message ?? error).slice(0, 160));
+          }
           (params as any).dynamicTools = withStepParam((params as any).dynamicTools);
         }
       }

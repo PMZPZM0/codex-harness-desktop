@@ -132,5 +132,19 @@ const cssBlock = (css.match(/\.skill-pack-row \{[\s\S]*?\n\}/) ?? [""])[0];
 ok(cssBlock.length > 0 && !/#[0-9a-fA-F]{3,6}\b/.test(cssBlock.replace(/var\(--danger, #c0392b\)/g, "")),
   "技能包列表样式存在且只用主题变量（不写死色值）");
 
+/* ── 11-19 工具画像（用户令：普通会话不需要常驻这么多工具／专家按岗位给子集）────────────
+   判据只锚结构与自洽，⛔ 不锚具体名单长度（名单会随需求变，锚死就会天天红）。 */
+const profilesSrc = readFileSync(ROOT + "/electron/tool-profiles.ts", "utf8");
+const grab = (name) => {
+  const m = profilesSrc.match(new RegExp("export const " + name + "[^=]*=\\s*\\[([\\s\\S]*?)\\]"));
+  return m ? [...m[1].matchAll(/"([a-z0-9_]+)"/g)].map((x) => x[1]) : [];
+};
+const catalogTools = grab("HOST_TOOL_CATALOG");
+const coreTools = grab("CORE_TOOLS");
+ok(coreTools.length >= 8 && coreTools.length <= 24, `【工具画像】CORE_TOOLS 是精选子集（实测 ${coreTools.length} 个）`);
+ok(coreTools.every((name) => catalogTools.includes(name)), "【工具画像】CORE_TOOLS 全部在 HOST_TOOL_CATALOG 里（⛔ 漏登记 = 默认保留 = 没纳入画像）");
+ok(/export const TOOL_PROFILES_ENABLED\s*=\s*(true|false)/.test(profilesSrc), "【工具画像】有 TOOL_PROFILES_ENABLED 回滚开关（置 false 即恢复全量）");
+ok(/roleKeyOf/.test(profilesSrc) && /设计|engineering|工程/.test(profilesSrc), "【工具画像】岗位判定走 roleKeyOf（识别不出岗位时回落 CORE）");
+
 console.log(`\n【skill-packs】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
