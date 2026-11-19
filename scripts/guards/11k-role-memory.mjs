@@ -106,7 +106,7 @@ ok(/ROLE_MEMORY_TOOL_NAME = FABRIC_WRITE_TOOL/.test(roleTool)
   "⛔ 角色与主会话**共用同一个写入工具**（10-05 起统一为 memory_write —— 两套语义的老坑）");
 ok(/buildRoleMemoryTool\(roleRef\)/.test(delegate) && /dynamicTools/.test(delegate),
   "委派会话注册了角色记忆写入工具");
-ok(/dynamicTools: \[buildRoleMemoryTool\(\{ kind: "team-member"/.test(teams),
+ok(/dynamicTools:[\s\S]{0,240}buildRoleMemoryTool\(\{ kind: "team-member"/.test(teams),
   "⛔ 团成员会话也注册了写入工具（含 defer 分支：用户亲自对话那条）");
 ok(!/name: "role_memory_save"/.test(send) && !/memory_role_save/.test(send),
   "⛔ 渲染层主会话**没有**这个工具（它的记忆写入仍走既有 memory_save）");

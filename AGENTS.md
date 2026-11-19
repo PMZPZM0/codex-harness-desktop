@@ -2,23 +2,22 @@
 
 本文件供 Codex 引擎读取：进到本项目（Codex Harness Desktop 桌面应用的源码 / 或本机运行环境）时，先读这里就知道「环境里有什么、缺什么怎么装、怎么调用」。保持简洁，详细手册见 `docs/TOOLCHAIN.md`（若存在）。
 
-> ⛔⛔ **先分清「本地产物」还是「云端界面」—— 搞错一处 = 白干一轮（2026-10-16 用户点名「别老是改错地方，浪费时间」）**
+> ⛔⛔ **两个活跃仓都是纯本地构建 —— 搞错生效方式 = 白干一轮（2026-10-16 用户令；2026-11-19 云助手下线后收敛为两仓）**
 >
 > | 仓 | 改动怎么生效 | ⛔ 禁忌 |
 > |---|---|---|
 > | 桌面版 `D://Codex Harness Desktop`（主仓） | **纯本地构建**：`electron/**` → `npm run build:electron`（**必须重启应用**才生效）；`src/**` → `npm run build:vite`（`npm run dev` 下 vite 热更，刷新即可） | ⛔ **没有服务器、没有部署这一说** |
 > | PPcode `D://PPcode` | **纯本地构建**（同主仓；本仓 = 源码 + 发布页合一） | ⛔ 同上 |
-> | 云助手 `D://Codex Assistant` | **本地壳 + 云端界面**：`electron/**` 本机编译（重启生效）；`src/**` ⛔⛔ **必须部署到服务器**（该仓 `node scripts/deploy-cloud-ui.mjs`），本机 `dist/` 仅兜底 | ⛔ 只本地 build 不部署 = 用户永远看不到 |
+> | ~~云助手 `D://Codex Assistant`~~ | **已下线（2026-11-19 用户令）**：只保留 GitHub 源码仓 `PMZPZM0/codex-harness-cloud-src` 归档；服务器实例已删，云管理侧暂不动 | ⛔ 不再同步 / 构建 / 部署 / 发版 / 推送 |
 >
-> ⇒ 动手前**先确认症状出现在哪个仓、那仓的产物怎么生效**，再决定改哪里、拿什么当判据；
-> ⛔ 别把「云助手要部署」的纪律套到主仓 / PPcode，也别把「主仓本地 build 就行」套到云助手。
-> （这条**不替代**下面「三仓同轮同步」的要求，两者都要守。）
+> ⇒ 动手前**先确认症状出现在哪个仓、那仓的产物怎么生效**，再决定改哪里、拿什么当判据。
+> （这条**不替代**下面「两仓同轮同步」的要求，两者都要守。）
 
 ## 怎么读这份文件（30 秒版）
 
 | 你要做什么 | 读哪一节 |
 |---|---|
-| 先确认改哪个仓、怎么生效 | 下面那张「本地产物 / 云端界面」表 |
+| 先确认改哪个仓、怎么生效 | 下面那张「生效方式」表 |
 | 提交前的硬红线（敏感信息） | 🔒 敏感信息红线 |
 | 改代码前判断放哪一层 | 📐 功能板块划分（细则在 `docs/MODULES.md`） |
 | 改完怎么算合格 | ⛔ 验收铁律 + 🧹 交付卫生 |
@@ -42,7 +41,7 @@
 
 写运维/交接说明时**一律用占位符**：`<服务器地址>`、`<SSH 端口>`、`<出口 IP>`、`<IPv6 前缀>`；真实值只放在本机私密文件（如 `~/.ssh/config`、密码管理器）或服务器侧配置里，⛔ 不进 git、不进文档、不进截图。
 
-提交前必查（命中任何一条就先删再提交；除 staged diff 外，还要查 `git status --short` 里的未跟踪文件；三仓同步时逐仓各查一次）：
+提交前必查（命中任何一条就先删再提交；除 staged diff 外，还要查 `git status --short` 里的未跟踪文件；两仓同步时逐仓各查一次）：
 ```bash
 git diff --cached | grep -nE "([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,}|ssh -p |端口[:：]?[0-9]{2,5}|BEGIN .*PRIVATE KEY"
 ```
@@ -52,20 +51,19 @@ git diff --cached | grep -nE "([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f
 
 完整步骤见 **`docs/REPO-WORKFLOW.md`** —— 要点：本仓（主应用源码）与 `D://PPcode`（PPcode 副本，远端 = `PMZPZM0/PPcode`，源码与发布页**合一**；旧私有仓 ppcode-src 已删，10-13 换仓）同步走「主仓 diff → 逐文件 apply 预检 → 副本验证」；PPcode 发版 = 版本对齐 4 处 → mac 审计 → check → tag → CI 三端构建发布到本仓 Release；两仓 `AGENTS.md` 逐字镜像，改一边必须同步另一边。
 
-> ⛔⛔ **改动必须同轮同步全部三个仓（2026-10-13 用户令，对所有 Agent 生效，无例外）**：本产品有三个源码仓 —— 桌面版 `D://Codex Harness Desktop`（开发主线）、PPcode `D://PPcode`、云助手 `D://Codex Assistant`。**在任一仓完成一轮功能改动后，必须在同一轮把同一批改动同步到另外两个仓，并各自推送 `main`**；⛔ 只改一仓就收尾 = 这一轮工作**未完成**（10-13 用户点名「改动你都没有同步给 ppcode 和云助手」）。步骤见 `docs/REPO-WORKFLOW.md` §二：主仓 diff → **逐文件 `git apply --check` 预检**（⛔ 不整包瞎 apply）→ apply → 副本侧 `npm run build` + 受影响守卫 + `check-preflight` 验证 → `feat(sync)` 提交（写明主仓区间与判据）→ 推各仓远端（云助手推 `cloud`，⛔ 它的 `origin` 指向桌面版仓，推错就污染主线）。⛔ **同步面包含 `logs/` 结论档案**：条目文件与 `logs/index.jsonl` 都要跟；补录后各仓必须跑 `node scripts/logs.mjs reindex` 重建索引（sha256 与文件字节绑定，直接拷索引会哈希不符）。
-> ⛔ **`android/`（安卓远控 App 工程，10-28 立）只存在于主仓，⛔ 不进三仓同步面** —— PPcode / 云助手各自不需要 APK 工程；同步 Electron 源码时整目录跳过，别把三份 Android 工程带出来。
+> ⛔⛔ **改动必须同轮同步两个仓（2026-10-13 用户令；2026-11-19 收敛为两仓，对所有 Agent 生效，无例外）**：本产品现有两个活跃源码仓 —— 桌面版 `D://Codex Harness Desktop`（开发主线）、PPcode `D://PPcode`。**在任一仓完成一轮功能改动后，必须在同一轮把同一批改动同步到另一仓，并各自推送 `origin main`**；⛔ 只改一仓就收尾 = 这一轮工作**未完成**。云助手 `D://Codex Assistant` **已下线**：只保留 GitHub 源码仓 `PMZPZM0/codex-harness-cloud-src` 归档，⛔ 不进同步面、不构建、不部署、不发版、不再推送（服务器实例已删、云管理侧暂不动）。步骤见 `docs/REPO-WORKFLOW.md` §二：主仓 diff → **逐文件 `git apply --check` 预检**（⛔ 不整包瞎 apply）→ apply → 副本侧 `npm run build` + 受影响守卫 + `check-preflight` 验证 → `feat(sync)` 提交（写明主仓区间与判据）。⛔ **同步面包含 `logs/` 结论档案**：条目文件与 `logs/index.jsonl` 都要跟；补录后各仓必须跑 `node scripts/logs.mjs reindex` 重建索引（sha256 与文件字节绑定，直接拷索引会哈希不符）。
+> ⛔ **`android/`（安卓远控 App 工程，10-28 立）只存在于主仓，⛔ 不进两仓同步面** —— PPcode 不需要 APK 工程；同步 Electron 源码时整目录跳过，别把两份 Android 工程带出来。
 > ⛔⛔ **补丁更新规则（2026-10-25 用户令）**
 > · **补丁更新 = NSIS 差分**：GitHub Release 同时发布完整安装包、`*.exe.blockmap`、`latest.yml`；客户端用 electron-updater 只下载变化块，缺 blockmap / 下载失败自动回退完整包。⛔ 不自制覆盖补丁、不直接改安装目录、不从非 GitHub 仓拉可执行文件。
 > · **国内镜像固定顺序**：`gh-proxy.com → ghfast.top → GitHub 直连`（`electron/gh-mirror.ts` 单一真相源）。`latest.yml`、exe、blockmap 三类资产都走同一候选序；补丁资产请求⛔不带令牌。
 > · **更新面板**「更新方式」= `补丁`（默认）/ `完整包`；手动下载与后台静默下载都按所选方式执行；只有 Windows NSIS 用补丁，mac / 其它平台走完整包。
 > · **旧版本 blockmap 必须保留**：electron-updater 需要上一版 blockmap 做基线；从没有 blockmap 的旧版升级时允许整包，但⛔不许删/改历史 Release 资产。
-> · **各自 Release 专用**：桌面版 tag `v*`、资产 `Codex.Harness.Desktop-*`；PPcode 用 `PMZPZM0/PPcode` 自己的 Release；云助手 tag `cloud-v*`、资产 `CodexHarnessAssistant-*`。⛔ 永不使用 `/releases/latest`；⛔ 不跨仓复用安装包 / blockmap / latest.yml；不另建第三方补丁仓。
-> · **三仓 GitHub 对应**：主仓 `PMZPZM0/codex-harness-desktop`（推 `origin main`）；PPcode `PMZPZM0/PPcode`（推 `origin main`，源码+发布合一）；云助手 `PMZPZM0/codex-harness-cloud-src`（本地 `D://Codex Assistant`，推 `cloud main`，⛔ `origin` 指主仓）。补丁流水线改动按「三仓同轮同步」推齐，但各仓只更新自己的更新源与资产。
-> ⛔ 生成物（`electron/preload.ts`、`src/vite-env.d.ts`、`electron/composition.gen.ts`、`electron/builtin-skills/14-skill-harness-api.ts`）由**各仓自己**跑 `npm run gen:ipc` + `npm run gen:domains` 产出，⛔ 别直接套主线仓的（三仓通道数各不相同）；`electron/ipc-channels.manifest.json` 与 `electron/ipc-registry.ts` 是**手写源**，分叉处逐项手工合并；行数棘轮（守卫【265】）按各仓实测值更新。
-> ⛔⛔ **品牌不进同步面（2026-10-25 用户令：「codexharness logo 和 PPcode logo 不要串了」）**：三个仓各有自己的身份基线，**同步功能改动时品牌面保持各仓原样**。
+> · **各自 Release 专用**：桌面版 tag `v*`、资产 `Codex.Harness.Desktop-*`；PPcode 用 `PMZPZM0/PPcode` 自己的 Release。⛔ 永不使用 `/releases/latest`；⛔ 不跨仓复用安装包 / blockmap / latest.yml；不另建第三方补丁仓。
+> · **两仓 GitHub 对应**：主仓 `PMZPZM0/codex-harness-desktop`（推 `origin main`）；PPcode `PMZPZM0/PPcode`（推 `origin main`，源码+发布合一）。补丁流水线改动按「两仓同轮同步」推齐，但各仓只更新自己的更新源与资产。云助手归档仓 `PMZPZM0/codex-harness-cloud-src` 不进补丁流水线。
+> ⛔ 生成物（`electron/preload.ts`、`src/vite-env.d.ts`、`electron/composition.gen.ts`、`electron/builtin-skills/14-skill-harness-api.ts`）由**各仓自己**跑 `npm run gen:ipc` + `npm run gen:domains` 产出，⛔ 别直接套主线仓的（两仓通道数各不相同）；`electron/ipc-channels.manifest.json` 与 `electron/ipc-registry.ts` 是**手写源**，分叉处逐项手工合并；行数棘轮（守卫【265】）按各仓实测值更新。
+> ⛔⛔ **品牌不进同步面（2026-10-25 用户令：「codexharness logo 和 PPcode logo 不要串了」）**：两个活跃仓各有自己的身份基线，**同步功能改动时品牌面保持各仓原样**。
 > · 桌面版（本仓）= **Codex Harness Desktop** + CH 图标（`public/icon.png` / `build/icon.*`），窗口标题同此；
 > · PPcode = **PPcode** + PP 图标（自己的 `public/icon.png` / `build/icon.*`），侧栏品牌名单一来源是 `01-sidebar-shell.tsx` 的 `BRAND_NAME = "PPcode"`，窗口标题 `PPcode`、AUMID `com.ppcode.desktop`、身份基线自称 PPcode —— **这些差异是故意的**；
-> · 云助手沿用桌面版品牌（Codex Harness Desktop + CH 图标），不是第三套。
 > ⛔ 具体纪律：① ⛔ 不把任一仓的 `icon.png` / `build/icon*` / 品牌文案拷到另一仓；② 从主仓 apply 到 PPcode 的 diff 若碰到品牌行，**必须保留 PPcode 侧**（冲突时手工合，不许"统一一下"）；③ 侧栏 `brand-name`、窗口标题、AUMID、登录页/启动页、企业微信接入文案、拓展页数据目录示例都算品牌面；④ 发版/截图核对时先确认左上角品牌名与图标属于该应用。PPcode 守卫 06【235】逐条钉住。
 
 
@@ -121,7 +119,7 @@ git diff --cached | grep -nE "([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f
   （⛔ 不许把数字改大，那是变相豁免）。⛔⛔ **不许按函数名套模板批量生成** —— 试跑 14 条即废
   （产出 `AgentAvatar 组件。` 这种零信息废话）：必须「dump 函数体 → 读完 → 写一句事实」；
   坑 / ⛔ 禁忌钉在**对应函数头顶**，别只写文件头。⚠️ 收尾人工复核 diff：注释与代码冲突时**信代码**。
-  批量补法、脚本清单、三仓同步（**导清单，不整份拷文件**）见 `docs/ARCHITECTURE-RULES.md` §12.6。【295】
+  批量补法、脚本清单、两仓同步（**导清单，不整份拷文件**）见 `docs/ARCHITECTURE-RULES.md` §12.6。【295】
 
 ## 🎨 视觉规范（2026-09-26 立，守卫【170】）
 
