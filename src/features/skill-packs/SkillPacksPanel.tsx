@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { CircleCheck, ExternalLink, Eye, FolderOpen, PackageOpen, RefreshCw, Trash2 } from "lucide-react";
+import { CircleCheck, ExternalLink, Eye, FolderOpen, Info, PackageOpen, RefreshCw, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PredictionCard } from "../settings-devtools";
@@ -31,6 +31,8 @@ type SkillPackRow = {
   description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string;
   /* 11-19：分类分组 / 包内技能（「拆开」后逐条可见）/ 配套专家 */
   category?: string; skills?: string[]; experts?: string[]; bundled?: boolean; bundledMarket?: boolean; version?: string;
+  /* 11-20：第三方内容的使用声明（风险边界 / 署名 / 许可限制），原样展示、不在这里改写 */
+  notice?: string;
 };
 
 /** 分类展示顺序（先工程、再设计、再内容，浏览器自动化与视频各自归口）。 */
@@ -262,6 +264,8 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                       </>
                     ) : null}
                   </span>
+                  {/* 11-20 用户令：第三方内容要带声明（非医疗 / 署名 / 非商业限制），与清单同源展示 */}
+                  {row.notice ? <span className="skill-pack-notice" role="note">{row.notice}</span> : null}
                   {isBusy ? (
                     <span className="skill-pack-stage">
                       <span className="runtime-progress-bar" role="progressbar" aria-label={`${row.name} 安装进度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
@@ -294,6 +298,13 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
           <div className="settings-section stack skill-pack-preview">
             {/* 一行定位 + 元信息：先给「这是什么」，再给可核对的字段（许可 / 体积 / 仓库）。 */}
             <p className="skill-pack-preview-lead">{preview.description}</p>
+            {/* 使用声明：第三方内容的风险边界与许可限制（文案来自清单，⛔ 不在组件里另写） */}
+            {preview.notice ? (
+              <div className="skill-pack-notice-card" role="note">
+                <Info size={13} />
+                <span>{preview.notice}</span>
+              </div>
+            ) : null}
             <p className="skill-pack-meta">
               <span className="skill-pack-chip">{preview.category || "其它"}</span>
               <span className="skill-pack-chip">{preview.version || "随包"}</span>
@@ -351,6 +362,12 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
             <button type="button" className="secondary-setting" onClick={() => preview.skillsRoot && void window.codex.shellReveal(preview.skillsRoot)}>
               <FolderOpen size={13} />打开技能目录
             </button>
+            {preview.repo ? (
+              /* 11-20 用户令：GitHub 跳转做成显式按钮（不只藏在行尾小字里） */
+              <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(`https://github.com/${preview.repo}`)}>
+                <ExternalLink size={13} />GitHub 仓库
+              </button>
+            ) : null}
             <span className="skill-pack-actions">{renderAction(preview, false)}</span>
           </div>
         </SettingsDialog>

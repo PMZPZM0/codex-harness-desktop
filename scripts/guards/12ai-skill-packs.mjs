@@ -40,6 +40,9 @@ if (catalog) {
   ok(catalog.every((pack) => pack.license && pack.licenseUrl.includes(pack.repo)), "许可徽标与许可原文链接齐全（链接指向本仓库）");
   ok(catalog.every((pack) => pack.companion.startsWith("配套")), "每条都写了「配套工具」（用户点名的三要素之一）");
   ok(catalog.every((pack) => pack.description.length >= 12 && pack.size), "说明与体积都在（卡片不留空字段）");
+  /* 11-20 用户令：第三方内容要带声明（非医疗 / 署名 / 非商业限制）—— 清单是单一真相源。 */
+  ok(catalog.some((pack) => pack?.id === "shendeng" && /不替代医疗/.test(String(pack?.notice ?? "")) && /CC BY-NC/.test(String(pack?.license ?? ""))),
+    "神灯带使用声明（心理引导不替代医疗诊断 + CC BY-NC 非商业限制）");
 }
 
 /* ── ②③④ 安装器结构 ─────────────────────────────────────────────────── */
@@ -118,6 +121,10 @@ ok(/runtime-progress-bar/.test(panel) && /event\.percent/.test(panel) && /event\
   "安装中显示百分比 / 速度 / 进度条，右侧按钮变「取消」；取消结果中性展示");
 ok(/const activeInstalls = new Map/.test(feature) && /正在安装中，请稍候或先取消/.test(feature),
   "同一技能包不允许并发安装（避免两份下载同时写 skills 目录）");
+/* 11-20 用户令「加上声明和注释，和 github 跳转」：声明卡片/预览都展示；仓库可显式跳 GitHub。 */
+ok(/row\.notice/.test(panel) && /preview\.notice/.test(panel) && /className="skill-pack-notice/.test(panel)
+  && /GitHub 仓库/.test(panel) && /window\.codex\.openExternal\(`https:\/\/github\.com\/\$\{preview\.repo\}`\)/.test(panel),
+  "声明（卡片 + 预览）与 GitHub 显式跳转都在（跳转走 openExternal，不在应用内导航）");
 /* ★ 10-30「要真安装真卸载」：界面结果必须以磁盘回读为准，不能一律绿色糊过去。 */
 ok(/磁盘确认已写入/.test(panel) && /磁盘确认已不存在/.test(panel) && /没有新技能：/.test(panel),
   "界面结果以磁盘回读为准：写入数 / 已删净 / 「同名已存在」不得说成成功");

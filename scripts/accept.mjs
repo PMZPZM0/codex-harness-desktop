@@ -1221,6 +1221,8 @@ const CHECKS = [
         JSON.stringify(packs));
       h.check("④ 清单来自主进程且 id 各不相同",
         Array.isArray(packs) && new Set(packs.map((p) => p.id)).size === packs.length && packs.length >= 3, JSON.stringify(packs && packs.map((p) => p.id)));
+      const shendengRow = await h.eval(`(function(){ const r=document.querySelector('.skill-pack-row[data-pack="shendeng"]'); if(!r) return null; return { text:(r.textContent||""), links:[...r.querySelectorAll('.skill-pack-link')].map(function(b){return b.title||"";}) }; })()`).catch(() => null);
+      h.check("⑤ 神灯行带使用声明（非医疗）与 GitHub 跳转", Boolean(shendengRow && /不替代医疗/.test(shendengRow.text) && Array.isArray(shendengRow.links) && shendengRow.links.length > 0), JSON.stringify(shendengRow && { notice: /不替代医疗/.test(shendengRow.text), links: shendengRow.links }));
       await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
       await wait(300);
     },

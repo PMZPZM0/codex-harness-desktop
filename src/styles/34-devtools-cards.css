@@ -200,6 +200,16 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
   color: var(--muted); font-size: 11px; cursor: pointer; text-decoration: none;
 }
 .skill-pack-link:hover { color: var(--link); text-decoration: underline; }
+/* 11-20：第三方内容的使用声明（非医疗 / 署名 / 非商业）—— 卡片里一行小字、预览弹窗里一块提示 */
+.skill-pack-notice { font-size: 10.5px; line-height: 1.55; color: var(--amber, var(--muted)); }
+.skill-pack-notice-card {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--amber, var(--muted)) 30%, var(--line));
+  background: color-mix(in srgb, var(--amber, var(--muted)) 7%, var(--bg));
+  font-size: 11px; line-height: 1.6; color: var(--text);
+}
+.skill-pack-notice-card svg { flex: none; margin-top: 1px; color: var(--amber, var(--muted)); }
 .skill-pack-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .skill-pack-actions .primary-setting,
 .skill-pack-actions .secondary-setting { display: inline-flex; align-items: center; gap: 5px; }

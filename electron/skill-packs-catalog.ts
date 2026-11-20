@@ -26,6 +26,8 @@ export type SkillPackDef = {
   skills?: string[];
   /** 配套专家 / 专家团：装了包之后，这些专家做对应任务会自动用上 */
   experts?: string[];
+  /** 使用声明 / 风险边界（第三方内容专用）：卡片与预览弹窗原样展示，⛔ 不许在界面里另写一份 */
+  notice?: string;
   /** 上游版本：有 release 用标签（v2.5.1），没有就用最近推送日期（2026-11-19）；内置包写「随包」 */
   version?: string;
   /** 随包内置（resources/expert-skills/<dir>）：随应用分发，界面只展示不下载。
@@ -146,6 +148,7 @@ export const SKILL_PACKS: SkillPackDef[] = [
     companion: "配套：知识库 + 长期记忆（沉淀个案与 22 条公式）",
     category: "生活指南",
     skills: ["shendeng"],
+    notice: "声明：心理引导不替代医疗诊断；自伤 / 严重抑郁等急性危机请寻求专业帮助。内容来自第三方（作者：罗伟泽 · 听心格爱），CC BY-NC 4.0 —— 须保留署名，不得用于商业销售。",
   },
   {
     /* 11-19：cheat on 早在随包 resources/expert-skills/cheat-on-content ⇒ 只做展示。 */
