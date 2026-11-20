@@ -112,6 +112,7 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
     items: [
       { page: "开发工具", what: "工具安装状态与一键下载（Python / Git / FFmpeg / 浏览器内核等）；飞书 CLI 也在这里按需安装 / 登录 / 卸载", when: "某个任务提示缺工具时来这里装" },
       { page: "拓展接口", what: "本项目所有可扩展点（IPC / 主题 / 技能 / 守卫…）的用途、改法、生效方式与配套守卫，可一键复制说明", when: "想自己加一个接口、主题或技能，或接手这份代码想知道从哪下手时" },
+      { page: "GitHub 热门", what: "GitHub 热门榜单（按日 / 周 / 月），卡片上带中文简介，可直接打开仓库", when: "想找现成的库 / 工具，或者没思路时先逛逛" },
     ],
   },
 ];

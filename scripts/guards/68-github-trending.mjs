@@ -34,8 +34,10 @@ const manifest = read("electron/ipc-channels.manifest.json");
 const ipcRegistry = read("electron/ipc-registry.ts");
 const extensions = read("electron/features/extensions-ipc.ts");
 
-ok(/\"github-trending\",\s*\"GitHub 热门\"/.test(nav) && /group:\s*\"发现\"/.test(nav),
-  "设置导航最底新增「发现 → GitHub 热门」");
+/* ⛔ 11-20 对账：热门页一度单开「发现」组，但【247】有「分组不许过轻（<2 项）」的下限
+   ⇒ 单页孤组会被判红。改并入「开发」组（导航里仍在，只是不单独成组）。 */
+ok(/\"github-trending\",\s*\"GitHub 热门\"/.test(nav),
+  "设置导航里有「GitHub 热门」页（并入「开发」组 —— ⛔ 不单开只有一页的组）");
 ok((/github-trending/.test(registry) || /github-trending/.test(discover))
   && (/GithubTrendingPage/.test(registry) || /GithubTrendingPage/.test(discover)),
   "设置注册表有 github-trending 的真实渲染分支（不是只有导航项）");

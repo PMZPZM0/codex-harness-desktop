@@ -233,7 +233,7 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
               <div key={row.id} className="skill-pack-group-wrap">
               {showGroup ? <p className="skill-pack-group">{row.category || "其它"}</p> : null}
               <div className="skill-pack-row" data-pack={row.id}>
-                <span className="skill-pack-icon">{isBusy ? <Spinner /> : row.installed ? <CircleCheck size={15} /> : <PackageOpen size={15} />}</span>
+                <span className="skill-pack-icon">{row.installed ? <CircleCheck size={15} /> : <PackageOpen size={15} />}</span>
                 <span className="skill-pack-main">
                   <span className="skill-pack-line1">
                     <strong>{row.name}</strong>

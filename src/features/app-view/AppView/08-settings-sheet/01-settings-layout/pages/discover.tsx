@@ -7,6 +7,7 @@ import type { HarnessAppApi } from "../../../../../app-state/useHarnessApp";
 import type { SettingsPage, SettingsPageEntry } from "../types";
 import { GithubTrendingPage } from "../../../../../github-trending";
 
+/** 「发现」分组的页面注册（当前只有 GitHub 热门）：交给设置台的注册表合并。 */
 export function discoverPages(_app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   return {
     "github-trending": { render: () => <GithubTrendingPage /> },

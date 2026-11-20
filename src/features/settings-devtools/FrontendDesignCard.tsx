@@ -44,7 +44,8 @@ async function latestCommit(repo: string): Promise<LatestCommit> {
   if (!response.ok) {
     throw new Error(response.status === 403 ? "GitHub 接口限流，稍后再试（或点项目主页查看）" : `GitHub 返回 HTTP ${response.status}`);
   }
-  const list: any = await response.json();
+  /* ⛔ 不写 any（守卫按文件统计 any 数）：GitHub commits 列表只需要 sha 与提交时间。 */
+  const list = (await response.json()) as Array<{ sha?: unknown; commit?: { committer?: { date?: unknown } } }>;
   const first = Array.isArray(list) ? list[0] : null;
   if (!first?.sha) throw new Error("没有拿到最新提交");
   return { sha: String(first.sha), date: String(first.commit?.committer?.date ?? "") };
@@ -58,13 +59,19 @@ export function FrontendDesignCard() {
     uiverse: { phase: "idle", text: "点「检查更新」查上游最新提交" },
     m3e: { phase: "idle", text: "点「检查更新」查上游最新提交" },
   });
-  const [canvas, setCanvas] = useState({ version: M3E.fallbackVersion, pinned: M3E.fallbackPinned });
+  /* ⛔ 必须显式给泛型：`M3E.fallbackVersion` 是 as const 的字面量（"0.1.0" / 提交哈希），
+     不写泛型时 useState 会把 state 推断成那两个**字面量类型** ⇒ 后面 setCanvas 传
+     `String(data.upstreamVersion || …)` 就报 `Type 'string' is not assignable to type '"0.1.0"'`。 */
+  const [canvas, setCanvas] = useState<{ version: string; pinned: string }>({
+    version: M3E.fallbackVersion,
+    pinned: M3E.fallbackPinned,
+  });
 
   /* 内置产物自带 CANVAS-BUILD.json（上游版本 + 固定提交），优先用它显示真实版本。 */
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}sketch/CANVAS-BUILD.json`)
       .then((response) => (response.ok ? response.json() : null))
-      .then((data: any) => {
+      .then((data: { upstreamVersion?: unknown; fork?: { pinnedCommit?: unknown } } | null) => {
         if (!data) return;
         setCanvas({
           version: String(data.upstreamVersion || M3E.fallbackVersion),
