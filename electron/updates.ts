@@ -14,7 +14,7 @@
  *      （https + sha256 + 镜像序重试）→ installUpdate() 运行安装包
  */
 import fs from "node:fs/promises";
-import { existsSync, createWriteStream, createReadStream, readdirSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, createWriteStream, createReadStream, readdirSync, rmSync, statSync, unlinkSync, appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import https from "node:https";
@@ -394,6 +394,101 @@ export function hasDifferentialBaseline(): boolean {
   } catch {
     return false;
   }
+}
+
+/* ── 11-20 重做：不再依赖「安装器会自己写 installer.exe」这个假设 ──────────────────
+ *
+ * 用户实测「不管怎么选都是完整安装包」，说明这台机器的 oldFile（差分的比对基准）
+ * 就是不在。与其继续猜是 NSIS 的 copyFile 没执行、还是升级路径绕过了它，
+ * 不如**我们自己保证这个文件的存在**，形成闭环：
+ *   ① 启动/检查更新时补：缓存里没有 installer.exe，就去 pending 目录找「当前已安装版本」的
+ *      安装包（用户手动装过之后，包往往还在那儿）复制过去；
+ *   ② 下载完成时记：把这次下到的包复制成 installer.exe，并写 installer.version；
+ *   ③ 启动时校验：installer.version 与当前版本不符 ⇒ 上次没装成 ⇒ 删掉，避免下次差分
+ *      拿错基准导致 sha512 失败（宁可整包一次，也不要"差分必然失败"的稳定状态）。
+ *  ⛔ 只动自家 updater 缓存目录，不碰安装目录、不碰用户数据。 */
+
+/** updater 缓存目录（与 app-update.yml 的 updaterCacheDirName 同源：sanitize(name).toLowerCase()+"-updater"）。 */
+function updaterCacheDir(): string {
+  const base = process.env.LOCALAPPDATA || process.env.APPDATA || "";
+  return base ? path.join(base, `${app.getName()}-updater`) : "";
+}
+
+/** 主进程日志（安装链排障用），失败静默。 */
+function logUpdate(line: string): void {
+  try {
+    const base = process.env.APPDATA || "";
+    if (!base) return;
+    const dir = path.join(base, app.getName());
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path.join(dir, "update-install.log"), `[${new Date().toISOString()}] [cache] ${line}\n`);
+  } catch { /* 日志写不了不影响更新 */ }
+}
+
+/** ① 补齐 oldFile：缓存里没有 installer.exe 时，用「当前已安装版本」的安装包补上。 */
+export function ensureInstallerCache(): { ok: boolean; source: string } {
+  try {
+    const dir = updaterCacheDir();
+    if (!dir) return { ok: false, source: "no_localappdata" };
+    const installer = path.join(dir, "installer.exe");
+    if (existsSync(installer)) return { ok: true, source: "existing" };
+    const version = String(app.getVersion() || "");
+    if (!version) return { ok: false, source: "no_version" };
+    const pending = path.join(dir, "pending");
+    const hits: string[] = [];
+    if (existsSync(pending)) {
+      for (const name of readdirSync(pending)) {
+        /* ⛔ 只认「正式名 + 版本号匹配 + 不是 temp-」的文件：temp- 是没下完的半截包，
+           拿它当 oldFile 会让下一次差分算错块。 */
+        if (!/\.exe$/i.test(name) || /^temp-/i.test(name)) continue;
+        if (!name.includes(version)) continue;
+        hits.push(path.join(pending, name));
+      }
+    }
+    if (!hits.length) return { ok: false, source: "none" };
+    fs.copyFile(hits[0], installer).then(() => {
+      fs.writeFile(path.join(dir, "installer.version"), version, "utf8").catch(() => {});
+      logUpdate(`补齐 oldFile：${hits[0]} → installer.exe（版本 ${version}）`);
+    }).catch((e: unknown) => logUpdate(`补齐 oldFile 失败：${String(e)}`));
+    return { ok: true, source: hits[0] };
+  } catch (e) {
+    logUpdate(`ensureInstallerCache 异常：${String(e)}`);
+    return { ok: false, source: "error" };
+  }
+}
+
+/** ② 下载完成后登记：把这个包复制成 installer.exe，并记下版本（装成功后它就是下一版的 oldFile）。 */
+export function rememberDownloadedInstaller(file: string, version: string): void {
+  try {
+    const dir = updaterCacheDir();
+    if (!dir || !file || !existsSync(file) || !version) return;
+    fs.mkdir(dir, { recursive: true })
+      .then(() => fs.copyFile(file, path.join(dir, "installer.exe")))
+      .then(() => fs.writeFile(path.join(dir, "installer.version"), version, "utf8"))
+      .then(() => logUpdate(`登记 oldFile：${path.basename(file)} → installer.exe（版本 ${version}）`))
+      .catch((e: unknown) => logUpdate(`登记 oldFile 失败：${String(e)}`));
+  } catch { /* 不阻断更新 */ }
+}
+
+/** ③ 启动校验：记录的版本与当前版本不符 ⇒ 上次没装成 ⇒ 删掉错配的 oldFile。 */
+export function pruneStaleInstallerCache(): void {
+  try {
+    const dir = updaterCacheDir();
+    if (!dir) return;
+    const verFile = path.join(dir, "installer.version");
+    if (!existsSync(verFile)) return; /* 没有版本文件 = 安装器自己写的，信它 */
+    const recorded = readFileSyncSafe(verFile);
+    const current = String(app.getVersion() || "");
+    if (recorded && current && recorded !== current) {
+      rmSync(path.join(dir, "installer.exe"), { force: true });
+      rmSync(verFile, { force: true });
+      logUpdate(`清理错配 oldFile：记录 ${recorded}，当前 ${current}`);
+    }
+  } catch { /* 忽略 */ }
+}
+
+function readFileSyncSafe(file: string): string {
+  try { return require("node:fs").readFileSync(file, "utf8").trim(); } catch { return ""; }
 }
 
 /** ⛔⛔ 11-15 用户实测「点重启安装，应用关了、安装提醒一闪就没装」的根因在这里：

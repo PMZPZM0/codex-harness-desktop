@@ -34,6 +34,9 @@ import {
   downloadUpdate,
   downloadUpdateDifferential,
   hasDifferentialBaseline,
+  ensureInstallerCache,
+  pruneStaleInstallerCache,
+  rememberDownloadedInstaller,
   fileExists,
   hasPendingDifferential,
   quitAndInstallDifferential,
@@ -134,12 +137,21 @@ export const updatesFeature = defineFeature<null>({
          ⛔ mode 现在只影响进度文案，不再影响走哪条通道 —— 想强制整包请把 latest.yml 去掉。 */
       const version = lastUpdateInfo?.version;
       if (!version) return null;
+      /* ⛔ 11-20 重做（用户：「差分补丁删了重新做」）：先保证差分 oldFile 存在，
+         再校验它没和当前已装版本错配 —— 这两步以前完全没做，全靠"安装器会写 installer.exe"
+         这个假设；假设不成立时就是「不管怎么选都是完整包」。 */
+      pruneStaleInstallerCache();
+      const ensured = ensureInstallerCache();
+      installLog(`差分前检查 oldFile：${ensured.ok ? "就绪（" + ensured.source + "）" : "缺失（" + ensured.source + "）"}`);
       try {
         const result = await downloadUpdateDifferential({ version, tag: lastUpdateInfo?.tag }, onProgress);
         lastVerifiedUpdatePath = result.path;
+        /* 下载完成即登记：这个包就是安装后的「当前版本」，下一版差分拿它当 oldFile。 */
+        rememberDownloadedInstaller(result.path, String(result.version ?? version));
         return { ...result, bytes: statSync(result.path).size };
       } catch (error: any) {
         console.warn("[updates] 差分更新失败，回退完整包：", error?.message ?? error);
+        installLog(`差分失败，回退完整包：${error?.message ?? String(error)}`);
         return null;
       }
     };
@@ -184,6 +196,7 @@ export const updatesFeature = defineFeature<null>({
         const dest = path.join(dir, safeName);
         const info = await downloadUpdate(url, dest, ({ percent }) => pushProgress(percent), lastUpdateInfo?.sha256);
         lastVerifiedUpdatePath = info.path;   // 只有校验通过才会走到这里
+        rememberDownloadedInstaller(info.path, String(lastUpdateInfo?.version ?? ""));
         return { ok: true, path: info.path, bytes: info.bytes, differential: false };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
@@ -278,6 +291,8 @@ export const updatesFeature = defineFeature<null>({
         const safeName = String(lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
         const info = await downloadUpdate(url, path.join(dir, safeName), pushState, lastUpdateInfo?.sha256);
         lastVerifiedUpdatePath = info.path;
+        /* 11-20：完整包也登记成 oldFile —— 下一版才有差分基准（不再只靠安装器写）。 */
+        rememberDownloadedInstaller(info.path, String(lastUpdateInfo?.version ?? ""));
         sendToWindow("updates:download-state", { active: false, phase: "download", percent: 1, version });
         // ⛔ 主动推一条事件：渲染层可能没打开设置页，只能靠事件弹窗（需求 3）。
         sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: info.path });
