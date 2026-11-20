@@ -254,27 +254,16 @@ bag.updateError = updateError as typeof bag.updateError; bag.setUpdateError = se
   const [updateDownloading, setUpdateDownloading] = useState(false);
 bag.updateDownloading = updateDownloading as typeof bag.updateDownloading; bag.setUpdateDownloading = setUpdateDownloading as typeof bag.setUpdateDownloading;
 
-  /* 更新方式（10-25）：差分优先；用户可切到完整包绕开差分。持久化在 localStorage。
-     ⛔ 11-17：差分只有 Windows NSIS blockmap 支持；mac/linux 强制完整包，界面也不给切换。 */
-  const updateDiffSupported = /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent);
-  const [updateMode, setUpdateModeState] = useState<"differential" | "full">(() => {
-    if (!updateDiffSupported) return "full";
-    try { return localStorage.getItem("update-mode-v1") === "full" ? "full" : "differential"; } catch { return "differential"; }
-  });
-  const setUpdateMode = (mode: "differential" | "full") => {
-    const next = updateDiffSupported ? mode : "full";
-    setUpdateModeState(next);
-    try { localStorage.setItem("update-mode-v1", next); } catch { /* 隐私模式忽略 */ }
-  };
-bag.updateMode = updateMode as typeof bag.updateMode; bag.setUpdateMode = setUpdateMode as typeof bag.setUpdateMode;
-bag.updateDiffSupported = updateDiffSupported as typeof bag.updateDiffSupported;
+  /* 11-20 用户令：「差分更新删了吧，就保留一个正常安装包更新」。
+     ⇒ 「更新方式（补丁 / 完整包）」整套删除：没有可选项，每版都下完整安装包。
+        ⛔ 别再往回加：实测当前镜像链路上差分根本下载不了（multipart 不支持 + 单段请求被重置）。 */
 
   const [updateProgress, setUpdateProgress] = useState(0);
 bag.updateProgress = updateProgress as typeof bag.updateProgress; bag.setUpdateProgress = setUpdateProgress as typeof bag.setUpdateProgress;
 
   // 启动静默检查发现新版本 → 弹出的通知卡片（用户关掉后本次会话不再弹）
-  const [updateNotice, setUpdateNotice] = useState<{ version?: string; changelog?: string; size?: number; mandatory?: boolean } | null>(null);
-bag.updateNotice = updateNotice as typeof bag.updateNotice; bag.setUpdateNotice = setUpdateNotice as typeof bag.setUpdateNotice;
+  /* 11-20 用户令：「只要用户没点击更新，就不要弹窗，也不要自动下载」。启动静默检查只更新
+     updateInfo（账号菜单里显示「有新版本」），⛔ 不再弹「发现新版本」卡片。 */
 
   const accountMenuRef = useRef<HTMLDivElement>(null);
 bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
@@ -303,9 +292,7 @@ bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
             detail: { version: String(pending.version ?? "") },
           }));
         }
-        if (r.info?.hasUpdate) {
-          bag.setUpdateNotice({ version: r.info.version, changelog: r.info.changelog, size: r.info.size, mandatory: r.info.mandatory });
-        }
+        /* ⛔ 11-20：不再弹「发现新版本」卡片；有更新只在侧栏底部图标上提示。 */
       } catch (err) {
         // 静默：网络不通、发布站不可达都不打扰用户
         console.warn("[update] startup check failed:", err);
@@ -315,5 +302,5 @@ bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
     // 仅启动时跑一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return { buildStamp, bundleFile, lightbox, setLightbox, pastedText, setPastedText, systemEvents, setSystemEvents, hookPulse, setHookPulse, welcomeScratchDir, setWelcomeScratchDir, welcomeCwdMenuOpen, setWelcomeCwdMenuOpen, identityGreeted, setIdentityGreeted, ponytailOn, setPonytailOn, channelOnline, setChannelOnline, switchJumpRef, switchJumpPending, threadCacheRef, threadProviderRef, autoMigratedRef, switchingThreadId, setSwitchingThreadId, switchSeqRef, recentResumeAtRef, turnsCursorRef, switchingFading, setSwitchingFading, fadeOutTimerRef, switchHardTimerRef, theme, setTheme, accountMenuOpen, setAccountMenuOpen, accountMenuSub, setAccountMenuSub, updateInfo, setUpdateInfo, updateCurrentVersion, setUpdateCurrentVersion, updateChecking, setUpdateChecking, updateError, setUpdateError, updateDownloading, setUpdateDownloading, updateMode, setUpdateMode, updateProgress, setUpdateProgress, updateNotice, setUpdateNotice, accountMenuRef };
+  return { buildStamp, bundleFile, lightbox, setLightbox, pastedText, setPastedText, systemEvents, setSystemEvents, hookPulse, setHookPulse, welcomeScratchDir, setWelcomeScratchDir, welcomeCwdMenuOpen, setWelcomeCwdMenuOpen, identityGreeted, setIdentityGreeted, ponytailOn, setPonytailOn, channelOnline, setChannelOnline, switchJumpRef, switchJumpPending, threadCacheRef, threadProviderRef, autoMigratedRef, switchingThreadId, setSwitchingThreadId, switchSeqRef, recentResumeAtRef, turnsCursorRef, switchingFading, setSwitchingFading, fadeOutTimerRef, switchHardTimerRef, theme, setTheme, accountMenuOpen, setAccountMenuOpen, accountMenuSub, setAccountMenuSub, updateInfo, setUpdateInfo, updateCurrentVersion, setUpdateCurrentVersion, updateChecking, setUpdateChecking, updateError, setUpdateError, updateDownloading, setUpdateDownloading, updateProgress, setUpdateProgress, accountMenuRef };
 }

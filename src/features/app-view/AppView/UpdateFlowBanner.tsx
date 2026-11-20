@@ -21,8 +21,6 @@ type UpdateFlowState = {
   receivedBytes?: number;
   totalBytes?: number;
   version?: string;
-  /** 11-19：选了补丁但本机无差分基线 ⇒ 本次必然是完整包，界面要明说。 */
-  noBaseline?: boolean;
 };
 
 /** 字节 → 人类可读（进度条副行用；未知大小返回空串）。 */
@@ -90,7 +88,7 @@ export function UpdateFlowBanner() {
         <UpdateProgressBar active progress={percent} />
         <div className="update-flow-sub">
           {received && total ? `${received} / ${total} · ` : ""}
-          {state.noBaseline ? "本次为完整包（本机无差分基线，装完自动建立）" : "后台进行中，不影响你继续使用"}
+          后台进行中，不影响你继续使用
         </div>
       </div>
     </div>,

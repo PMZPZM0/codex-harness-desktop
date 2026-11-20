@@ -542,6 +542,47 @@
   font-size: 12.5px;
   overflow: hidden;
 }
+/* 11-20 用户令（截图定稿）：「有更新就在这里提醒，鼠标放上去这样展示，动态的」——
+   账户行右侧一个蓝色胶囊「⬇ 更新」：hover 图标上下浮 + 光晕；下载中变成百分比；就绪变绿「安装」。
+   ⛔ 只有这一个入口：不弹「发现新版本」卡片、不弹右上角更新提醒、不自动下载。 */
+.account-update-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  margin-right: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent, #2f6feb);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
+}
+.account-update-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent, #2f6feb) 45%, transparent);
+}
+.account-update-badge:active { transform: translateY(0); }
+.account-update-badge .account-update-icon { animation: none; }
+.account-update-badge:hover .account-update-icon { animation: account-update-bob 1s ease-in-out infinite; }
+@keyframes account-update-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(2px); }
+}
+.account-update-badge.is-downloading { background: color-mix(in srgb, var(--accent, #2f6feb) 78%, #000); }
+.account-update-badge.is-downloading .account-update-label { animation: account-update-pulse 1.4s ease-in-out infinite; }
+@keyframes account-update-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .58 } }
+.account-update-badge.is-ready { background: #2ea043; }
+.account-update-badge.is-ready:hover { box-shadow: 0 2px 10px rgba(46, 160, 67, .45); }
+.account-update-badge .account-update-label { white-space: nowrap; }
+
 .sidebar-settings {
   width: 32px;
   height: 32px;

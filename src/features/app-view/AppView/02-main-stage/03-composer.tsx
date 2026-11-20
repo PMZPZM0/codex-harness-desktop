@@ -154,7 +154,6 @@ import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 import { ComposerComposerCardStack } from "./03-composer/01-composer-card-stack";
 import { AgentAskCard } from "./03-composer/03-agent-ask-card";
 import { ArchiveToast } from "../../../../components/ArchiveToast";
-import { UpdateProgressBar } from "../../../../components/UpdateProgressBar";
 import { ComposerComposerForm } from "./03-composer/02-composer-form";
 /* ⛔ 11-11 独立板块：异步执行反馈（外面会话里派团时的可见反馈；与群聊共用同一个板块）。 */
 import { AsyncRunPanel } from "../../../async-run-feedback";
@@ -289,7 +288,6 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     openAppPrompt,
     setSkillQuery,
     setThreadFileQuery,
-    setUpdateNotice,
     setWelcomeCwdMenuOpen,
     setWelcomeScratchDir,
     showToast,
@@ -307,7 +305,6 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     threadFileQuery,
     tokenUsage,
     updateDownloading,
-    updateNotice,
     updateProgress,
     upstreamRetries,
     voiceDictating,
@@ -393,28 +390,8 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       onEdit={editGoal} onTogglePause={toggleGoalPause} onDelete={stopGoalLoop} />
                   )}
                   <ComposerComposerCardStack app={app} />
-                  {/* 启动静默检查发现新版本 → 通知卡片（非阻塞，可稍后/关闭） */}
-                  {updateNotice && createPortal(
-                    <div className="update-card" role="status" aria-label="发现新版本">
-                      <div className="update-card-head">
-                        <span className="update-card-icon"><Download size={16} /></span>
-                        <div className="update-card-title">
-                          <strong>发现新版本 v{updateNotice.version}</strong>
-                          <span className="update-card-sub">{updateNotice.mandatory ? "建议尽快更新" : "有新版本可用"}</span>
-                        </div>
-                        <button title="关闭" onClick={() => setUpdateNotice(null)}><X size={13} /></button>
-                      </div>
-                      {updateNotice.changelog ? <div className="update-card-body">{updateNotice.changelog}</div> : null}
-                      <div className="update-card-actions">
-                        <button onClick={() => setUpdateNotice(null)}>稍后</button>
-                        <button className="primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
-                          {updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}
-                          <UpdateProgressBar active={updateDownloading} progress={updateProgress} indeterminate={updateProgress <= 0} />
-                        </button>
-                      </div>
-                    </div>,
-                    document.body,
-                  )}
+                  {/* 11-20 用户令：不再弹「发现新版本」卡片 —— 只在账号菜单提示，用户点「更新」才下载。 */}
+
                   {infoModal && createPortal(
                     <div className="info-modal-mask" onClick={() => setInfoModal(null)}>
                       <div className="info-modal" role="dialog" aria-label={infoModal.title} onClick={(event) => event.stopPropagation()}>

@@ -73,8 +73,10 @@ if (IS_PPCODE) {
   // ⛔ 10-12 对账修正：更新链改走 releases **LIST** API（取全部资产匹配 digest），镜像序判定跟着换锚点
   ok(updates.includes("mirrorCandidates(GITHUB_RELEASES_LIST_API)") && /for \(const candidate of mirrorCandidates\(GITHUB_RELEASES_LIST_API\)\)/.test(updates),
     "检查更新走镜像序逐条尝试（第一个 2xx 生效）");
-  ok(updates.includes("const candidates = mirrorCandidates(releaseUrl)") && /for \(let candidateIndex = 0; candidateIndex < candidates\.length/.test(updates),
-    "下载安装包走镜像序（失败/校验不过/太慢 都换下一档；带索引是为了把 hasAlternative 传给超时与低速看门狗）");
+  ok(updates.includes("const candidates = mirrorCandidates(releaseUrl)")
+    && /const ranked = candidates\.length > 1 \? await rankMirrorsBySpeed\(candidates\) : candidates/.test(updates)
+    && /for \(let candidateIndex = 0; candidateIndex < ranked\.length/.test(updates),
+    "下载安装包：先并行测速重排（rankMirrorsBySpeed，11-20「上来要最快的源」），再逐条试（失败/校验不过/太慢 都换下一档；带索引是为了把 hasAlternative 传给超时与低速看门狗）");
 }
 ok(/fs\.rm\(destPath, \{ force: true \}\)/.test(updates) && /fs\.rm\(result\.path, \{ force: true \}\)/.test(updates),
   "每条候选开跑前删半截文件、校验失败删坏文件（半截包绝不进下一轮/不被执行）");
@@ -102,12 +104,15 @@ if (!IS_PPCODE) {
   const release = read(".github/workflows/release.yml");
   ok(/"electron-updater"/.test(pkg) && /"provider": "generic"/.test(pkg) && /"artifactName": "Codex\.Harness\.Desktop-\$\{version\}-win-\$\{arch\}/.test(pkg),
     "打包配置含 electron-updater 的 publish 元数据 + 与 Release 一致的 Windows 资产名");
-  ok(/export async function downloadUpdateDifferential/.test(updates)
-    && /autoUpdater\.setFeedURL\(\{ provider: "generic", url: feedUrl, useMultipleRangeRequest: false \}\)/.test(updates)
-    && /autoUpdater\.downloadUpdate\(\)/.test(updates),
-    "差分下载走 generic feed，且**必须显式 useMultipleRangeRequest: false**（11-20 实测：国内镜像不支持 multipart/byteranges，开着它差分必在下载阶段失败回退整包）");
-  ok(/const tryDifferential = async/.test(ipc) && /await tryDifferential\(/.test(ipc) && /downloadUpdate\(url, dest/.test(ipc),
-    "下载入口差分优先；失败回退原有完整包下载");
+  /* 11-20 用户令：「差分更新删了吧，就保留一个正常安装包更新」。
+     隔离实验实测：镜像开 multipart 返回 application/octet-stream（库拒收），关掉后 528 个单段请求
+     被 ERR_CONNECTION_RESET 掐断，GitHub 直连 302 都拿不到 ⇒ electron-updater 原生差分在此链路上不可用。
+     ⇒ 断言翻成**负向**：差分链不许复活；更新入口只有「查版本 → 镜像序下完整包 → 校验 → 非静默安装」。 */
+  ok(!/downloadUpdateDifferential|tryDifferential|differentialUpdater|setFeedURL/.test(updates)
+    && !/downloadUpdateDifferential|tryDifferential|hasPendingDifferential/.test(ipc),
+    "⛔ 差分链已整体删除（不许再出现 electron-updater 下载器 / feed / tryDifferential）");
+  ok(/export async function downloadUpdate\b/.test(updates) && /await downloadUpdate\(url/.test(ipc),
+    "更新只剩一条路：镜像序下载完整安装包（downloadUpdate）");
   ok(/\.exe\.blockmap/.test(buildWin) && /latest\.yml/.test(buildWin) && /\.exe\.blockmap/.test(release) && /latest\.yml/.test(release),
     "发布流水线同时上传 exe / .exe.blockmap / latest.yml（缺任一则客户端只能整包）");
 }

@@ -845,8 +845,6 @@ contextBridge.exposeInMainWorld("codex", {
   toolStatus: () => __ipc("tools:status", 0, []),
   updateCheck: () => __ipc("updates:check", 0, []),
   updateDownload: (input: { downloadUrl: string; filename?: string; mode?: "differential" | "full" }) => __ipc("updates:download", 1, [input]),
-  /* 10-12 后台静默下载：地址只认主进程自己的检查结果，绝不接受渲染层指定；10-25 可选 mode 只决定补丁/完整包 */
-  updateDownloadSilent: (input?: { mode?: "differential" | "full" }) => __ipc("updates:download-silent", 0, [input]),
   updateInstall: (filePath: string) => __ipc("updates:install", 1, [filePath]),
   /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
   updateRestartInstall: () => __ipc("updates:restart-install", 0, []),

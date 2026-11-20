@@ -76,21 +76,17 @@ ok(/recordToolRemoved/.test(un), "recordToolRemoved 落在 runtime:uninstall 处
 ok(/try \{ recordToolRemoved\(id\); \} catch/.test(un),
   "清账包在 try/catch 里（账本坏了不该让卸载报错）");
 
-console.log("【④ 静默下载与重启安装的安全/顺序口径】");
-const dl = ui.slice(ui.indexOf('handle("updates:download-silent"'), ui.indexOf('handle("updates:restart-install"'));
-ok(/lastVerifiedUpdatePath && fileExists\(lastVerifiedUpdatePath\)/.test(dl),
-  "静默下载幂等：已校验过就直接返回，不重复下几百 MB");
-/* ⛔ 10-26 收紧成「精确禁字段」：原来一刀切禁 `input.` 全字面 —— 10-25 差分更新加了
-   `input.mode`（只决定「差分 or 完整包」的受限枚举），一刀切会把这条安全断言顶成假红。
-   真正要防的是 **渲染层指定地址/路径/哈希**（09-13 P0：任意 exe 落盘执行）⇒ 逐个字段禁。 */
-ok(!/input\??\.(url|downloadUrl|href|path|filename|sha256|version)/.test(dl),
-  "⛔ 静默下载**不接受渲染层指定的下载地址/路径/哈希**（同 09-13 P0：任意 exe 落盘执行）");
-ok(/const url = lastUpdateInfo\?\.downloadUrl;/.test(dl),
-  "下载地址只取主进程校验过的 lastUpdateInfo（渲染层拿不到发言权）");
-ok(/silentDownloading\s*=\s*true/.test(dl) && /finally\s*\{\s*silentDownloading\s*=\s*false/.test(dl),
-  "并发闸在 finally 里复位（异常路径漏复位会让后续静默下载永久失败）");
-ok(/sendToWindow\("updates:ready"/.test(dl),
-  "下载完成主动推 updates:ready（用户可能压根没开设置页，只能靠事件弹窗）");
+console.log("【④ 下载与重启安装的安全/顺序口径】");
+const dl = ui.slice(ui.indexOf('handle("updates:download"'), ui.indexOf('handle("updates:reveal"'));
+/* ⛔ 11-20 用户令「用户没点击更新，不要有任何动作」⇒ 后台静默下载通道整体删除，
+   只保留**点击触发**的 updates:download。⛔ 谁把静默下载加回来，这里立刻红。 */
+ok(!/updates:download-silent/.test(ui),
+  "⛔ 静默下载通道已删除（没点击就不该有任何动作；⛔ 不许复活）");
+/* ⛔ 09-13 P0「任意 exe 落盘执行」的同型防线：地址优先取主进程检查结果，
+   渲染层兜底也必须过 downloadUpdate 内部的 https + sha256 双重校验。 */
+ok(/const url = lastUpdateInfo\?\.downloadUrl \|\| input\?\.downloadUrl/.test(dl)
+  && /downloadUpdate\(url, dest,[\s\S]{0,120}lastUpdateInfo\?\.sha256\)/.test(dl),
+  "下载地址优先取主进程校验过的 lastUpdateInfo；渲染层兜底也要过 https + sha256 校验");
 
 /* ⛔⛔ 锚点必须先剥注释：11-15 给这段加说明时写了「这里不许再 app.quit()」，
    裸 indexOf("app.quit()") 直接命中注释 ⇒ 判成「先 quit 再 spawn」的假红（本仓第五次同型坑）。
@@ -109,10 +105,8 @@ ok(/detached: true/.test(rs) && /\.unref\(\)/.test(rs),
    ⇒ 差分就绪时必须走 updater 自己的 quitAndInstall。
    ⛔ 11-20 改口径：`isSilent` 传 **false** —— 用户两次报「安装时没有进度条提醒」，
       静默安装没有任何界面；oneClick 只有 INSTFILES 一页，非静默也不会弹向导。 */
-ok(/hasPendingDifferential\(\)/.test(rs) && /quitAndInstallDifferential\(false\)/.test(rs),
-  "差分包就绪时交给 electron-updater quitAndInstall **非静默**安装（⛔ 不许把 pending exe 当普通安装包 spawn）");
-ok(/quitAndInstall\(true, true\)|quitAndInstall\(isSilent, true\)/.test(readFileSync(join(ROOT, "electron/updates.ts"), "utf8")),
-  "quitAndInstall 必须 (isSilent, isForceRunAfter=true)：装完自动拉起新版本");
+ok(!/hasPendingDifferential|quitAndInstallDifferential/.test(rs),
+  "⛔ 差分安装分支已删除（11-20 用户令「差分更新删了吧」）：只走完整包 spawn 非静默安装");
 ok(/spawn\(lastVerifiedUpdatePath, \["--updated"\]/.test(rs),
   "完整包回退路径带 `--updated` 且**不带 /S**（非静默才有安装进度页；⛔ 缺 --updated 装完不会自动拉起）");
 ok(!/^\s*(await\s+)?server\??\.stop/m.test(rs),
@@ -205,8 +199,9 @@ console.log(JSON.stringify(out));
   ok(/<UpdateProgressBar active=\{updateDownloading\} progress=\{updateProgress\}/.test(sidebarUi),
     "账号菜单「立即更新」挂真实下载进度");
   const composerUi = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer.tsx"), "utf8");
-  ok(/<UpdateProgressBar active=\{updateDownloading\} progress=\{updateProgress\}/.test(composerUi),
-    "更新提示卡「立即更新」也挂同一条进度条（两处下载入口不许一个有一个没有）");
+  /* ⛔ 11-20 用户令「有更新就在这里提醒（账户行胶囊），不要弹窗烦用户」⇒ 输入框上方的提示卡已删。 */
+  ok(!/<UpdateProgressBar/.test(composerUi),
+    "⛔ 输入框上方的更新提示卡已删除（下载进度只挂在账户行胶囊上）");
   const css = readFileSync(join(ROOT, "src/styles/17-visual-cards.css"), "utf8");
   ok(/\.update-progress-bar \{[\s\S]{0,300}?opacity:\s*0/.test(css),
     "进度条默认隐藏（opacity:0）");
@@ -230,10 +225,10 @@ console.log(JSON.stringify(out));
     "⛔ 自动安装已整体删除（不许再出现开关 / 判据函数 / 定时器 / 空闲计时）");
   ok(!/setInterval\(\s*tick\s*,\s*15_000\s*\)/.test(upd) && !/auto-install-update-v1/.test(upd),
     "⛔ 不许再定时调度 restartAndInstall，也不许再写自动安装开关的 localStorage 键");
-  const toast = readFileSync(join(ROOT, "src/features/app-view/AppView/UpdateReadyToast.tsx"), "utf8");
-  ok(!/auto\?: boolean/.test(toast) && !/将自动安装/.test(toast) && /重启安装/.test(toast),
-    "提示条只留手动入口：说明「点重启安装才会安装」，按钮是「重启安装」");
   const shell = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
+  /* ⛔ 11-20 用户令「右上角的更新提醒弹窗就不要了，不要烦用户」⇒ 组件文件已整体删除。 */
+  ok(!/UpdateReadyToast/.test(shell),
+    "⛔ 更新就绪弹窗已删除（状态只体现在账户行胶囊上，⛔ 不许再弹提示条）");
   ok(!/自动安装更新/.test(shell) && !/setAutoInstallUpdate/.test(shell),
     "设置面板不再有「自动安装 自动/手动」开关（只剩手动一条路）");
 
@@ -247,9 +242,10 @@ console.log(JSON.stringify(out));
     && ipc.includes("writePendingInstall(targetVersion)"),
     "安装前落 pending 标记；启动时版本没变 ⇒ 报「上次安装失败」（停止每次开机自动退出）");
   ok(ipc.includes('sendToWindow("updates:download-state"')
-    && /phase: "download"/.test(ipc) && /phase: "installing"/.test(ipc)
-    && ipc.includes("pushState") && ipc.includes("receivedBytes: info.receivedBytes"),
-    "静默下载推真实进度（百分比 + 字节数），安装开始也推 installing 状态");
+    && /phase: "installing"/.test(ipc),
+    "安装阶段推 download-state（installing）⇒ 渲染层显示安装遮罩");
+  ok(/sender\.sender\.send\("updates:download-progress"/.test(ipc),
+    "点击下载推真实百分比（updates:download-progress，每 2% 一次，⛔ 不刷屏）");
   ok(preload.includes("updateOnState") && preload.includes('"updates:download-state"'),
     "preload 暴露 updateOnState（渲染层能订阅更新流程状态）");
   ok(banner.includes("harness:update-state") && banner.includes("update-install-overlay")
@@ -276,10 +272,10 @@ console.log(JSON.stringify(out));
      ⛔ 同时必须有 `nsis.oneClick = true`（oneClick 只有 MUI_PAGE_INSTFILES 一个页面，
         不带 /S 也不会弹安装目录向导）—— 这一条在上面已经钉住。 */
   const splash = readFileSync(join(ROOT, "electron/update-splash.ts"), "utf8");
-  ok(!/showUpdateSplash/.test(ipc) && !/\/S"/.test(ipc)
-    && /spawn\(lastVerifiedUpdatePath, \["--updated"\]/.test(ipc)
-    && /quitAndInstallDifferential\(false\)/.test(ipc),
-    "差分/完整包两条路都走非静默安装（安装器自己显示进度页；⛔ 别再加 /S，也别退回自绘小窗）");
+  ok(!/quitAndInstallDifferential|hasPendingDifferential/.test(ipc)
+    && !/\/S"/.test(ipc)
+    && /spawn\(lastVerifiedUpdatePath, \["--updated"\]/.test(ipc),
+    "只有一条安装路径：spawn 完整包 --updated（非静默，安装器自己显示进度页；⛔ 别加 /S）");
   ok(!/splash-main|PowerShell|Add-Type/i.test(splash) || /不再由我们自己画/.test(splash),
     "自绘小窗的两种实现都撤了（PowerShell 2–4 秒冷启动 / 打包后入口不保证），只留 mac 通知");
   ok(ipc.includes("showMacUpdateReminder")
@@ -289,12 +285,11 @@ console.log(JSON.stringify(out));
 
   /* 11-17：mac/linux 明确「不支持差分」——状态强制完整包，界面不给切换。 */
   const eventsUpd = readFileSync(join(ROOT, "src/features/app-state/parts/part02/03-thread-switch-update/01-thread-switch-system-events.tsx"), "utf8");
-  ok(eventsUpd.includes('/Win/.test(navigator.platform)')
-    && /if \(!updateDiffSupported\) return "full"/.test(eventsUpd)
-    && /const next = updateDiffSupported \? mode : "full"/.test(eventsUpd),
-    "非 Windows 强制完整包（diff 只支持 Windows，读写 store 都兜底）");
-  ok(shell.includes('/Win/.test(navigator.platform)') && shell.includes("当前平台不支持差分更新"),
-    "账号菜单在非 Windows 明确写「完整包 / 当前平台不支持差分更新」，不给切换按钮");
+  /* 11-20：差分下线 ⇒ 状态机里不该再有 updateMode / updateDiffSupported。 */
+  ok(!/updateDiffSupported|updateMode/.test(eventsUpd),
+    "更新方式（补丁/完整包）已下线：状态机里不再有差分分支，⛔ 别加回来");
+  ok(shell.includes("完整包") && !/update-mode-switch/.test(shell),
+    "账号菜单只有一个固定「完整包」说明，没有补丁/完整包切换按钮（差分已下线）");
 }
 
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

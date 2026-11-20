@@ -1245,8 +1245,6 @@ interface Window {
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
     updateCheck(): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string; mode?: "differential" | "full" }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
-    /* 10-12 后台静默下载：地址只认主进程自己的检查结果，绝不接受渲染层指定；10-25 可选 mode 只决定补丁/完整包 */
-    updateDownloadSilent(input?: { mode?: "differential" | "full" }): Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean }>;
     updateInstall(filePath: string): Promise<{ ok: boolean; error?: string }>;
     /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
     updateRestartInstall(): Promise<{ ok: boolean; error?: string }>;

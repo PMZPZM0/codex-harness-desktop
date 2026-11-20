@@ -168,7 +168,6 @@ import { NewbieGuide } from "../../newbie-guide";
 import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from "./SidebarGuideModal";
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
 import { NewProjectDialog } from "./NewProjectDialog";
-import { UpdateReadyToast } from "./UpdateReadyToast";
 import { UpdateFlowBanner } from "./UpdateFlowBanner";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
@@ -460,8 +459,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     updateDownloading,
     updateError,
     updateInfo,
-    updateMode,
-    setUpdateMode,
     updateProgress,
     // ⛔ 10-12 更新就绪弹窗（需求 3）：与设置页无关，独立挂在左下角。
     updateReady,
@@ -1105,6 +1102,37 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               ) : (
                 <button className="account-name" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{username}</button>
               )}
+              {/* ⛔⛔ 11-20 用户令：「有更新就在这里提醒，点击下载，就同步展示下载进度，完成后就一个很小的弹窗」。
+                 ⇒ 更新提示只在这里（账户行右侧一个小徽标）：有新版 = 图标 + 红点；下载中 = 百分比；
+                   就绪 = 绿点，点它重启安装。⛔ 不许再弹「发现新版本」大卡片，也不许启动就自动下载。 */}
+              {updateInfo?.hasUpdate || updateDownloading || updateReady ? (
+                <button
+                  type="button"
+                  className={`account-update-badge${updateDownloading ? " is-downloading" : ""}${updateReady ? " is-ready" : ""}`}
+                  title={updateReady
+                    ? `更新已就绪${updateReadyVersion ? ` v${updateReadyVersion}` : ""}：点击重启安装`
+                    : updateDownloading
+                      ? `正在下载更新${updateProgress > 0 ? ` ${Math.round(updateProgress * 100)}%` : ""}（不影响你继续使用）`
+                      : `有新版本 v${updateInfo?.version}：点击下载`}
+                  aria-label="软件更新"
+                  onClick={() => {
+                    if (updateReady) { void restartAndInstall(); return; }
+                    if (updateDownloading) return;
+                    void runUpdateDownload();
+                  }}
+                >
+                  {updateDownloading
+                    ? <Download size={13} className="account-update-icon spin-slow" />
+                    : <Download size={13} className="account-update-icon" />}
+                  <span className="account-update-label">
+                    {updateReady
+                      ? "安装"
+                      : updateDownloading
+                        ? (updateProgress > 0 ? `${Math.round(updateProgress * 100)}%` : "下载中")
+                        : "更新"}
+                  </span>
+                </button>
+              ) : null}
               {accountMenuOpen && (
                 <div className="account-menu" role="menu" ref={accountMenuRef}>
                   {accountMenuSub === null && <>
@@ -1160,19 +1188,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <div className="account-menu-row"><span className="account-menu-label">构建</span><span className="account-menu-value mono" title="构建期写进包体的指纹（YYYYMMDD-HHmm）">{buildStamp}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">产物</span><span className="account-menu-value mono" title="正在执行的渲染层 bundle（含内容 hash）">{bundleFile}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases<span className="update-help" title="国内镜像优先：gh-proxy.com → ghfast.top → GitHub 直连；任一通道失败自动换下一档">?</span></span></div>
-                      <div className="account-menu-row"><span className="account-menu-label">更新方式</span>
-                        {/Win/.test(navigator.platform) ? (
-                          <span className="update-mode-switch" role="group" aria-label="更新方式">
-                            <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>补丁<span className="update-help" title="只下变化部分（blockmap）：需要本机已有上一次的差分基线；没有基线时会下完整包，进度条上会写明「本次为完整包」" onClick={(event) => event.stopPropagation()}>?</span></button>
-                            <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包<span className="update-help" title="每次下载完整安装包，体积大但最稳；补丁更新异常时选这个" onClick={(event) => event.stopPropagation()}>?</span></button>
-                          </span>
-                        ) : (
-                          <span className="account-menu-value">
-                            完整包
-                            <span className="update-help" title="当前平台不支持差分更新（blockmap 差分仅 Windows 提供）；每次下载完整包。macOS 下载后请把应用拖进「应用程序」完成更新。">?</span>
-                          </span>
-                        )}
-                      </div>
+                      <div className="account-menu-row"><span className="account-menu-label">更新方式</span><span className="account-menu-value">完整包<span className="update-help" title="每版下载完整安装包（差分更新已下线）；macOS 下载后把应用拖进「应用程序」完成更新">?</span></span></div>
                     </div>
                     <button className="account-menu-item" onClick={() => void copyBuildDiagnostics()}>
                       <ClipboardList size={15} /><span>复制诊断信息</span>
@@ -1213,16 +1229,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <NewbieGuide open={newbieOpen} onOpenChange={setNewbieOpen} onOpenSettings={onOpenSettings} />
           </aside>
     ) : null}
-    {/* ⛔ 10-12 更新就绪弹窗（需求 3）：挂在 sidebar 之外、Fragment 之内 ——
-        它自己 portal 到 body（输入框那层带 transform，不 portal 会被定位成"跟着输入框跑"）。 */}
-    {updateReady ? (
-      <UpdateReadyToast
-        version={updateReadyVersion}
-        restarting={updateRestarting}
-        onCancel={dismissUpdateReady}
-        onRestartInstall={() => void restartAndInstall()}
-      />
-    ) : null}
+    {/* 11-20 用户令：「右上角的更新提醒弹窗就不要了，不要烦用户」——
+        就绪状态只体现在账户行的蓝色胶囊上（点它安装），⛔ 不再弹提示条。 */}
     {/* 11-16 更新流程进度条 / 安装遮罩：自订阅主进程的 updates:download-state。 */}
     <UpdateFlowBanner />
     {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅

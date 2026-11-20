@@ -99,29 +99,10 @@ export function usePart02c2(bag: Bag) {
   };
   bag.restartAndInstall = restartAndInstall as typeof bag.restartAndInstall;
 
-  /**
-   * 需求 2/4 的共同入口：确保「更新包已就绪」。
-   * ⛔ 幂等 —— 主进程已下好时直接回 alreadyDone，不会重复下载。
-   * ⛔ **静默**：后台调用时不弹任何进度；只有真就绪了才弹窗（网络失败一律静默，
-   *    静默检查失败不该在用户没要求时打扰）。
-   */
-  const tryArmUpdateReady = async () => {
-    try {
-      const r = await window.codex.updateDownloadSilent?.({ mode: bag.updateMode });
-      if (r?.ok) armUpdateReady(r.version || bag.updateInfo?.version);
-    } catch {
-      /* 静默失败不打扰用户 */
-    }
-  };
-  bag.tryArmUpdateReady = tryArmUpdateReady as typeof bag.tryArmUpdateReady;
 
-  // 需求 2：发布新版本后**后台静默下载**。延后一小段启动，避开首屏最忙的时候。
-  useEffect(() => {
-    const timer = window.setTimeout(() => { void tryArmUpdateReady(); }, 8000);
-    return () => window.clearTimeout(timer);
-    // ⛔ 依赖置空：只在本段挂载时触发一次。放进依赖会在每次重渲染重下几百 MB。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  /* ⛔⛔ 11-20 用户令：「我现在进应用就弹自动下载，很烦，只提醒，不要强制更新和自动下载」。
+     这里原来是「启动 8 秒后自动调 download-silent 下完整包」—— 用户没点任何东西就开始下 668MB。
+     已删除。⛔ 别再加回来：更新只能由用户在账号菜单里点「更新」触发。 */
 
   // 需求 3：主进程下载完成后主动推 `updates:ready` ⇒ 弹窗（与是否开着设置页无关）。
   useEffect(() => {
@@ -145,7 +126,8 @@ export function usePart02c2(bag: Bag) {
       // ⛔⛔ 10-12 需求 4：手动「检查更新」若发现**更新包已经下好**，要弹同一个重启安装框。
       //   这里不自己判断"下好了没"（渲染层没有这个权威状态）⇒ 直接问主进程要：
       //   `download-silent` 是幂等的（已下好直接回 alreadyDone，不会重复下几百 MB）。
-      if (r.info?.hasUpdate) void tryArmUpdateReady();
+      /* ⛔ 11-20 用户令：这里原来会**自动开始静默下载**（发现新版就下几百 MB）。已删除 ——
+         检查更新只更新状态，用户点「更新」才下载。 */
     } catch (err: any) {
       bag.setUpdateError(err?.message || String(err));
     } finally {
@@ -164,7 +146,6 @@ bag.runUpdateCheck = runUpdateCheck as typeof bag.runUpdateCheck;
       const r = await window.codex.updateDownload?.({
         downloadUrl: bag.updateInfo.downloadUrl,
         filename: bag.updateInfo.filename || "codex-harness-update.bin",
-        mode: bag.updateMode,
       });
       if (!r?.ok) throw new Error(r?.error || "下载失败");
       const started = await window.codex.updateInstall?.(r.path!);
@@ -172,7 +153,6 @@ bag.runUpdateCheck = runUpdateCheck as typeof bag.runUpdateCheck;
         void window.codex.updateReveal?.(r.path!);
         bag.showToast?.(`已下载 v${bag.updateInfo.version}，请手动安装`, "");
       } else {
-        bag.setUpdateNotice(null);
         bag.showToast?.(`正在打开 v${bag.updateInfo.version} 安装程序`, "");
       }
     } catch (err: any) {
@@ -314,5 +294,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, updateReady, updateReadyVersion, updateRestarting, armUpdateReady, dismissUpdateReady, restartAndInstall, tryArmUpdateReady, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, updateReady, updateReadyVersion, updateRestarting, armUpdateReady, dismissUpdateReady, restartAndInstall, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

@@ -21,6 +21,10 @@ import https from "node:https";
 import { app, shell } from "electron";
 import { URL } from "node:url";
 import { mirrorCandidates } from "./gh-mirror";
+/* ⛔ js-yaml 没有随包类型声明；只为解析 latest.yml 的四个字段，用 require + 最小类型即可，
+   不引 @types/js-yaml（少一个需要两仓同步的依赖）。 */
+const yaml = require("js-yaml") as { load(input: string): unknown };
+
 import { guardedFetch } from "./net-guard";
 
 /** GitHub 开源仓库（唯一更新源，走 Releases API） */
@@ -161,7 +165,48 @@ export async function checkLatestUpdate(
       lastError = error;
     }
   }
+  /* ⛔⛔ 11-20 用户实测「检查更新 HTTP 403」：GitHub 的 releases API 按 IP 限流（每小时 60 次），
+     三档镜像（gh-proxy / hk / 直连）都会被同一个额度卡住 ⇒ 全挂时不要直接报错。
+     备用通道走 **Release 资产 latest.yml**（`/releases/latest/download/latest.yml`）：
+     它不经 api.github.com，镜像可直接取，不受 API 限流。
+     ⚠️ 这条通道拿不到 sha256（latest.yml 只有 sha512）与更新正文 ⇒ 只当兜底用，正常仍走 API。 */
+  const viaFeed = await checkLatestViaFeed(currentVersion);
+  if (viaFeed) return viaFeed;
   throw lastError;
+}
+
+/** 兜底通道：从 Release 的 `latest.yml` 读版本与资产（不走 GitHub API，不受限流影响）。
+ *  返回 null 表示这条也拿不到（镜像全挂 / 没有 latest.yml），由调用方继续抛原错误。 */
+async function checkLatestViaFeed(currentVersion: string): Promise<LatestInfo | null> {
+  const feedUrl = `https://github.com/${GITHUB_REPO}/releases/latest/download/latest.yml`;
+  for (const candidate of mirrorCandidates(feedUrl)) {
+    try {
+      const res = await requestJson(candidate, 10_000);
+      if (res.status < 200 || res.status >= 300) continue;
+      const doc = yaml.load(res.body) as { version?: unknown; files?: Array<{ url?: unknown; size?: unknown }> } | null;
+      const version = String(doc?.version ?? "").trim();
+      const file = Array.isArray(doc?.files) ? doc.files[0] : null;
+      const asset = String(file?.url ?? "").trim();
+      if (!/^\d+\.\d+\.\d+/.test(version) || !asset) continue;
+      const tag = `v${version}`;
+      const hasUpdate = compareVersions(version, currentVersion) > 0;
+      return {
+        hasUpdate,
+        reason: hasUpdate ? "ok" : "latest",
+        channel: UPDATE_CHANNEL,
+        version,
+        tag,
+        filename: asset,
+        size: Number(file?.size ?? 0) || undefined,
+        /* latest.yml 只有 sha512，这里刻意留空：调用方按「无 sha256」跳过摘要校验，
+           下载完仍会校验总字节数，且安装器自己会验包完整性。 */
+        sha256: undefined,
+        changelog: "",
+        downloadUrl: `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${asset}`,
+      };
+    } catch { /* 试下一档 */ }
+  }
+  return null;
 }
 
 /** 从 release JSON 挑出本平台的资产并做版本判断（网络与解析分离，镜像重试不重复这段逻辑）。 */
@@ -218,6 +263,77 @@ export type DownloadProgress = (info: {
 }) => void;
 
 /** 下载更新包到目标路径，边下边回报进度；给了 sha256 就必须校验通过。 */
+/** 按**实测吞吐**给镜像候选排序（11-20 用户令「上来要最快的更新源」）。
+ *  规则：先并行探针；读到的字节越多 = 越快，按降序排；测不出的（<=0，含 302 不落地）保持原相对顺序排在末尾。
+ *  ⚠️ 只在候选 ≥2 时调用；窗口内读满 probeBytes 的（极快的源）会并列，按原始顺序（gh-proxy 在前）。 */
+async function rankMirrorsBySpeed(
+  candidates: readonly string[],
+  windowMs = 1800,
+  probeBytes = 3 * 1024 * 1024,
+): Promise<readonly string[]> {
+  const scores = await Promise.all(
+    candidates.map((url, index) => probeSpeed(url, windowMs, probeBytes).then((bytes) => ({ index, bytes }))),
+  );
+  const bytesOf = new Map(scores.map((s) => [s.index, s.bytes]));
+  return candidates
+    .map((url, index) => ({ url, index, bytes: bytesOf.get(index) ?? -1 }))
+    .sort((a, b) => {
+      const sa = a.bytes > 0 ? a.bytes : -1;
+      const sb = b.bytes > 0 ? b.bytes : -1;
+      if (sa !== sb) return sb - sa;
+      return a.index - b.index;
+    })
+    .map((item) => item.url);
+}
+
+/** 单个候选的测速探针：窗口内读到的字节数；不可用返回 -1。
+ *  ⛔ 必须 destroy：Range 只有 3MB，但慢源可能在窗口内都没读完，不掐就会一直挂着。 */
+function probeSpeed(url: string, windowMs: number, probeBytes: number): Promise<number> {
+  return new Promise<number>((resolve) => {
+    let settled = false;
+    let got = 0;
+    const finish = (value: number) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:") return finish(-1);
+      const req = https.request(
+        {
+          method: "GET",
+          hostname: parsed.hostname,
+          port: parsed.port || 443,
+          path: parsed.pathname + parsed.search,
+          headers: { "User-Agent": "CodexHarness/0.1", Range: `bytes=0-${probeBytes - 1}` },
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          /* 3xx 不算速度：GitHub 直连会 302 到 release-assets，探针不跟跳转（会吃掉整个窗口）。 */
+          if (status < 200 || status >= 300) {
+            res.resume();
+            return finish(-1);
+          }
+          res.on("data", (chunk: Buffer) => { got += chunk.length; });
+          res.on("end", () => finish(got));
+          res.on("error", () => finish(got));
+        },
+      );
+      req.on("error", () => finish(-1));
+      req.setTimeout(windowMs, () => { req.destroy(); finish(got); });
+      setTimeout(() => { try { req.destroy(); } catch { /* 已结束 */ } finish(got); }, windowMs);
+      req.end();
+    } catch {
+      finish(-1);
+    }
+  });
+}
+
+/** 下载完整安装包（唯一更新方式）：
+ *  · 先按**实测吞吐**给镜像候选排序（`rankMirrorsBySpeed`，11-20「上来要最快的源」），
+ *  · 再逐条尝试：网络错 / HTTP 错 / sha256 校验不过 / 太慢 都会删掉半截文件换下一档，
+ *  · 校验通过才返回路径；调用方据此登记安装包并给进度。 */
 export async function downloadUpdate(
   releaseUrl: string,
   destPath: string,
@@ -318,10 +434,17 @@ export async function downloadUpdate(
   //    校验不过也换通道 —— 镜像是第三方反代，比对失败最可能是它动了包体，直连 GitHub 是基准真相
   //    （候选最后一条恒为直连）。非 GitHub 地址（自定义清单等）mirrorCandidates 只给一条，行为不变。
   const candidates = mirrorCandidates(releaseUrl);
+  /* ⛔⛔ 11-20 用户令「上来要最快的更新源」：以前是**顺序试**（直连 → gh-proxy → hk → ghfast），
+     只有等到「20s 无响应头 / 60s 无数据 / 满 12s 平均 <200KB/s」才换下一档 ——
+     等于先在最慢那档上白等 12 秒。现在下载前**并行探针测速**，按实测吞吐重排候选。
+     探针 = 每个候选一个 `Range: bytes=0-(3MB-1)` 的请求，1.8s 窗口内读到的字节数就是速度；
+     ⛔ 探针必须主动 destroy，否则会把整包拉下来。测不出（0 字节 / 302 不落地 / 报错）的
+     保持原始相对顺序排到末尾 ⇒ 全都不通时行为与以前一致。 */
+  const ranked = candidates.length > 1 ? await rankMirrorsBySpeed(candidates) : candidates;
   let lastError: unknown = new Error("no_candidate");
-  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
-    const candidate = candidates[candidateIndex];
-    const hasAlternative = candidateIndex < candidates.length - 1;
+  for (let candidateIndex = 0; candidateIndex < ranked.length; candidateIndex += 1) {
+    const candidate = ranked[candidateIndex];
+    const hasAlternative = candidateIndex < ranked.length - 1;
     await fs.rm(destPath, { force: true }).catch(() => undefined);
     try {
       const result = await hop(candidate, 0, hasAlternative);
@@ -346,248 +469,11 @@ export async function downloadUpdate(
   throw lastError;
 }
 
-export type DifferentialDownloadResult = { path: string; version: string; differential: true };
+/* 11-20 用户令：「差分更新删了吧，就保留一个正常安装包更新」。
+   ⇒ 整条 electron-updater 差分链（blockmap 计算 / oldFile 自愈 / quitAndInstall）已删除，
+     更新只剩一条路：GitHub API 查版本 → 镜像序下完整安装包 → 校验 → 非静默安装。
+   ⛔ 别再往回加：实测在当前镜像链路上差分根本下载不了（multipart 不支持 + 单段请求被重置）。 */
 
-/** 差分缓存自愈（11-20 重写 —— 11-19 那版理解是**错的**，它自己把差分废掉了）。
- *
- *  ⛔⛔ 真实机制（读 electron-updater / app-builder-lib 源码得出，别再改回去）：
- *   · 差分需要的是**上一版的安装包本体** `<updater 缓存>/installer.exe`（NSIS 差分的 oldFile）。
- *     这个文件由**安装器自己**在安装完成时写回：
- *     `app-builder-lib/templates/nsis/include/installer.nsh` →
- *     `copyFile "$EXEPATH" "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"`。
- *     手工装 exe 也会写（同一条 section）—— 这点也和 11-19 的说法不同。
- *   · `current.blockmap` **不是必需品**：缺了它 updater 会拿 `latest.yml` 里的 blockmap URL
- *     去服务器下载**旧版本**的 blockmap（`AppUpdater.differentialDownloadInstaller`：
- *     「No cached blockmap for the old installer, downloading it from …」）。
- *   · 而且**整包下载完成后 updater 会主动删掉** `current.blockmap`（`done()` 的 else 分支，
- *     防止陈旧 blockmap 配上新文件「毒害」下一轮）。
- *  ⇒ 所以「缺 blockmap 就把 installer.exe 一起删掉」等于自断双腿：下一版没有 oldFile，
- *     差分必然失败→回退整包；整包装完又没有 blockmap ⇒ 再被判一次「配对失效」⇒ **永远整包**。
- *     这正是 11-19 之后连着几版都下 668MB 的真正原因（不是缓存坏了，是我们自己删的）。
- *
- *  ⇒ 现在只做**一件必要清理**：blockmap 孤零零存在、却没有 installer.exe 时删掉它
- *    （它对不上任何安装包，留着会被当成 oldBlockmap 导致 sha512 校验失败）。
- *    ⛔ 永远不许删 `installer.exe` —— 它是下一版差分唯一的 oldFile。 */
-function healDifferentialCache(): void {
-  try {
-    const localAppData = process.env.LOCALAPPDATA || process.env.APPDATA || "";
-    if (!localAppData) return;
-    const dir = path.join(localAppData, `${app.getName()}-updater`);
-    const installer = path.join(dir, "installer.exe");
-    const blockmap = path.join(dir, "current.blockmap");
-    if (!existsSync(installer) && existsSync(blockmap)) rmSync(blockmap, { force: true });
-  } catch {
-    /* 自愈是尽力而为：失败不影响正常下载 */
-  }
-}
-
-/** 本机是否已具备差分条件。
- *  ⛔ 11-20 修正：**只看 `installer.exe`**（上一版的安装包本体）；blockmap 缺了 updater 会自己下载，
- *    所以「blockmap 不在」不等于「本次会是整包」—— 11-19 用「成对」当判据，把能差分的机器也报成整包。
- *  用途：用户选了「补丁」而本机确实没有安装包缓存时，界面必须**明说本次会下完整包**。 */
-export function hasDifferentialBaseline(): boolean {
-  try {
-    const localAppData = process.env.LOCALAPPDATA || process.env.APPDATA || "";
-    if (!localAppData) return false;
-    const dir = path.join(localAppData, `${app.getName()}-updater`);
-    return existsSync(path.join(dir, "installer.exe"));
-  } catch {
-    return false;
-  }
-}
-
-/* ── 11-20 重做：不再依赖「安装器会自己写 installer.exe」这个假设 ──────────────────
- *
- * 用户实测「不管怎么选都是完整安装包」，说明这台机器的 oldFile（差分的比对基准）
- * 就是不在。与其继续猜是 NSIS 的 copyFile 没执行、还是升级路径绕过了它，
- * 不如**我们自己保证这个文件的存在**，形成闭环：
- *   ① 启动/检查更新时补：缓存里没有 installer.exe，就去 pending 目录找「当前已安装版本」的
- *      安装包（用户手动装过之后，包往往还在那儿）复制过去；
- *   ② 下载完成时记：把这次下到的包复制成 installer.exe，并写 installer.version；
- *   ③ 启动时校验：installer.version 与当前版本不符 ⇒ 上次没装成 ⇒ 删掉，避免下次差分
- *      拿错基准导致 sha512 失败（宁可整包一次，也不要"差分必然失败"的稳定状态）。
- *  ⛔ 只动自家 updater 缓存目录，不碰安装目录、不碰用户数据。 */
-
-/** updater 缓存目录（与 app-update.yml 的 updaterCacheDirName 同源：sanitize(name).toLowerCase()+"-updater"）。 */
-function updaterCacheDir(): string {
-  const base = process.env.LOCALAPPDATA || process.env.APPDATA || "";
-  return base ? path.join(base, `${app.getName()}-updater`) : "";
-}
-
-/** 主进程日志（安装链排障用），失败静默。 */
-function logUpdate(line: string): void {
-  try {
-    const base = process.env.APPDATA || "";
-    if (!base) return;
-    const dir = path.join(base, app.getName());
-    mkdirSync(dir, { recursive: true });
-    appendFileSync(path.join(dir, "update-install.log"), `[${new Date().toISOString()}] [cache] ${line}\n`);
-  } catch { /* 日志写不了不影响更新 */ }
-}
-
-/** ① 补齐 oldFile：缓存里没有 installer.exe 时，用「当前已安装版本」的安装包补上。 */
-export function ensureInstallerCache(): { ok: boolean; source: string } {
-  try {
-    const dir = updaterCacheDir();
-    if (!dir) return { ok: false, source: "no_localappdata" };
-    const installer = path.join(dir, "installer.exe");
-    if (existsSync(installer)) return { ok: true, source: "existing" };
-    const version = String(app.getVersion() || "");
-    if (!version) return { ok: false, source: "no_version" };
-    const pending = path.join(dir, "pending");
-    const hits: string[] = [];
-    if (existsSync(pending)) {
-      for (const name of readdirSync(pending)) {
-        /* ⛔ 只认「正式名 + 版本号匹配 + 不是 temp-」的文件：temp- 是没下完的半截包，
-           拿它当 oldFile 会让下一次差分算错块。 */
-        if (!/\.exe$/i.test(name) || /^temp-/i.test(name)) continue;
-        if (!name.includes(version)) continue;
-        hits.push(path.join(pending, name));
-      }
-    }
-    if (!hits.length) return { ok: false, source: "none" };
-    fs.copyFile(hits[0], installer).then(() => {
-      fs.writeFile(path.join(dir, "installer.version"), version, "utf8").catch(() => {});
-      logUpdate(`补齐 oldFile：${hits[0]} → installer.exe（版本 ${version}）`);
-    }).catch((e: unknown) => logUpdate(`补齐 oldFile 失败：${String(e)}`));
-    return { ok: true, source: hits[0] };
-  } catch (e) {
-    logUpdate(`ensureInstallerCache 异常：${String(e)}`);
-    return { ok: false, source: "error" };
-  }
-}
-
-/** ② 下载完成后登记：把这个包复制成 installer.exe，并记下版本（装成功后它就是下一版的 oldFile）。 */
-export function rememberDownloadedInstaller(file: string, version: string): void {
-  try {
-    const dir = updaterCacheDir();
-    if (!dir || !file || !existsSync(file) || !version) return;
-    fs.mkdir(dir, { recursive: true })
-      .then(() => fs.copyFile(file, path.join(dir, "installer.exe")))
-      .then(() => fs.writeFile(path.join(dir, "installer.version"), version, "utf8"))
-      .then(() => logUpdate(`登记 oldFile：${path.basename(file)} → installer.exe（版本 ${version}）`))
-      .catch((e: unknown) => logUpdate(`登记 oldFile 失败：${String(e)}`));
-  } catch { /* 不阻断更新 */ }
-}
-
-/** ③ 启动校验：记录的版本与当前版本不符 ⇒ 上次没装成 ⇒ 删掉错配的 oldFile。 */
-export function pruneStaleInstallerCache(): void {
-  try {
-    const dir = updaterCacheDir();
-    if (!dir) return;
-    const verFile = path.join(dir, "installer.version");
-    if (!existsSync(verFile)) return; /* 没有版本文件 = 安装器自己写的，信它 */
-    const recorded = readFileSyncSafe(verFile);
-    const current = String(app.getVersion() || "");
-    if (recorded && current && recorded !== current) {
-      rmSync(path.join(dir, "installer.exe"), { force: true });
-      rmSync(verFile, { force: true });
-      logUpdate(`清理错配 oldFile：记录 ${recorded}，当前 ${current}`);
-    }
-  } catch { /* 忽略 */ }
-}
-
-function readFileSyncSafe(file: string): string {
-  try { return require("node:fs").readFileSync(file, "utf8").trim(); } catch { return ""; }
-}
-
-/** ⛔⛔ 11-15 用户实测「点重启安装，应用关了、安装提醒一闪就没装」的根因在这里：
- *  差分包是 electron-updater 下的，**它不是"一个可以随便 spawn 的 exe 路径"** ——
- *  直接 `spawn(pending.exe)` 起的是**交互式 NSIS 向导 + UAC 提权框**（11-16 起
- *  nsis.oneClick=true 已改为每用户一键安装，不再有向导/UAC；这段历史说明保留），
- *  而我们同时 `app.quit()` ⇒ 应用消失、向导被挡在后面/被用户当垃圾关掉 ⇒ 什么都装不上。
- *  正解是让**下载它的那个 autoUpdater 自己去装**：`quitAndInstall(true, true)` 会带 `/S`
- *  静默安装并在装完自动拉起新版本，用户点一次就完事（这也是 electron-updater 的唯一受支持路径）。
- *  ⇒ 这里记住"差分已就绪的那个 updater 实例"，供 `updates:restart-install` 优先使用。 */
-let differentialUpdater: { quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void; version: string } | null = null;
-
-/** 本次会话是否有一个「差分包已下载完、还没装」的版本在等重启。 */
-export function hasPendingDifferential(): boolean {
-  return Boolean(differentialUpdater);
-}
-
-/** 让 electron-updater 安装并自动重启。
- *  ⛔ 11-20 默认改成**非静默**（isSilent=false）：安装器会显示自己的进度页
- *    （`app-builder-lib/templates/nsis/oneClick.nsh` 只有 `MUI_PAGE_INSTFILES`，
- *    没有向导页/完成页 ⇒ 用户看到一个进度条窗口，装完自动关并拉起新版本）。
- *    这正是用户两次报「安装的时候没有进度条提醒」要的东西，且**零依赖**：
- *    不再需要我们自己的小窗进程（那条路要么慢、要么在打包后起不来）。 */
-export function quitAndInstallDifferential(isSilent = false): void {
-  const updater = differentialUpdater;
-  if (!updater) throw new Error("no_pending_differential");
-  updater.quitAndInstall(isSilent, true);
-}
-
-/** 10-25 差分更新：electron-updater + NSIS blockmap。
- *  ⛔ 只走 Windows NSIS；mac/其它平台直接抛错让上层回退完整包。
- *  ⛔ 仍按镜像候选序切 feed；任一候选失败继续下一档，全部失败由调用方回退完整下载。
- *  ⛔ 这里只下载并校验（electron-updater 会验 latest.yml 的 sha512），**不安装** ——
- *    安装仍走现有的 `updates:restart-install`，保持「先起安装包、再退出」的既有顺序。 */
-export async function downloadUpdateDifferential(
-  info: Pick<LatestInfo, "version" | "tag">,
-  onProgress?: DownloadProgress,
-): Promise<DifferentialDownloadResult> {
-  if (process.platform !== "win32") throw new Error("differential_unsupported_platform");
-  const version = String(info.version ?? "").trim();
-  if (!version) throw new Error("differential_no_version");
-  /* 先自愈缓存：缺一份就两份都删，让本轮重新建立成对基线（下一版用户才拿到几十兆差分）。 */
-  healDifferentialCache();
-  const releaseBase = `https://github.com/${GITHUB_REPO}/releases/download/${String(info.tag ?? `v${version}`)}`;
-  const { autoUpdater } = await import("electron-updater");
-  autoUpdater.autoDownload = false;
-  /* ⛔⛔ 11-20 回滚 11-19 的改动：这里曾改成 true（想「不点按钮、退出时也装完」），代价实测太大 ——
-     true 会让 electron-updater 在**每一次 app quit**（含用户正常关应用）时自己调一次 quitAndInstall，
-     于是「关应用」也变成一次静默安装；一旦那次安装失败（文件占用 / 全机版残留），
-     用户就只看到「应用闪退、版本没变」，而且 update-install-pending.json 残留会让下次启动判成
-     「上次安装失败」，更新状态机把自动安装挂起 —— 用户原话「再就无法更新了」。
-     ⇒ 改回 false：只在用户显式点「立即重启」时装。配对缓存照样写回（quitAndInstall 走的就是 updater
-        自己的安装器，与 autoInstallOnAppQuit 无关）。 */
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.allowDowngrade = false;
-  let lastError: unknown = new Error("differential_failed");
-  for (const feedUrl of mirrorCandidates(releaseBase)) {
-    try {
-      /* ⛔⛔ 11-20 决定性根因（隔离实验实测）：差分在**下载阶段**就炸，回退整包 ——
-         `DifferentialDownloader` 默认用 multipart/byteranges（一次请求多个 range），
-         而国内镜像（gh-proxy / ghfast）只返回单段 `application/octet-stream`，于是抛
-         「Content-Type "multipart/byteranges" is expected, but got "application/octet-stream"」。
-         这个开关默认是开的：providerFactory 里
-         `isUseMultipleRangeRequest: options.useMultipleRangeRequest !== false && isUrlProbablySupportMultiRangeRequests(url)`，
-         而 `isUrlProbablySupportMultiRangeRequests` 只排除了 s3.amazonaws.com ⇒ 镜像被误判成支持。
-         ⇒ 显式传 `useMultipleRangeRequest: false`：改成逐段 Range 请求（段多、往返多一点，
-            但总下载量仍是变化的几十兆，远好于 668MB 整包）。
-         ⛔ 别删这一行：删掉后差分会在下载阶段失败，且**看起来像"差分没生效"**。 */
-      autoUpdater.setFeedURL({ provider: "generic", url: feedUrl, useMultipleRangeRequest: false });
-      const check = await autoUpdater.checkForUpdates();
-      const remoteVersion = String(check?.updateInfo?.version ?? "");
-      if (remoteVersion && compareVersions(remoteVersion, version) !== 0) {
-        throw new Error(`latest.yml 版本 ${remoteVersion} 与 Release ${version} 不一致`);
-      }
-      const onDownload = (progress: any) => {
-        onProgress?.({
-          receivedBytes: Number(progress?.transferred ?? 0),
-          totalBytes: Number(progress?.total ?? 0),
-          percent: Math.max(0, Math.min(1, Number(progress?.percent ?? 0) / 100)),
-        });
-      };
-      autoUpdater.on("download-progress", onDownload);
-      try {
-        const files = await autoUpdater.downloadUpdate() as unknown as string[];
-        const file = (Array.isArray(files) ? files : []).find((item) => item && existsSync(item));
-        if (!file) throw new Error("差分下载完成但没有安装包文件");
-        // ⛔ 记住这个已就绪的实例：重启安装必须由它 quitAndInstall（静默 + 装完自启），
-        //   换个进程 spawn 那个 pending exe 只会弹交互向导（见 differentialUpdater 的说明）。
-        differentialUpdater = { quitAndInstall: (silent, runAfter) => autoUpdater.quitAndInstall(silent, runAfter), version };
-        return { path: file, version, differential: true };
-      } finally {
-        autoUpdater.removeListener("download-progress", onDownload);
-      }
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
 
 /** 流式计算文件 sha256（大安装包不整份读进内存）。 */
 async function sha256OfFile(filePath: string): Promise<string> {  return new Promise((resolve, reject) => {

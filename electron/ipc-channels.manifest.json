@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 724,
+  "count": 723,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -2558,7 +2558,7 @@
       "channel": "memory:hygiene:plan",
       "paramsImpl": "workspace?: string",
       "paramsDecl": "workspace?: string",
-      "returns": "Promise<{ rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: \"info\" | \"warn\"; layer: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>",
+      "returns": "Promise<{ rules: { target: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: \"info\" | \"warn\"; target: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>",
       "invokeArgs": "workspace",
       "cast": null,
       "note": null
@@ -5097,16 +5097,6 @@
       "invokeArgs": "input",
       "cast": null,
       "note": null
-    },
-    {
-      "name": "updateDownloadSilent",
-      "channel": "updates:download-silent",
-      "paramsImpl": "input?: { mode?: \"differential\" | \"full\" }",
-      "paramsDecl": "input?: { mode?: \"differential\" | \"full\" }",
-      "returns": "Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "10-12 后台静默下载：地址只认主进程自己的检查结果，绝不接受渲染层指定；10-25 可选 mode 只决定补丁/完整包"
     },
     {
       "name": "updateInstall",
