@@ -131,6 +131,15 @@ async function findSkillDirsInRepo(root: string): Promise<string[]> {
   return out;
 }
 
+/** 读 SKILL.md frontmatter 的 name（单根技能仓库用它当安装目录名；读不到回空串）。 */
+async function skillNameFromFile(dir: string): Promise<string> {
+  try {
+    const text = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
+    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
+    return (/^name:\s*["']?([^"'\r\n]+)["']?\s*$/m.exec(frontmatter)?.[1] ?? "").trim();
+  } catch { return ""; }
+}
+
 /** 随包内置技能：扫 resources/expert-skills/<dir>（根 SKILL.md 或 skills/<n>/SKILL.md）。 */
 function bundledBaseDir(dir: string): string {
   const root = path.join(process.resourcesPath ?? "", "expert-skills", dir);
@@ -200,6 +209,30 @@ async function syncBundledPack(pack: SkillPackDef, emit: (stage: string, message
   return { installed, skipped, rejected: [], bytes: 0 };
 }
 
+/** 同名技能目录没有本包凭据时，判断它是不是「早期版本装的同一份」——是则认领（补写凭据）。
+ *  判据只比 `SKILL.md` 的规范化内容（trim + 统一行尾）：同版本同名技能的 SKILL.md 完全一致；
+ *  用户改过 / 是他自己的同名技能时内容不同 ⇒ 返回 false，调用方继续按「已存在」跳过。
+ *  ⛔ 认领 = 以后卸载会删它，所以**只在内容完全一致时**才认领。 */
+async function adoptSkillDirIfIdentical(targetDir: string, srcDir: string, packId: string, repo: string): Promise<boolean> {
+  try {
+    const norm = (text: string) => text.replace(/\r\n/g, "\n").trim();
+    const [existing, incoming] = await Promise.all([
+      fs.readFile(path.join(targetDir, "SKILL.md"), "utf8").catch(() => null),
+      fs.readFile(path.join(srcDir, "SKILL.md"), "utf8").catch(() => null),
+    ]);
+    if (!existing || !incoming) return false;
+    if (norm(existing) !== norm(incoming)) return false;
+    await fs.writeFile(
+      path.join(targetDir, ".skill-pack.json"),
+      JSON.stringify({ packId, repo, installedAt: new Date().toISOString(), adopted: true }, null, 2),
+      "utf8",
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function installPack(id: string, signal?: AbortSignal, options: { update?: boolean } = {}): Promise<InstallResult> {
   const pack = SKILL_PACKS.find((entry) => entry.id === id);
   if (!pack) throw new Error("未知的技能包");
@@ -245,7 +278,11 @@ async function installPack(id: string, signal?: AbortSignal, options: { update?:
     const rejected: string[] = [];
     for (const dir of dirs) {
       if (cancelled()) throw new DownloadCancelledError();
-      const folder = path.basename(dir).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+      /* ⛔ 根目录就是技能时，目录名会变成解压出的 `repo-main`（神灯 = shendeng-main），
+         用户看到的技能名和目录名对不上 ⇒ 优先用 SKILL.md frontmatter 的 name（引擎展示同源）。
+         子目录技能仍按目录名（taste-skill 等行为不变）。 */
+      const rawName = dir === repoRoot ? await skillNameFromFile(dir) : path.basename(dir);
+      const folder = (rawName || path.basename(dir)).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
       if (!folder) continue;
       const target = path.join(root, folder);
       if (existsSync(target)) {
@@ -256,7 +293,21 @@ async function installPack(id: string, signal?: AbortSignal, options: { update?:
           const owned = JSON.parse(await fs.readFile(path.join(target, ".skill-pack.json"), "utf8")) as { packId?: string };
           ownedByPack = String(owned?.packId ?? "") === id;
         } catch { ownedByPack = false; }
-        if (!(options.update && ownedByPack)) { skipped.push(folder); continue; }
+        if (!(options.update && ownedByPack)) {
+          /* ⛔⛔ 11-20 用户实测「安装完成检测不到，一直显示安装」：早期版本装的技能目录**没有凭据**，
+             于是每次安装都被判成「同名已存在」→ skipped → marker.skills 为空 → packState 的
+             installed 恒为 false → 按钮永远显示「安装」，点了也没变化（死循环）。
+             修法：同名目录存在但没有凭据时，**比对 SKILL.md 与包内同名文件**：
+               · 完全一致 ⇒ 就是以前装的那份 ⇒ **认领**（补写凭据 + 计入 installed），状态立刻联动；
+               · 不一致（用户改过 / 是他自己的同名技能）⇒ 仍然跳过，⛔ 绝不覆盖。
+             ⛔ 只认领「内容一致」的目录 —— 认领意味着以后卸载会删它，误认领会删掉用户自己的技能。 */
+          if (await adoptSkillDirIfIdentical(target, dir, id, pack.repo)) {
+            installed.push(folder);
+            continue;
+          }
+          skipped.push(folder);
+          continue;
+        }
         await fs.rm(target, { recursive: true, force: true }).catch(() => undefined);
       }
       const content = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");

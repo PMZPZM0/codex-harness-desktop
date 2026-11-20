@@ -1190,7 +1190,7 @@ const CHECKS = [
   },
   {
     id: "skill-packs",
-    name: "📦 开发工具 · 精选技能包：3 行带许可/配套说明，面板只在二级弹窗（10-30）",
+    name: "📦 开发工具 · 精选技能包：≥3 行带许可/配套说明，面板只在二级弹窗（10-30）",
     run: async (h) => {
       /* 只验 UI 与清单贯通（真下载 37MB 不适合放进秒级验收）：卡片、许可徽标、配套工具行，
          以及「面板只在二级弹窗里」这条两级 IA 纪律。 */
@@ -1208,19 +1208,19 @@ const CHECKS = [
         Boolean(cardHit && cardHit.text.includes("精选技能包") && cardHit.stat.length > 0), JSON.stringify(cardHit));
       const firstLevelPanel = await h.eval(`!!document.querySelector(".devtools-cards .skill-pack-row")`).catch(() => true);
       h.check("② 面板没有内嵌在一级页（两级 IA）", firstLevelPanel === false, String(firstLevelPanel));
-      await h.eval(`document.querySelector('.devtools-card[data-card="skill-packs"]').click()`);
-      await h.waitFor(`document.querySelectorAll(".settings-dialog .skill-pack-row").length === 3`, { label: "三个技能包卡", timeoutMs: 20000 });
+      await h.eval(`document.querySelector('.devtools-card[data-card="skill-packs"] .devtools-card-open')?.click()`);
+      await h.waitFor(`document.querySelectorAll(".settings-dialog .skill-pack-row").length >= 3`, { label: "技能包卡（≥3）", timeoutMs: 20000 });
       const packs = await h.eval(`[...document.querySelectorAll(".settings-dialog .skill-pack-row")].map(function(c){
         return { id:c.dataset.pack||"", name:(c.querySelector(".skill-pack-line1 strong")?.textContent||"").trim(),
-          badge:((c.querySelector(".skill-pack-line3")?.textContent||"").match(/MIT|CC BY[^·]*/)||[""])[0].trim(),
-          companion:(c.querySelector(".skill-pack-line3")?.textContent||"").trim(),
+          badge:(([...c.querySelectorAll(".skill-pack-line3")].map(function(e){return e.textContent||"";}).join(" · ")).match(/MIT|Apache-2.0|CC BY[^·]*|随包分发/)||[""])[0].trim(),
+          companion:([...c.querySelectorAll(".skill-pack-line3")].map(function(e){return (e.textContent||"").trim();})).slice(-1)[0]||"",
           button:(c.querySelector("button.primary-setting,button.secondary-setting")?.textContent||"").trim() };
       })`).catch(() => null);
-      h.check("③ 三张卡各有：名称 / 许可徽标 / 配套工具行 / 动作按钮",
-        Array.isArray(packs) && packs.length === 3 && packs.every((p) => p.name && p.badge && p.companion.startsWith("配套") && p.button),
+      h.check("③ 每张卡都有：名称 / 许可徽标 / 配套工具行 / 动作按钮",
+        Array.isArray(packs) && packs.length >= 3 && packs.every((p) => p.name && p.badge && p.companion.startsWith("配套") && (p.button || /随包/.test(p.companion))),
         JSON.stringify(packs));
-      h.check("④ 清单来自主进程且三条 id 各不相同",
-        Array.isArray(packs) && new Set(packs.map((p) => p.id)).size === 3, JSON.stringify(packs && packs.map((p) => p.id)));
+      h.check("④ 清单来自主进程且 id 各不相同",
+        Array.isArray(packs) && new Set(packs.map((p) => p.id)).size === packs.length && packs.length >= 3, JSON.stringify(packs && packs.map((p) => p.id)));
       await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
       await wait(300);
     },

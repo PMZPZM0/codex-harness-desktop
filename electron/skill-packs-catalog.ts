@@ -131,6 +131,23 @@ export const SKILL_PACKS: SkillPackDef[] = [
     bundled: { dir: "playwright-browser-automation" },
   },
   {
+    /* 11-20 用户指定收录（GitHub txga01Lwz/shendeng）：单技能仓库，SKILL.md 在仓库根，
+       安装器走「仓库内扫描 SKILL.md」→ 目录名取 frontmatter name（shendeng）。
+       ⛔ 许可 CC BY-NC 4.0：**署名 + 非商业**。界面必须展示许可徽标与原文链接；
+         若将来本应用做商业收费集成，必须先取得作者授权（罗伟泽 · 国作登字-2026-A-00196396）。 */
+    id: "shendeng",
+    version: "v1.6.0",
+    name: "神灯 · 东方心理学",
+    repo: "txga01Lwz/shendeng",
+    license: "CC BY-NC 4.0（署名 · 非商业）",
+    licenseUrl: "https://github.com/txga01Lwz/shendeng/blob/main/LICENSE",
+    size: "约 20 KB",
+    description: "东方心理学解题法：看见情绪、关系、商业背后的真实需求",
+    companion: "配套：知识库 + 长期记忆（沉淀个案与 22 条公式）",
+    category: "生活指南",
+    skills: ["shendeng"],
+  },
+  {
     /* 11-19：cheat on 早在随包 resources/expert-skills/cheat-on-content ⇒ 只做展示。 */
     id: "cheat-on-content",
     version: "随包",

@@ -30,7 +30,7 @@ try {
 if (catalog) {
   /* 11-19 扩编：3 → 5（新增 taste-skill / gsap-skills）。判据改成「至少 5 且必需 id 都在」，
    这样以后再加包不会因为数字对不上而误红，但仍能抓住「整个清单被清空 / 少了包」这类真问题。 */
-  const requiredPackIds = ["matt-pocock-skills", "diagram-design", "how-to-live-better", "taste-skill", "gsap-skills"];
+  const requiredPackIds = ["matt-pocock-skills", "diagram-design", "how-to-live-better", "taste-skill", "gsap-skills", "shendeng"];
   ok(Array.isArray(catalog) && catalog.length >= requiredPackIds.length && requiredPackIds.every((id) => catalog.some((pack) => pack?.id === id)),
     `清单含全部必需技能包（实测 ${Array.isArray(catalog) ? catalog.length : "非数组"} 条）`);
   const ids = catalog.map((pack) => pack.id);
@@ -78,6 +78,9 @@ ok(/写入后校验未通过/.test(feature) && /existsSync\(path\.join\(root, fo
   "每个技能写完立即回读 SKILL.md（拷贝失败/进程被杀不能报成功）");
 ok(/const remaining = owned\.filter/.test(feature) && /return \{ removed, remaining, kept \}/.test(feature),
   "卸载后回读磁盘确认目录已不存在，并把删不掉的如实返回");
+/* 11-20 神灯（单根 SKILL.md 仓库）：安装目录名取 frontmatter name，不落成 shendeng-main。 */
+ok(/dir === repoRoot \? await skillNameFromFile\(dir\)/.test(feature) && /const folder = \(rawName \|\| path\.basename\(dir\)\)/.test(feature),
+  "单根技能仓库按 frontmatter name 建目录（⛔ 不落成 repo-main 这种解压名）");
 ok(/skills: \[\.\.\.installed\]/.test(feature) && !/skills: \[\.\.\.installed, \.\.\.skipped\]/.test(feature),
   "marker 只记真正写进去的目录（⛔ 记 skipped 会把用户的同名技能一起卸掉）");
 /* ★ 10-30 用户令「不要能卸载内置技能」：安装写归属凭据，卸载按凭据删（marker 被改也删不到别人的技能） */
