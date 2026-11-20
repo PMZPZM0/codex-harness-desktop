@@ -218,6 +218,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       return next;
     });
   };
+  /* 11-19 用户令：「这个滚动条默认隐藏，滚动再展示」——列表滚动时才给滚动条上色，停 900ms 收回。 */
+  const [listScrolling, setListScrolling] = useState(false);
+  const listScrollTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (listScrollTimer.current) window.clearTimeout(listScrollTimer.current); }, []);
+  const markListScrolling = () => {
+    setListScrolling(true);
+    if (listScrollTimer.current) window.clearTimeout(listScrollTimer.current);
+    listScrollTimer.current = window.setTimeout(() => setListScrolling(false), 900);
+  };
   /* 11-17 用户令：「把这个改成三个点，点击右边菜单」——原来的悬浮图标条改成常驻 ⋯，
      点击在它右侧弹菜单（不再随 hover 出现、也不在窄侧栏里压住 tab）。 */
   const [moreMenu, setMoreMenu] = useState<{ left: number; top: number } | null>(null);
@@ -460,11 +469,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     updateRestarting,
     dismissUpdateReady,
     restartAndInstall,
-    /* 11-15：自动安装（默认开）—— 提示条据此改成「空闲时自动安装并重启」，
-       并把当前阻塞原因（有回合在跑 / 刚刚还在操作）如实显示出来。 */
-    autoInstallUpdate,
-    setAutoInstallUpdate,
-    autoInstallBlockedBy,
     userAvatar,
     username,
     viewTab,
@@ -973,7 +977,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ DOM 顺序是**契约的一部分**（守卫【268】钉死已登记插槽位不许被删），
                    所以只允许追加在既有插槽之后，不许插到既有按钮之间。*/}
             <Slot id="sidebar.middle" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
-            <div className={`thread-list${viewTab === "tasks" ? " is-tasks" : ""}`}>
+            <div className={`thread-list${viewTab === "tasks" ? " is-tasks" : ""}${listScrolling ? " is-scrolling" : ""}`} onScroll={markListScrolling}>
               {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "tasks" ? (
                 /* 10-25 用户令：「项目选项旁边加一个任务选项」= 平铺全部会话（置顶优先、按最近活动排；
                    与项目视图共用 renderDispatchedList 同一渲染器）。
@@ -1169,14 +1173,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           </span>
                         )}
                       </div>
-                      {/* 11-15 用户令「不需要点，自动安装，自动重启」：默认自动；
-                          关掉只回到「提示 + 手动重启」，后台检查与静默下载照旧。 */}
-                      <div className="account-menu-row"><span className="account-menu-label">自动安装</span>
-                        <span className="update-mode-switch" role="group" aria-label="自动安装更新">
-                          <button type="button" className={autoInstallUpdate ? "active" : ""} onClick={() => { setAutoInstallUpdate(true); showToast("已开启自动安装更新", "下载完成后会在你空闲时自动安装并重启"); }}>自动<span className="update-help" title="后台检查并差分下载；没有回合在跑、没有工具在装、你 90 秒没操作时，静默安装并重启——不需要你点任何按钮" onClick={(event) => event.stopPropagation()}>?</span></button>
-                          <button type="button" className={!autoInstallUpdate ? "active" : ""} onClick={() => { setAutoInstallUpdate(false); showToast("已关闭自动安装更新", "改回手动确认：更新就绪后点「重启安装」"); }}>手动<span className="update-help" title="更新就绪后只弹提示条，等你点「重启安装」才装" onClick={(event) => event.stopPropagation()}>?</span></button>
-                        </span>
-                      </div>
                     </div>
                     <button className="account-menu-item" onClick={() => void copyBuildDiagnostics()}>
                       <ClipboardList size={15} /><span>复制诊断信息</span>
@@ -1223,8 +1219,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       <UpdateReadyToast
         version={updateReadyVersion}
         restarting={updateRestarting}
-        auto={autoInstallUpdate}
-        blockedBy={typeof autoInstallBlockedBy === "function" ? autoInstallBlockedBy() : ""}
         onCancel={dismissUpdateReady}
         onRestartInstall={() => void restartAndInstall()}
       />

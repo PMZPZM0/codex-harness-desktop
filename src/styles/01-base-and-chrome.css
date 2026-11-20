@@ -1206,7 +1206,29 @@ button.brand-mark.sidebar-toggle:hover {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 11-19 用户令：「这个滚动条默认隐藏，滚动再展示」——
+     槽位保持 10px（不造成滚动时内容左右跳动），thumb 默认透明，滚动时由 .is-scrolling 上色。 */
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.thread-list::-webkit-scrollbar { width: 10px; height: 10px; }
+.thread-list::-webkit-scrollbar-track { background: transparent; }
+.thread-list::-webkit-scrollbar-button { display: none; height: 0; }
+.thread-list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 32px;
+}
+.thread-list.is-scrolling { scrollbar-color: color-mix(in srgb, var(--muted) 48%, transparent) transparent; }
+.thread-list.is-scrolling::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  background-clip: padding-box;
+}
+.thread-list.is-scrolling::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 62%, transparent);
+  background-clip: padding-box;
 }
 .team-cluster-body::-webkit-scrollbar { width: 6px; }
 .team-cluster-body::-webkit-scrollbar-thumb {
