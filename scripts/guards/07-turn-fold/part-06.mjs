@@ -692,6 +692,12 @@ export async function run() {
     && /if \(!inlineCompaction\) bag\.settleAfterCompaction\(tid0\);/.test(part05Src) ? ok : fail)(
     "【163】内联自动压缩不结算运行态（压缩完成但回合还在等回复时，不许打掉「等待模型回复」行）"
   );
+  // ⑤c turn/completed 兜底不许在压缩项还 inProgress 时报成功（11-20 用户实测：
+  //    「刚刚开始压缩，就显示了压缩成功板块」—— 触发压缩的回合紧接着 turn/completed，
+  //    旧写法无条件 running→success）。
+  (/const compactionStillRunning = [\s\S]{0,520}?current\?\.state === "running" && !compactionStillRunning/.test(part05Src) ? ok : fail)(
+    "【163】turn/completed 兜底先看压缩项状态（仍 inProgress ⇒ 保持「正在压缩」，不许提前报成功）"
+  );
   // ⑥ 成功提示条件化（09-26 用户截图「还在转圈就报成功」）：item/completed 只代表一个压缩
   //    completed 到达即认为本次压缩结束：**先** prune 收敛线程里其它压缩项，再报成功、再结算。
   //    ⛔ 不许回到「扫线程 item 判断还有没有在跑」的写法（09-26 用户「现在根本压缩成功不了」）：

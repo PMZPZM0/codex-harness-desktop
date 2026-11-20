@@ -439,11 +439,17 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           bag.setGoalStatus(null);
         }
       } else if (method === "turn/completed") {
-        // ⛔ 回合结束 = 压缩必然已经结束（压缩不跨回合）⇒ 兜底熄灭「正在压缩」。
-        //    09-26 实测：引擎 16:33:41 就完成了压缩（item_completed + task_complete，且那次请求
-        //    input 从 7 万降到 2.48 万），界面却一直转圈 15 分钟 —— 完成事件在渲染层没被识别。
-        //    这条兜底与事件形态无关（不依赖 item 类型大小写 / turnId 归属），保证不会再永久转圈。
-        bag.setCompactToast((current) => (current?.state === "running"
+        // ⛔ 回合结束的兜底（09-26）：引擎完成压缩但渲染层没识别完成事件时，别让提示永久转圈。
+        // ⛔⛔ 11-20 用户实测「刚刚开始压缩就显示压缩成功」：自动压缩是**内联**的，触发它的回合
+        //    往往紧接着就 turn/completed —— 旧写法无条件 running→success，压缩才刚起步就报成功。
+        //    ⇒ 先看压缩项自己的状态：还有 inProgress/running 的压缩项 ⇒ 压缩没完，保持「正在压缩」，
+        //      成功交给 item/completed / thread/compacted（都真到了才报）；真卡死仍由 180s 超时兜底。
+        const compactionStillRunning = (bag.threadRef.current?.turns ?? []).some((turn) =>
+          ((turn as { items?: unknown[] }).items ?? []).some((item) =>
+            isCompactionItem(item)
+            && !(item as { failure?: { message?: string } }).failure?.message
+            && ["inProgress", "running"].includes(String((item as { status?: string }).status ?? ""))));
+        bag.setCompactToast((current) => (current?.state === "running" && !compactionStillRunning
           ? { state: "success", message: "上下文压缩成功", threadId: current.threadId }
           : current));
         /* 10-17：回合刚结束、引擎已空闲 ⇒ 执行模型排队的 compact_context（回合中调会中断回合）。 */
