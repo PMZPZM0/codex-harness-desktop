@@ -776,7 +776,7 @@ bag.insertFavorite = insertFavorite as typeof bag.insertFavorite;
   }
 bag.sendFavorite = sendFavorite as typeof bag.sendFavorite;
 
-  /** 加入 Agent 记忆：写记忆金字塔的层文件（主进程侧先读后写，只追加不覆盖）。 */
+  /** 加入 Agent 记忆：写记忆文件的层文件（主进程侧先读后写，只追加不覆盖）。 */
   async function favoriteToMemory(ids: string[], scope: MemoryLayerScope): Promise<FavoritesToMemoryResult> {
     if (!ids.length) return { ok: false, written: 0, error: "没有选中任何收藏" };
     setFavoritesBusy(true);

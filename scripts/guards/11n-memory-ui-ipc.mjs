@@ -4,7 +4,7 @@
  * ══ 为什么单独一个守卫，而不在 11m 里加几条 ══════════════════════════════
  * 10-05 上午那次，`11m-memory-ui` **56/56 全绿、变异测试 12/12 全绿**，应用却白屏：
  *   `TypeError: Cannot read properties of undefined (reading 'files')`
- * 根因是 `types.ts` 的 `PyramidMemory.archive` —— 契约里写着，主进程**根本没这个字段**
+ * 根因是 `types.ts` 里一个契约字段（`archive`）—— 契约里写着，主进程**根本没这个字段**
  * （它在 `memory:hygiene:plan` 的返回体里，不在 `memory:layers:read` 里）。
  * 同型还有两处：MCP 后端四个字段名全错、被调度返回体是 `{records:[...]}` 包一层。
  *
@@ -96,10 +96,8 @@ ok(Array.isArray(delegateFields) && delegateFields.length >= 8,
 console.log("\n【muiipc】② 契约字段 ⛔ 不得凭空发明");
 ok(!layerFields?.includes("archive"),
   "⛔⛔ `archive` **不在** MemoryLayersSnapshot 里（10-05 白屏的直接原因：视图读它，主进程没返回）");
-ok(/normalizePyramid\(pyramid, hygiene\?\.archive\)/.test(SHELL),
-  "⛔⛔ archive 只能从 `memory:hygiene:plan` 拿（⛔ 那是唯一带 archive 的通道）");
-ok(/bridge\.planMemoryHygiene\(workspace\)/.test(SHELL),
-  "⛔ 归档统计真的调了 hygiene:plan（⛔ 只写变量名不调 = 恒绿）");
+ok(!/normalizePyramid/.test(SHELL) && !/bridge\.planMemoryHygiene/.test(SHELL),
+  "⛔ 工作台不再取分层快照 / 归档统计（11-20：旧版分层视图删净，少两次无主 IPC）");
 /* ⛔ MCP 后端：契约里的 active/ready 必须来自主进程真有的 effective/installed */
 ok(backendFields?.includes("effective") && backendFields?.includes("installed"),
   "⛔ MCP 后端真字段是 effective/installed（⛔ 上午那版读 active/ready，两个都不存在）");
@@ -144,18 +142,6 @@ function makeRaw(fields, seed = {}) {
 
 console.log("\n【muiipc】③ 真跑 normalize（喂主进程真实字段名）");
 
-/* ③-1 金字塔：⛔ 这就是白屏那条路径 */
-const pyramidRaw = { ...makeRaw(layerFields, { layers: [{ id: "L1", name: "项目宪法", where: "w", writer: "x", sink: "y", budget: 100, used: 95, ratio: 0.95, needDistill: true }] }) };
-const pyr = NORM.normalizePyramid(pyramidRaw, { files: 3, bytes: 2048 });
-ok(pyr.archive.files === 3 && pyr.archive.bytes === 2048,
-  "⛔⛔ archive 从第二个参数来（⛔ 这是 10-05 白屏的那一行，现在有值了）");
-ok(Array.isArray(pyr.layers) && pyr.layers.length === 1 && pyr.layers[0].ratio === 0.95,
-  "⛔ 层数据真读到了（⛔ ratio/needDistill 是水位条的全部依据）");
-ok(NORM.normalizePyramid(pyramidRaw, null).archive.files === 0,
-  "⛔⛔ archive 缺失时归零（⛔ 不是 undefined —— undefined.files 就是那句报错）");
-/* ⛔ 关键：⛔ 主进程**没返回**的字段不许从别处"猜"出来 */
-ok(!("archive" in pyramidRaw),
-  "⛔ fixture 里确实没有 archive（⛔ 若守卫自己造出了这个字段，上面两条就是恒绿）");
 
 /* ③-2 MCP 后端 */
 const mcpRaw = makeRaw(backendFields, { backend: "mcp", effective: "mcp", installed: true, fallbackReason: null });
@@ -215,10 +201,6 @@ ok(mcpRenamed.active === "builtin",
 const noRecords = NORM.normalizeDelegates({ items: [] });
 ok(noRecords.length === 0,
   "⛔ 包装键从 records 改名成 items 后不再崩（降级是正确行为，⛔ 不是仍能显示）");
-/* ⛔ 反向：⛔ 不能出现"字段改名后 UI 仍然显示旧数据"这种更糟的情况 */
-ok(NORM.normalizePyramid({}, undefined).layers.length === 0
-  && NORM.normalizePyramid({}, undefined).archive.files === 0,
-  "⛔ 空返回体下金字塔仍是合法空值（⛔ 不是抛异常、也不是假数据）");
 
 /* ══ ⑤ 结构性纪律：归一化是唯一碰原始返回体的地方 ═══════════════════════ */
 console.log("\n【muiipc】⑤ 分层纪律");
@@ -226,20 +208,17 @@ ok(!/window\.codex|ipcRenderer|require\("electron"\)/.test(NORM_SRC),
   "⛔ normalize 零 IPC（⛔ 它是纯函数 ⇒ 守卫能真跑它；碰了 IPC 就只能 grep，判据立刻退化成假绿）");
 ok(!/Date\.now\(\)|new Date\(\)/.test(NORM_SRC.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ")),
   "⛔⛔ normalize 里没有时间依赖（⛔ 有的话守卫结果随运行时刻变 ⇒ 不可复现）");
-ok(/NORM_SRC|normalize/.test(SHELL) && /normalizePyramid/.test(SHELL) && /normalizeMcpBackend/.test(SHELL)
+ok(/NORM_SRC|normalize/.test(SHELL) && /normalizeMcpBackend/.test(SHELL)
   && /normalizeDelegates/.test(SHELL) && /normalizeEntries/.test(SHELL),
   "⛔⛔ 外壳取数**全部经过归一化**（⛔ 漏一个 = 那个视图还在读原始返回体 = 白屏还在）");
-ok(!/as PyramidMemory|as McpBackendMemory|as DispatchedSession\[\]/.test(SHELL),
+ok(!/as McpBackendMemory|as DispatchedSession\[\]/.test(SHELL),
   "⛔⛔⛔ 外壳里没有 `as` 强转断言（10-05 的病根：强转让编译期闭嘴，运行时才炸）");
-/* ⛔ 视图层防御：⛔ 三重兜底是刻意的（缺一层就可能白屏），但也不能退化成什么都不防 */
-ok(/data\?\.archive \?\? \{ files: 0, bytes: 0 \}/.test(VIEWS),
-  "⛔⛔ 视图对 archive 有兜底（⛔ 归一化是第一道，视图是第二道 —— 少一道就可能白屏）");
 ok(/Array\.isArray\(items\) \? items : \[\]/.test(VIEWS),
   "⛔⛔ 时间线视图对 items 有数组兜底（⛔ `.filter` 必崩点）");
 ok(/SCOPE_META\[entry\?\.scope\] \?\?/.test(VIEWS),
   "⛔⛔ 作用域查表有兜底（⛔ 后端加新作用域时 SCOPE_META[scope] 是 undefined ⇒ 下一行崩）");
 /* ⛔ 归一化必须导出全部六个 —— ⛔ 少一个就有一个视图没被保护 */
-for (const fn of ["normalizePyramid", "normalizeMcpBackend", "normalizeEntry", "normalizeEntries",
+for (const fn of ["normalizeMcpBackend", "normalizeEntry", "normalizeEntries",
   "normalizeDelegates", "normalizeMember", "parseNamespace", "statOf"]) {
   ok(new RegExp("export function " + fn + "\\b").test(NORM_SRC), `归一化导出 ${fn}`);
 }

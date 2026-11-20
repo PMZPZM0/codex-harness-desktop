@@ -513,7 +513,7 @@ export async function bootApp() {
   // 启动时镜像一份，引擎的技能列表里才会同时出现官方技能与本应用的 browser-skill。
   await ensureEgoBrowserSkill(userSkillsDir);
   /* 记忆后端 → 本地 MCP 连接器同步（09-25）：后端=mcp 时启用 local-memory 连接器
-     （引擎可见 MCP 记忆工具、写入走 MCP），builtin 时停用它（写入走内置金字塔）。
+     （引擎可见 MCP 记忆工具、写入走 MCP），builtin 时停用它（写入走内置记忆）。
      ⛔ 两边必须同源，否则「内置在写 + MCP 工具也可见」会让模型两边都写 = 双份记忆。
      幂等：状态一致时不写盘。⚠️ 包 try/catch —— 启动链里裸 await 抛出会掐死整条链。 */
   try {

@@ -35,9 +35,9 @@ const PANEL = readFileSync(join(ROOT, "src", "features", "settings-memory", "Mem
 const CENTER = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
 const FUNNEL = readFileSync(join(ROOT, "src", "features", "memory", "MemoryPanels.tsx"), "utf8");
 
-/* ── ① 七类记忆齐全 + 判别联合 ────────────────────────────────────────── */
+/* ── ① 六类记忆齐全 + 判别联合 ────────────────────────────────────────── */
 console.log("\n【mui】① 类型契约");
-for (const k of ["pyramid", "mcp-backend", "main", "subagent", "expert", "team", "dispatched"]) {
+for (const k of ["mcp-backend", "main", "subagent", "expert", "team", "dispatched"]) {
   ok(TYPES.includes('"' + k + '"'), `记忆类型含 ${k}`);
 }
 ok(/export type AnyMemory = \{ \[K in MemoryKind\]: MemorySourceMap\[K\] \}\[MemoryKind\];/.test(TYPES),
@@ -60,7 +60,7 @@ ok(!/ipcRenderer|require\("electron"\)|window as any\)\.codex/.test(VIEWS),
   + "⛔ 而 `window.codex` 这条真路径能绕过去 —— 变异验证时才发现）");
 const ipcHits = (SHELL.match(/window as any\)\.codex|\.codex\./g) || []).length;
 ok(ipcHits > 0, `⛔ 外壳是唯一碰 IPC 的地方（${ipcHits} 处调用，其余文件 0 处）`);
-/* 10-10 修正：TABS 从 7 项收成 **5 个作用域**（金字塔 / MCP 后端改走常驻概览条，见 ⑨）——
+/* 10-10 修正：TABS 从 7 项收成 **5 个作用域**（11-20 起常驻概览条也已删除，见 ⑨）——
    这条断言的**意图**没变：tab 表仍然只有这一处定义，加一个作用域只改这张表。
    ⛔ 七类**数据源**的齐全性由 ①（MemoryKind 类型）继续钉着，两件事不要混。 */
 ok(/const TABS: \{ kind: ScopeTabKind; label: string \}\[\]/.test(SHELL)
@@ -213,29 +213,29 @@ ok(/pushMain\(entries, "项目共享层"/.test(SHELL) && /pushMain\(entries, "�
 console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
 {
   const RULES = readFileSync(join(ROOT, "src", "lib", "memory-scope-rules.mjs"), "utf8");
-  /* 10-18：MEMORY_PYRAMID 已切到 memory/layers-budget.ts（P2 批次 4）⇒ 两处拼接读取，
-       搬家后不误红（⛔ 只读单文件 ⇒ 断言静默恒真，那更危险）。 */
-  const pyramidSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8")
-    + readFileSync(join(ROOT, "electron", "memory", "layers-budget.ts"), "utf8");
-  const layerIds = [...RULES.matchAll(/layer: "(L\d)"/g)].map((m) => m[1]);
-  const pyramidIds = [...pyramidSrc.matchAll(/\{ id: "(L\d)"/g)].map((m) => m[1]);
-  ok(layerIds.length > 0 && layerIds.join(",") === pyramidIds.join(","),
-    `规则表的层 id 与 MEMORY_PYRAMID 逐字一致（规则表 ${layerIds.join("/")} vs 实现 ${pyramidIds.join("/")}）`);
+  /* 11-20：旧版层表已删除 ⇒ 规则表**自持**文件落点，不再与主进程层表对齐（对齐对象已不存在）。 */
+  const targets = [...RULES.matchAll(/target: "([^"]+)"/g)].map((m) => m[1]);
+  ok(targets.length === 8 && targets[0] === "USER.md" && targets.includes("memory.json"),
+    `规则表按文件落点列出八项（${targets.join(" / ")}）`);
+  ok(!/layer: "L\d"/.test(RULES), "⛔ 规则表里不再有 L0–L7 层号（旧版层表已删除）");
 
-  /* 用户规则的三作用域分类：L0 跨项目一致、L1–L6 项目维度共享、L7 按会话独立 */
-  ok(/layer: "L0"[\s\S]{0,160}?scope: "cross-project"/.test(RULES), "L0 用户档案 = 跨项目一致（唯一一层）");
-  const projectLayers = ["L1", "L2", "L3", "L4", "L5", "L6"]
-    .filter((id) => new RegExp(`layer: "${id}"[\\s\\S]{0,220}?scope: "project"`).test(RULES));
-  ok(projectLayers.length === 6, `L1–L6 全部按项目维度共享（实测 ${projectLayers.join("/") || "无"}）`);
-  ok(/layer: "L7"[\s\S]{0,220}?scope: "session"/.test(RULES), "L7 碎片池 = 按会话独立");
+  /* 三作用域分类：用户档案跨项目 · 六类项目文件共享 · 碎片池按会话独立 */
+  ok(/target: "USER\.md"[\s\S]{0,160}?scope: "cross-project"/.test(RULES), "USER.md 用户档案 = 跨项目一致（唯一一份）");
+  const projectFiles = ["project/MEMORY.md", "lessons/*.md", "project/BACKGROUND.md", "logs/*.md", "rollups/*.md", "archive/*.md"]
+    .filter((t) => RULES.includes(`target: "${t}"`));
+  ok(projectFiles.length === 6, `六类项目文件全部列出（实测 ${projectFiles.join("/") || "无"}）`);
+  ok(/target: "memory\.json"[\s\S]{0,220}?scope: "session"/.test(RULES), "memory.json 碎片池 = 按会话独立");
 
-  /* 注入优先级档必须与实现一致：纪律最前 / 日志最后 / 归档层不进注入 */
-  ok(/layer: "L2"[\s\S]{0,320}?inject: "first"/.test(RULES), "L2 纪律排最前（被截断代价最大）");
-  ok(/layer: "L4"[\s\S]{0,320}?inject: "last"/.test(RULES), "L4 日志排最后（超预算按天先丢）");
-  const neverLayers = ["L5", "L6", "L7"]
-    .filter((id) => new RegExp(`layer: "${id}"[\\s\\S]{0,320}?inject: "never"`).test(RULES));
-  ok(neverLayers.length === 3, `L5–L7 不进注入（实测 ${neverLayers.join("/") || "无"}）`);
-  ok(/引用|inheritsFrom/.test(RULES) && /syncsTo/.test(RULES), "每层都写明引用（从哪来）与同步（去哪）");
+  /* 注入优先级档必须与实现一致：纪律最前 / 日志最后 / 卷宗+存档+碎片池不进注入 */
+  ok(/target: "lessons\/\*\.md"[\s\S]{0,320}?inject: "first"/.test(RULES), "纪律（lessons）排最前（被截断代价最大）");
+  ok(/target: "logs\/\*\.md"[\s\S]{0,320}?inject: "last"/.test(RULES), "日志（logs）排最后（超预算按天先丢）");
+  const neverFiles = ["rollups/*.md", "archive/*.md", "memory.json"]
+    .filter((t) => {
+      const at = RULES.indexOf(`target: "${t}"`);
+      return at >= 0 && RULES.slice(at, at + 320).includes('inject: "never"');
+    });
+  ok(neverFiles.length === 3, `卷宗 / 冷存档 / 碎片池不进注入（实测 ${neverFiles.join("/") || "无"}）`);
+  ok(/引用|inheritsFrom/.test(RULES) && /syncsTo/.test(RULES), "每项都写明引用（从哪来）与同步（去哪）");
   ok(existsSync(join(ROOT, "docs", "MEMORY-LAYERS.md")), "规则文档 docs/MEMORY-LAYERS.md 在位（给人读的那份）");
 
   /* 记忆中心两级 IA：一级卡片、内容只在弹窗里 */
@@ -244,8 +244,8 @@ console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
   const dlgAt = CENTER.indexOf("<SettingsDialog");
   ok(dlgAt > 0 && CENTER.indexOf("<MemoryAtomsPanel") > dlgAt,
     "⛔ 内容只在二级弹窗里（记忆条目面板出现在 SettingsDialog 之后）");
-  ok(/memory-rule-scope-list/.test(PANEL) && /layersByScope/.test(PANEL),
-    "分层规则块直接渲染规则表（⛔ 不另写一份层表；规则来自 memory-scope-rules.mjs 唯一真相源）");
+  ok(/memory-rule-scope-list/.test(PANEL) && /filesByScope/.test(PANEL),
+    "规则块直接渲染规则表（⛔ 不另写一份清单；规则来自 memory-scope-rules.mjs 唯一真相源）");
 
   /* 会话↔记忆层级（新增需求） */
   ok(/mui-sessions/.test(VIEWS) && /sessionGroups/.test(VIEWS), "来源视图列出**关联会话**（来源 → 会话 → 记忆）");
@@ -256,29 +256,26 @@ console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
     "点会话 = 只看它写下的记忆（空态也按筛选后的可见集判定）");
 }
 
-/* ── ⑨ 维度分离：金字塔 / 存储后端**不做 tab**（10-10 用户反馈修正）──────────────
-   用户原话：「金字塔记忆不应作为单独的一个分类来呈现，而应体现在每一个选项当中。
-   当前实现将记忆全部归入"金字塔记忆"这一类，其他类目均为空」。
-   根因 = **两个正交维度被摆进同一排 tab**（作用域 vs 分层机制/存储位置），
-   且计数口径串味：pyramid 那格填的是**层数**（L0–L7 恒 8）、mcp 那格是**布尔**，
-   而作用域几格是**条目数** ⇒ 读起来就是"记忆全归到金字塔"。
-   ⇒ 钉死：tab 只含作用域；金字塔与后端走**常驻概览条**；计数只统计条目数。 */
+/* ── ⑨ 维度分离：记忆工作台只按作用域切页 ─────────────────────────────────
+   10-10 用户原话：「分层记忆不应作为单独的一个分类来呈现，而应体现在每一个选项当中」。
+   11-20 用户令「旧版分层记忆一个字符都不想看到，连根拔掉」⇒ 常驻概览条也已删除，
+   工作台只剩五个作用域 tab（主会话 / 子智能体 / 专家 / 团队 / 被调度）。 */
 console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后端各归其位）");
 {
   const tabsBlock = (SHELL.match(/const TABS[\s\S]*?\];/) || [""])[0];
   ok(["main", "subagent", "expert", "team", "dispatched"].every((k) => tabsBlock.includes(`kind: "${k}"`)),
     "tab 覆盖五个作用域维度");
   ok(!/kind: "pyramid"/.test(tabsBlock) && !/kind: "mcp-backend"/.test(tabsBlock),
-    "⛔ 金字塔与 MCP 后端**不在 tab 里**（它们是正交维度，不是记忆分类）");
+    "⛔ 分层与 MCP 后端**不在 tab 里**（tab 只按作用域切页）");
   const countsBlock = (SHELL.match(/const counts = useMemo[\s\S]*?\}\), \[data\]\)/) || [""])[0];
   ok(!/layers\.length/.test(countsBlock) && !/\? 1 : 0/.test(countsBlock),
     "⛔ 计数口径统一为条目数（⛔ 不许再把层数 / 布尔塞进同一排 tab —— 那是在骗人）");
-  ok(/function MemoryOverview\(/.test(SHELL) && /<MemoryOverview/.test(SHELL),
-    "机制概览（金字塔水位 + 存储后端）存在且已挂载 —— 每个作用域视图下都看得到");
+  ok(!/function MemoryOverview\(/.test(SHELL) && !/<MemoryOverview/.test(SHELL),
+    "⛔ 分层概览条已删除（11-20 用户令「连根拔掉」，不许复活）");
   ok(!/\{tab === "pyramid"\}/.test(SHELL) && !/\{tab === "mcp-backend"\}/.test(SHELL),
     "⛔ 两个视图不再挂在 tab 分支上（只在概览里渲染）");
-  ok(/\.mui-overview\b/.test(CSS) && /\.mui-overview-head\b/.test(CSS),
-    "概览条样式已定义（缺了会退化成裸按钮）");
+  ok(!/\.mui-overview\b/.test(CSS) && !/\.mui-pyramid\b/.test(CSS),
+    "⛔ 概览条与分层树样式已移除（不留死样式）");
 }
 
 /* ── ⑪ 设置页「记忆」两级 IA（10-10 用户反馈：「这个界面为什么没有按照要求改」）──────────
@@ -289,7 +286,7 @@ console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后�
 console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
 {
   const center = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
-  /* ⛔ 11-11 用户令「把金字塔删干净」：卡片改成 项目库 / 记忆条目 / 工作伙伴记忆。
+  /* ⛔ 11-11 用户令「把旧版分层记忆删干净」：卡片改成 项目库 / 记忆条目 / 工作伙伴记忆。
      ⛔ pyramid **不许复活**（下面 ⑭ 有负向断言）。 */
   const cardKeys = ["shared", "atoms", "groups"];
   const missing = cardKeys.filter((k) => !center.includes(`key: "${k}"`));
@@ -317,14 +314,14 @@ console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
 
 /* ── ⑫ 架构评审的三条落地（10-10 用户认可「按你的建议来修改执行」）─────────────────
    评审结论：草图的"共享池 vs 独立记忆"方向对，但把**分层机制**复制到了每个会话
-   （"独立金字塔记忆 ×4"）⇒ 不采纳；技能/插件是能力面、应画出边；被调度会话要标派出者。 */
+   （"独立分层记忆 ×4"）⇒ 不采纳；技能/插件是能力面、应画出边；被调度会话要标派出者。 */
 console.log("\n【mui】⑫ 评审落地：派出者 / L2→技能出边 / 评审文档");
 {
   ok(/mui-tl-parent/.test(VIEWS) && /派出者/.test(VIEWS), "被调度会话标注**派出者**（⛔ 不标就无法判断它记得什么）");
   ok(/d\.depth > 1/.test(VIEWS) && /嵌套第/.test(VIEWS), "嵌套层数可见（由另一个被调度会话再次派出）");
-  ok(/出边：记忆 → 能力/.test(PANEL) && /L2 →/.test(PANEL), "记忆 → 技能库 画成**出边**（⛔ 技能不当记忆分类）");
+  ok(/出边：记忆 → 能力/.test(PANEL) && /纪律 →/.test(PANEL), "记忆 → 技能库 画成**出边**（⛔ 技能不当记忆分类）");
   ok(/架构评审与演进/.test(readFileSync(join(ROOT, "docs", "MEMORY-LAYERS.md"), "utf8")),
-    "评审结论沉淀在 docs/MEMORY-LAYERS.md §六（含被否掉的「独立金字塔」与依据）");
+    "评审结论沉淀在 docs/MEMORY-LAYERS.md §六（含被否掉的分层方案与依据）");
 }
 
 /* ── ⑬ 写入侧的「项目作用域」必须说清边界（10-10 核对工具面时发现）──────────────
@@ -341,8 +338,8 @@ console.log("\n【mui】⑬ 写入侧作用域边界说明");
 
 /* ── ⑭ 设置页「记忆」= 两个内容入口 + 三块后端板（10-21 用户要求）──────────────
    ① 项目共享记忆库（可切项目，覆盖用户档案 / 项目规则 / 工作纪律）
-   ② 金字塔记忆架构（按会话展示：共享层同一份 + 独立层各异）
-   ③ 记忆后端三块板（本地金字塔 / MCP / 云端，各带开关；开哪个生效哪个）
+   ② 记忆架构（按会话展示：共享层同一份 + 独立层各异）
+   ③ 记忆后端三块板（本地记忆 / MCP / 云端，各带开关；开哪个生效哪个）
    ⛔ 内容入口并列；后端选择不再是卡中卡 / 下拉，而是页面上的三块板。 */
 console.log("\n【mui】⑭ 设置页「记忆」内容入口 + 三块后端板");
 {
@@ -353,37 +350,37 @@ console.log("\n【mui】⑭ 设置页「记忆」内容入口 + 三块后端板"
   ok(/key: "shared"/.test(center2) && /key: "atoms"/.test(center2) && /key: "groups"/.test(center2)
     && !/key: "backend"/.test(center2),
     "内容卡片不含「记忆后端选项」；后端由三块板上的开关选择");
-  /* ⛔⛔ 负向：金字塔必须真的下线（用户 11-11「把金字塔删干净」）。
+  /* ⛔⛔ 负向：旧版分层记忆必须真的下线（用户 11-11「把旧版分层记忆删干净」）。
      ⛔ 只删文案不算 —— 卡片 key、弹窗渲染、组件都要没有。 */
   ok(!/key: "pyramid"/.test(center2) && !/<PyramidPanel/.test(center2) && !/<MemoryPyramid/.test(center2),
-    "⛔ 金字塔入口/组件已从设置页删除（⛔ 不许复活：要恢复必须先问用户）");
+    "⛔ 旧版入口/组件已从设置页删除（⛔ 不许复活：要恢复必须先问用户）");
   ok(/<MemoryAtomsPanel/.test(center2) && /<GroupMemoryPanel/.test(center2),
     "新界面真的挂上了（记忆条目 = MemoryAtomsPanel；工作伙伴记忆 = GroupMemoryPanel）");
   const boardsSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryBackendBoards.tsx"), "utf8");
   ok(/id: "builtin"/.test(boardsSrc) && /id: "mcp"/.test(boardsSrc) && /id: "cloud"/.test(boardsSrc)
     && /type="checkbox"/.test(boardsSrc) && /role="switch"/.test(boardsSrc),
-    "三块板 + 每块一个开关（本地金字塔 / MCP / 云端）");
+    "三块板 + 每块一个开关（本地记忆 / MCP / 云端）");
   ok(/setMemoryBackend/.test(boardsSrc) && /onMemoryBackendChanged/.test(boardsSrc) && /effective/.test(boardsSrc),
     "开关真的切后端（setMemoryBackend）并以后端回报的 effective 为准（未就绪回退可见）");
   ok(/focus\?: "builtin" \| "mcp" \| "cloud"/.test(readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8")),
     "详情面板按块聚焦（不再在三块板之外重复一套后端选择）");
   ok(/<MemoryAtomsPanel/.test(center2) && /listMemoryAtoms/.test(readFileSync(join(ROOT, "src", "features", "memory-atoms", "MemoryAtomsPanel.tsx"), "utf8")),
-    "① 项目库直接读记忆原子（⛔ 不再读书架/层快照 —— 那套随金字塔一起下线）");
+    "① 项目库直接读记忆原子（⛔ 不再读书架/层快照 —— 那套随旧版一起下线）");
   ok(/用户档案/.test(center2) && /项目规则/.test(center2) && /工作纪律/.test(center2),
     "① 覆盖三类共享内容（用户档案 / 项目规则 / 工作纪律）");
   ok(center2.indexOf("<MemoryAtomsPanel") > dlgIdx2,
-    "② 记忆条目入口用新面板（索引 + 原子正文，⛔ 用户 11-11 令「金字塔删干净」）");
+    "② 记忆条目入口用新面板（索引 + 原子正文，⛔ 用户 11-11 令「旧版分层记忆删干净」）");
   ok(!existsSync(join(ROOT, "src", "features", "settings-memory", "PyramidPanel.tsx")),
-    "⛔ 金字塔面板文件已删除（⛔ 文件还在就迟早会被挂回来）");
+    "⛔ 旧版分层面板文件已删除（⛔ 文件还在就迟早会被挂回来）");
   ok(!/MemoryLayersEditor/.test(center2) && !/MemoryHygienePanel/.test(center2) && !/LayerRulesPane/.test(center2),
-    "⛔ 蒸馏 / 层水位 / 分层规则这些金字塔配套不再进设置页");
+    "⛔ 蒸馏 / 层水位 / 分层规则这些旧版配套不再进设置页");
   const bcSrc0 = readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8");
   ok(/<BackendConsolePanel/.test(center2) && /readMemoryBackend/.test(bcSrc0),
     "③ 后端配置仍在（守卫【150】：能读能切 —— 现在由控制台组件自己调这组 IPC）");
 }
 
 /* ── ⑮ 三套界面各自独立（10-10 用户要求：不要复用同一套模板）────────────────────
-   ⛔ 判据不是「有没有用不同组件名」，而是**骨架不同**：书架是左右分栏、金字塔是纵向梯形、
+   ⛔ 判据不是「有没有用不同组件名」，而是**骨架不同**：书架是左右分栏、旧版是纵向梯形、
    控制台是状态灯 + 设备卡（各自独立的根类名 + 独立样式段）。 */
 console.log("\n【mui】⑮ 三套界面各自独立");
 {
@@ -393,10 +390,10 @@ console.log("\n【mui】⑮ 三套界面各自独立");
   const css = readFileSync(join(ROOT, "src", "styles", "29-memory-ui.css"), "utf8");
   ok(/<MemoryAtomsPanel/.test(shell) && /<GroupMemoryPanel/.test(shell) && /<BackendConsolePanel/.test(shell),
     "各入口各接一个独立组件（记忆条目 / 工作伙伴记忆 / 后端控制台）");
-  /* 金字塔骨架已删（11-11）—— 只留负向判据，防止有人把 pyr-shape 那段样式又挂回来。 */
+  /* 旧版骨架已删（11-11）—— 只留负向判据，防止有人把 pyr-shape 那段样式又挂回来。 */
   ok(/bc-statusbar/.test(bc) && /bc-device/.test(bc) && /bc-row/.test(bc), "③ 控制台：状态灯条 + 设备卡 + 控制行（面板骨架）");
-  ok(/\.lib-root/.test(css) && /\.pyr-shape/.test(css) && /\.bc-root/.test(css),
-    "三套骨架在样式上也是三段独立定义（⛔ 不是同一套类名换颜色）");
+  ok(/\.lib-root/.test(css) && /\.bc-root/.test(css) && !/\.pyr-shape/.test(css),
+    "书架 / 控制台两套骨架样式独立，旧版梯形骨架样式已删除（⛔ 不许复活）");
   ok(!/^import[^\n]*MemoryBackendSection/m.test(bc), "③ 控制台**没有 import** 旧的后端组件（自己调同一组 IPC，功能不缩水）");
 }
 
@@ -414,7 +411,7 @@ console.log("\n【mui】⑰ 旧记忆中心已删干净（内容迁进三个弹�
   ok(!/打开记忆中心/.test(CENTER.replace(/\/\*[\s\S]*?\*\//g, "")), "⛔ 设置页不再有「打开记忆中心」入口（旧的记忆板块入口）");
   ok(!/memoryCenterTab|memoryCenterOpen/.test(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8")),
     "⛔ 旧弹窗的开合状态已从 bag 摘掉（留着一个没人读的状态位 = 下次有人照着它把弹窗建回来）");
-  /* ⛔ 11-11 用户令「金字塔的蒸馏那些配套功能删干净」⇒ LayerRulesPane（八层明细）不再挂载、不再必挂。 */
+  /* ⛔ 11-11 用户令「旧版记忆的蒸馏配套删干净」⇒ LayerRulesPane（八层明细）不再挂载、不再必挂。 */
   /* ⛔ 11-11「四个模块同步更新，我不想再看见旧的」⇒ 旧条目槽与常驻记忆面板不再挂载。 */
   const panes = ["MemorySearchPane", "MemoryModePane"];
   const missingPane = panes.filter((n) => !new RegExp(`export function ${n}\\(`).test(PANEL));
@@ -423,7 +420,7 @@ console.log("\n【mui】⑰ 旧记忆中心已删干净（内容迁进三个弹�
     "⛔ 分层规则 / 旧条目槽 / 常驻记忆面板都不再挂载；旧界面不是藏起来，是没有了");
   const missingMount = panes.filter((n) => !new RegExp(`<${n}[ /]`).test(CENTER));
   ok(missingMount.length === 0, `⛔ 六个内容页都**真的挂在弹窗里**（缺挂载：${missingMount.join("/") || "无"}）—— 迁了却不挂 = 功能凭空消失`);
-  /* ⛔ 11-11：整洁清理（水位）/ 常驻记忆编辑（分层正文）随金字塔下线 ——
+  /* ⛔ 11-11：整洁清理（水位）/ 常驻记忆编辑（分层正文）随旧版一起下线 ——
      取而代之的是「记忆条目」面板（索引 + 正文可改 + 注入预览）+ 全局搜索。 */
   ok(/<GlobalSearchView/.test(PANEL) && /<MemoryAtomsPanel/.test(CENTER),
     "新界面在位：记忆条目（索引 + 正文 + 注入预览）+ 全局搜索");

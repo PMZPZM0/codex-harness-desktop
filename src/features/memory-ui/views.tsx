@@ -1,81 +1,27 @@
 /**
- * memory-ui —— **七类记忆的差异化视图**（10-05 用户要求「各类记忆应有各自差异化的
+ * memory-ui —— **各类记忆的差异化视图**（10-05 用户要求「各类记忆应有各自差异化的
  * 信息结构与交互方式，如层级展示、卡片/时间线、标签体系、状态标识」）。
  *
  * ── 每类为什么用不同的结构（都是被数据形状逼出来的，不是为了花哨）──────────
- * ① 金字塔   → **层级树 + 水位条**：它本质是 7 层有容量上下文的栈，⛔ 平铺成列表
- *              就丢掉了"哪层快满了"这个唯一有用的信息。
- * ② 本地 MCP → **状态卡**：⛔ 它不是一种记忆内容，是"记忆存在哪"的后端开关 ⇒
+ * ① 本地 MCP → **状态卡**：⛔ 它不是一种记忆内容，是"记忆存在哪"的后端开关 ⇒
  *              界面必须如实这么显示，⛔ 硬画成记忆列表 = 骗用户。
- * ③ 主会话   → **私有卡片流**：一个执行体一份，最简单的形态。
- * ④ 子智能体 → **身份卡 + 私有记忆**：子智能体数量多 ⇒ 身份识别比内容更重要。
- * ⑤ 专家     → **身份卡 + 私有记忆**：同上，但强调"这位专家是谁"。
- * ⑥ 专家团   → **成员矩阵 + 团内共享**：⛔ 团内记忆的可见范围**等于成员名单**
+ * ② 主会话   → **私有卡片流**：一个执行体一份，最简单的形态。
+ * ③ 子智能体 → **身份卡 + 私有记忆**：子智能体数量多 ⇒ 身份识别比内容更重要。
+ * ④ 专家     → **身份卡 + 私有记忆**：同上，但强调"这位专家是谁"。
+ * ⑤ 专家团   → **成员矩阵 + 团内共享**：⛔ 团内记忆的可见范围**等于成员名单**
  *              ⇒ 必须把成员和记忆并排显示，用户才看得出"谁能读到"。
  * ⑦ 被调度   → **时间线**：调度是**有先后的过程**（派发→运行→产出）⇒ 时间线
  *              比表格更贴合；且要能点进去看那次派出的产出。
  */
 import { useMemo, useState } from "react";
 import {
-  Activity, Brain, CheckCircle2, CircleSlash, Clock, Cpu, FolderTree, Gauge, Plug,
+  Activity, Brain, CheckCircle2, CircleSlash, Clock, Cpu, FolderTree, Plug,
   Sparkles, Star, TriangleAlert, User, Users, Zap,
 } from "lucide-react";
 import {
   MemoryBadge, MemoryList, MemorySection, MemoryState, MemoryTag, MemoryTime, MemoryWeight,
 } from "./primitives";
-import { SCOPE_META, type ActorMemory, type DispatchedSession, type McpBackendMemory, type PyramidMemory } from "./types";
-
-/* ══ ① 金字塔记忆：层级树 + 水位 ═══════════════════════════════════════ */
-
-export function PyramidView({ data }: { data: PyramidMemory }) {
-  /* ⛔⛔ 三重防御：① data ② layers ③ archive 各自独立兜底。
-     上午那次白屏就是 `data.archive.files` —— 字段在契约里写着，主进程却没返回。
-     ⛔ 一处 `?.` 只能挡住一层；这里每层都挡，是因为"缺字段 ⇒ 整页白屏"的
-     代价（用户只看到"界面发生错误"）远大于多写三行。 */
-  const layers = Array.isArray(data?.layers) ? data.layers : [];
-  const archive = data?.archive ?? { files: 0, bytes: 0 };
-  return (
-    <MemorySection
-      title="记忆分层"
-      hint="七层结构 · 越靠下越稳定，满了会提示蒸馏"
-      icon={<Gauge size={14} />}
-      stat={[
-        { label: "层", value: layers.length },
-        { label: "需蒸馏", value: layers.filter((l) => l.needDistill).length, hint: "水位到 90% 的层" },
-        { label: "归档", value: archive.files, hint: `${(archive.bytes / 1024).toFixed(1)} KB` },
-      ]}
-    >
-      <ol className="mui-pyramid">
-        {layers.map((layer) => (
-          <li key={layer.id} className={`mui-pyramid-row${layer.needDistill ? " is-hot" : ""}`}>
-            <div className="mui-pyramid-head">
-              <span className="mui-pyramid-id">{layer.id}</span>
-              <span className="mui-pyramid-name">{layer.name}</span>
-              {layer.needDistill && <MemoryBadge tone="warn">该蒸馏了</MemoryBadge>}
-              <span className="mui-pyramid-usage">
-                {layer.ratio == null ? "未测量" : `${Math.round(layer.ratio * 100)}%`}
-              </span>
-            </div>
-            {/* ⛔ 水位条：⛔ 无测量值时不画空条（画一条空的会被读成"用量 0"） */}
-            <div className="mui-pyramid-bar" role="img" aria-label={`${layer.name} 水位 ${layer.ratio == null ? "未测量" : Math.round(layer.ratio * 100) + "%"}`}>
-              {layer.ratio != null && (
-                <i
-                  className={layer.ratio >= 0.9 ? "is-hot" : layer.ratio >= 0.7 ? "is-warm" : ""}
-                  style={{ width: `${Math.min(100, Math.round(layer.ratio * 100))}%` }}
-                />
-              )}
-            </div>
-            <dl className="mui-pyramid-meta">
-              <div><dt>存哪</dt><dd>{layer.where}</dd></div>
-              <div><dt>谁写</dt><dd>{layer.writer}</dd></div>
-              <div><dt>满了会怎样</dt><dd>{layer.sink}</dd></div>
-            </dl>
-          </li>
-        ))}
-      </ol>
-    </MemorySection>
-  );
-}
+import { SCOPE_META, type ActorMemory, type DispatchedSession, type McpBackendMemory } from "./types";
 
 /* ══ ② 本地 MCP 记忆：后端状态卡（⛔ 如实反映"它是开关不是内容"）═══════ */
 
@@ -83,7 +29,7 @@ export function McpBackendView({ data, state, error, onRetry }: {
   data: McpBackendMemory; state: "idle" | "loading" | "ready" | "error"; error?: string; onRetry?: () => void;
 }) {
   const on = data?.active === "mcp";
-  /* ⛔ 字段兜底同 PyramidView：`connector`/`sinkLabel` 是 10-05 上午凭空造的字段名，
+  /* ⛔ 字段兜底：`connector`/`sinkLabel` 是 10-05 上午凭空造的字段名，
      主进程一个都没返回 ⇒ 界面上是空白。宁可显示"未标注"也不能崩。 */
   const connector = data?.connector || "未标注";
   const sinkLabel = data?.sinkLabel || (on ? "MCP 记忆服务" : "内置记忆库");

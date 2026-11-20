@@ -2,7 +2,7 @@
  * memory-ui —— 记忆板块的**类型契约层**（10-05 用户要求「类型定义统一、便于扩展新记忆类型」）。
  *
  * ── 为什么单独一个 types 文件 ──────────────────────────────────────────
- * 七类记忆的**数据来源完全不同**（金字塔读层表、MCP 是后端开关、角色记忆读
+ * 六类记忆的**数据来源完全不同**（旧版分层记忆读层表、MCP 是后端开关、角色记忆读
  * fabric 命名空间、被调度会话读登记表）。若各视图自带类型，⛔ 加第八类时
  * 要改一堆文件且极易字段漂移 ⇒ 这里定一份**判别联合（discriminated union）**：
  * 每类记忆一个 `kind` 判别位，视图层按 `kind` 分发，编译器保证不漏分支。
@@ -20,14 +20,13 @@
  *
  * ⛔⛔ **10-05 修订：本文件的形状由 `normalize.ts` 负责对齐主进程，本文件不直接描述
  *   IPC 返回体。** 这份契约原先是照着理想形状手写的，没核对 handler 真实返回体
- *   ⇒ `archive` / `active` / `{records}` 三处全错 ⇒ 金字塔白屏 + 切 tab 必崩，
+ *   ⇒ `archive` / `active` / `{records}` 三处全错 ⇒ 旧版分层记忆白屏 + 切 tab 必崩，
  *   而守卫 56/56 全绿（它只断言视图与本文件自洽，两边出自同一份想象）。
  */
 import type { ReactNode } from "react";
 
-/* ── ① 判别位：七类记忆 ────────────────────────────────────────────────── */
+/* ── ① 判别位：六类记忆 ────────────────────────────────────────────────── */
 export type MemoryKind =
-  | "pyramid"        // 金字塔（L0–L7 分层）
   | "mcp-backend"    // 本地 MCP 记忆（⛔ 是**后端开关**，不是一种记忆内容）
   | "main"           // 主会话
   | "subagent"       // 子智能体
@@ -37,7 +36,6 @@ export type MemoryKind =
 
 /** 每类记忆的展示元信息（标题 / 图标 / 一句话说明）—— ⛔ 单一真相源，导航与视图共用。 */
 export const MEMORY_KIND_META: Record<MemoryKind, { label: string; blurb: string; icon: string }> = {
-  pyramid: { label: "记忆分层", blurb: "七层结构 · 水位与蒸馏", icon: "layers" },
   "mcp-backend": { label: "本地 MCP 记忆", blurb: "后端开关 · 决定记忆存在哪", icon: "plug" },
   main: { label: "主会话记忆", blurb: "只有你这个会话能读到", icon: "user" },
   subagent: { label: "子智能体记忆", blurb: "每个子智能体一份，互不可见", icon: "bot" },
@@ -55,25 +53,6 @@ export type MemoryMeta = {
 };
 
 /* ── ③ 各类的差异化载荷 ────────────────────────────────────────────────── */
-
-/** 金字塔层（与 memory-layers 的 PyramidLayerDef 对齐） */
-export type PyramidLayer = {
-  id: string;                 // L0 | L1 | ...
-  name: string;
-  where: string;              // 存哪
-  writer: string;             // 谁写
-  sink: string;               // 满了会怎样
-  budget: number;
-  used: number;
-  ratio: number | null;       // 水位（0–1），null = 未测量
-  needDistill: boolean;
-};
-
-export type PyramidMemory = MemoryMeta & {
-  kind: "pyramid";
-  layers: PyramidLayer[];
-  archive: { files: number; bytes: number };
-};
 
 /**
  * 本地 MCP 记忆（⛔ **它是后端开关，不是一份记忆**）。
@@ -156,7 +135,6 @@ export type DispatchedSession = {
 };
 
 export type MemorySourceMap = {
-  pyramid: PyramidMemory;
   "mcp-backend": McpBackendMemory;
   main: ActorMemory;
   subagent: ActorMemory;

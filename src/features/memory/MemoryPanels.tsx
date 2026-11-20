@@ -13,11 +13,10 @@ import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 /** 记忆整洁报告（来自主进程 memory:hygiene:plan；规则表也在里面 —— 唯一真相源在 electron/memory-hygiene.ts） */
 type HygienePlan = {
-  rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[];
+  rules: { target: string; name: string; when: string; action: string; protect: string; trace: string }[];
   labels: Record<string, { title: string; danger: string }>;
   actions: string[];
-  issues: { severity: "info" | "warn"; layer: string; code: string; message: string; count?: number }[];
-  layers: { id: string; name: string; where: string; writer: string; sink: string; budget: number; used: number; ratio: number | null; needDistill: boolean }[];
+  issues: { severity: "info" | "warn"; target: string; code: string; message: string; count?: number }[];
   archive: { files: number; bytes: number };
   pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number };
 };
@@ -206,7 +205,7 @@ export function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, 
   onSave: () => void;
   onDistill: () => void;
 }) {
-  if (!snapshot) return <div className="memory-layers"><p className="memory-layers-loading">正在读取记忆分层…</p></div>;
+  if (!snapshot) return <div className="memory-layers"><p className="memory-layers-loading">正在读取记忆…</p></div>;
   const over = snapshot.budget.over;
   const pending = snapshot.pendingDistill.dates.length;
   return (
@@ -317,7 +316,7 @@ export function MemoryConfigModal({ gateway, setGateway, action, onClose, onTest
 
 /**
  * 记忆整洁（09-22 用户：「记忆管理和记忆整洁，记忆清理规则都要写好」）。
- * 八层水位 + 分类计数 + 待办清单 + 三个清理动作（**危险动作走二次确认**：点一次 = 展开确认条，
+ * 分类计数 + 待办清单 + 三个清理动作（**危险动作走二次确认**：点一次 = 展开确认条，
  * 再点「确认」才发 IPC，且 IPC 层还要求 confirm=true 双保险）。
  * 规则表来自主进程（`memory:hygiene:plan`）⇒ 界面与后端永远同一份规则。
  */
@@ -355,9 +354,7 @@ export function MemoryHygienePanel({ snapshot, workspace, onStatus }: {
     }
   };
 
-  const layers = plan?.layers ?? snapshot?.layers ?? [];
   const issues = plan?.issues ?? [];
-  const hot = layers.filter((layer) => layer.needDistill).length;
 
   return (
     <div className="memory-hygiene">
@@ -365,25 +362,11 @@ export function MemoryHygienePanel({ snapshot, workspace, onStatus }: {
         <div>
           <strong>记忆整洁</strong>
           <span>
-            {hot ? `⚠️ ${hot} 层已到 90% 蒸馏线` : "八层水位正常"} ·
             碎片池 {plan?.pool.total ?? 0} 条（pinned {plan?.pool.pinned ?? 0} / 过期 {plan?.pool.expiring ?? 0}）·
             冷存档 {plan?.archive.files ?? 0} 个文件
           </span>
         </div>
         <button className="secondary-setting" onClick={load}>重新检查</button>
-      </div>
-
-      <div className="memory-hygiene-layers">
-        {layers.map((layer) => (
-          <div key={layer.id} className={`memory-hygiene-layer ${layer.needDistill ? "hot" : ""}`} title={`${layer.where} · ${layer.writer} · 满了沉到：${layer.sink}`}>
-            <span className="memory-hygiene-id">{layer.id}</span>
-            <span className="memory-hygiene-name">{layer.name}</span>
-            <span className="memory-hygiene-bar">
-              <i style={{ width: layer.ratio === null ? "0%" : `${Math.min(100, Math.round(layer.ratio * 100))}%` }} />
-            </span>
-            <span className="memory-hygiene-pct">{layer.ratio === null ? "—" : `${Math.round(layer.ratio * 100)}%`}</span>
-          </div>
-        ))}
       </div>
 
       {snapshot?.lessonGroups?.length ? (
@@ -400,7 +383,7 @@ export function MemoryHygienePanel({ snapshot, workspace, onStatus }: {
         <ul className="memory-hygiene-issues">
           {issues.map((issue, index) => (
             <li key={`${issue.code}-${index}`} className={issue.severity === "warn" ? "warn" : "info"}>
-              <span className="memory-hygiene-tag">{issue.layer}</span>
+              <span className="memory-hygiene-tag">{issue.target}</span>
               {issue.message}
               {typeof issue.count === "number" ? <b>（{issue.count}）</b> : null}
             </li>
@@ -436,13 +419,13 @@ export function MemoryHygienePanel({ snapshot, workspace, onStatus }: {
       </div>
 
       <details className="memory-hygiene-rules">
-        <summary>清理规则（八层，规则唯一真相源在主进程）</summary>
+        <summary>清理规则（按文件落点，规则唯一真相源在主进程）</summary>
         <table>
-          <thead><tr><th>层</th><th>何时清理</th><th>动作</th><th>保护项</th><th>留痕</th></tr></thead>
+          <thead><tr><th>文件</th><th>何时清理</th><th>动作</th><th>保护项</th><th>留痕</th></tr></thead>
           <tbody>
             {(plan?.rules ?? []).map((rule) => (
-              <tr key={rule.layer}>
-                <td>{rule.layer} {rule.name}</td>
+              <tr key={rule.target}>
+                <td>{rule.target} <span className="memory-hygiene-rule-name">{rule.name}</span></td>
                 <td>{rule.when}</td>
                 <td>{rule.action}</td>
                 <td>{rule.protect}</td>
@@ -457,7 +440,7 @@ export function MemoryHygienePanel({ snapshot, workspace, onStatus }: {
 }
 
 
-/* ⛔ 11-11 用户令「把金字塔删干净」：MemoryPyramid 仪表盘已整体删除（原 470–574 行）。
+/* ⛔ 旧版分层仪表盘已整体删除（11-11 + 11-20 两次用户令）。
    ⛔ 别因为"删了可惜"再加回来：新界面是 src/features/memory-atoms/（索引 + 原子 + 注入预览）。 */
 
 /** 常驻记忆注入预览（09-23 新增）：把 `memory:layers:context` 的真实输出摊开给用户看。

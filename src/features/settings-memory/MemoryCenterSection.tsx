@@ -5,7 +5,7 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  *
  * ── 10-10 二轮改版（用户要求）────────────────────────────────────────────
- * ① 一级 = 三个**并列**功能入口（项目共享记忆库 / 金字塔记忆架构 / 记忆后端选项），
+ * ① 一级 = 三个**并列**功能入口（项目共享记忆库 / 记忆架构 / 记忆后端选项），
  *    二级 = 各自的弹窗（内容不内嵌）。
  * ② ⛔ 旧「记忆中心」弹窗与它的入口一并删除：那个弹窗里还压着 5 项能力
  *    （条目浏览 / 全局搜索 / 常驻记忆编辑 / 容量倍率 / 整洁清理），已整块迁进三个弹窗
@@ -22,8 +22,8 @@ import { SettingsDialog } from "../../components/SettingsDialog";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { BookOpen, Cloud, Crown, Database, ListTree, Server, Users } from "lucide-react";
 import { MemoryConfigModal, MemoryInjectPreview } from "../../features/memory";
-/* ⛔⛔ 11-11 用户令：「金字塔改掉，不使用」+「加一个工作伙伴记忆模块入口」。
-   ⇒ 主界面卡片从「项目库 / 金字塔 / 中枢」改成「项目库 / 记忆条目 / 工作伙伴记忆 / 中枢」。
+/* ⛔⛔ 11-11 用户令：「旧版那套改掉，不使用」+「加一个工作伙伴记忆模块入口」。
+   ⇒ 主界面卡片从「项目库 / 旧版 / 中枢」改成「项目库 / 记忆条目 / 工作伙伴记忆 / 中枢」。
    ⛔ 这才是用户看的第一屏（上一轮我改的是弹窗内容，主界面一点没动 —— 被截图当场纠正）。 */
 import { GroupMemoryPanel, MemoryAtomsPanel } from "../memory-atoms";
 import type { HarnessAppApi } from "../app-view/types";
@@ -37,7 +37,7 @@ export type MemoryCenterSectionProps = {
   openThread?: (threadId: string) => void;
   memoryEnabled: any; setMemoryEnabled: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
 
-/** 记忆中心：内容入口（项目库/金字塔/后端/中枢记忆）+ 各类弹窗。 */
+/** 记忆中心：内容入口（项目库/记忆条目/工作伙伴记忆/中枢记忆）+ 各类弹窗。 */
 export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const { app, memoryEnabled, setMemoryEnabled, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway, setMemoryPreview, openThread } = props;
     /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──
@@ -45,8 +45,8 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
      内容一律进 SettingsDialog。⛔ 卡片复用跨页通用的 .settings-card*（⛔ 不再自造卡片样式）。 */
   /* ── 三个并列功能入口（10-10 用户要求：「重构为三个并列的功能入口」）──────────────
      ① 项目共享记忆库 —— 可切换项目，看该项目的共享记忆（用户档案 / 项目规则 / 工作纪律）
-     ② 金字塔记忆架构 —— 每个会话独立的金字塔式结构（共享层只读 + 独立层可写）
-     ③ 记忆后端三板块 —— 本地金字塔 / MCP / 云端各自一块板 + 开关（10-21 用户要求：
+     ② 记忆架构 —— 每个会话独立的存储结构（共享范围只读 + 私有范围可写）
+     ③ 记忆后端三板块 —— 本地记忆 / MCP / 云端各自一块板 + 开关（10-21 用户要求：
         「开那个生效那个，就不用再在记忆后端选了」；后端详细安装在各自的「设置/管理」弹窗里）。
      ⛔ ① ② 是**并列**内容入口；③ 是选择记忆存到哪里，不是第四张内容卡。 */
   const [openCard, setOpenCard] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const effectiveSharedProject = sharedProject || threads.find((t: any) => t?.cwd)?.cwd || "";
   const cardMeta: Record<string, { title: string; hint: string; tab: string; detail: string }> = {
     shared: { title: "项目共享记忆库", hint: "切换项目 · 用户档案 / 项目规则 / 工作纪律", tab: "layers", detail: "按**项目**维度共享的记忆：用户档案（跨项目一致，全项目共用一份）、项目规则（项目宪法 L1 + 项目背景 L3）、工作纪律（L2，注入时排最前）。切换上面的项目即可看别的项目。" },
-    atoms: { title: "记忆条目", hint: "索引 + 单条正文 · 一条一个文件", tab: "library", detail: "取代金字塔的新结构：**索引一行一条 + 每条一个独立文件**。改一条只动那一个文件，不再动整篇长文；注入时只取与本轮任务最相关的几条（不是整篇塞进去）。底部可以预览「这句话会注入哪些记忆」。" },
+    atoms: { title: "记忆条目", hint: "索引 + 单条正文 · 一条一个文件", tab: "library", detail: "取代旧版分层记忆的新结构：**索引一行一条 + 每条一个独立文件**。改一条只动那一个文件，不再动整篇长文；注入时只取与本轮任务最相关的几条（不是整篇塞进去）。底部可以预览「这句话会注入哪些记忆」。" },
     groups: { title: "工作伙伴记忆", hint: "每个群一份 · 别的群读不到", tab: "groups", detail: "工作伙伴的记忆按**群**隔离：每个群只看到自己的会话记忆（客户口径、分工约定）；项目规则与代码事实是工作区级，所有群共享。" },
     boss: { title: "指挥中枢记忆", hint: "每个指挥中枢一份 · 与项目、普通会话完全拆开", tab: "boss", detail: "指挥中枢的记忆**不在任何项目里**：每个指挥中枢一份专属目录（<userData>/boss-home/memories/<会话id>），与项目共享记忆、普通会话记忆互不相通。删掉指挥中枢，它的记忆目录一起清掉；新建就是全新的一份。" },
   };
@@ -119,14 +119,14 @@ return (
                     {openCard === "shared" && openMeta && (
                       <SettingsDialog title="项目共享记忆库" icon={<BookOpen size={15} />} hint="索引 + 原子条目 · 项目规则与代码事实" size="lg" onClose={() => setOpenCard(null)}>
                         {/* ⛔⛔ 11-11 用户令：「外面你是更新了，里面全是旧的」——
-                            这一屏原来挂的是书架 + 旧条目槽 + 常驻记忆（全读 L0–L7 层快照）。
+                            这一屏原来挂的是书架 + 旧条目槽 + 常驻记忆（全读旧版快照）。
                             ⇒ 整块换成新结构：同一个记忆原子面板，项目级条目就在最前面。
                             ⛔ 旧的 MemoryEntriesPane / ResidentMemoryPane 不再挂载（⛔ 不是"藏起来"）。 */}
                         <MemoryAtomsPanel workspace={app.memoryManagementWorkspace} />
                         <MemorySearchPane app={app} />
                       </SettingsDialog>
                     )}
-                    {/* ⛔ 11-11：金字塔弹窗（PyramidPanel + 分层规则）整块下线 —— 用户令「改掉，不使用」。
+                    {/* ⛔ 11-11：旧版记忆弹窗（分层树 + 分层规则）整块下线 —— 用户令「改掉，不使用」。
                         ⛔ 这两个组件文件仍在（其他引用点未清），但**设置页不再渲染**；
                            要恢复必须先问用户，⛔ 不许因为"删了可惜"悄悄挂回来。 */}
                     {openCard === "atoms" && openMeta && (
@@ -141,7 +141,7 @@ return (
                         <GroupMemoryPanel workspace={app.memoryManagementWorkspace} />
                         {/* ⛔ 11-11 用户：「有点心，里面又丑，还有旧的残留」——
                             原来这里还挂着 MemorySourcesPane（它渲染 MemoryWorkbench：
-                            顶部一条"记忆分层 L2 10% / L4 9%"的旧概览 + 会话记忆列表）⇒ 整块下掉。
+                            顶部一条旧版层水位概览 + 会话记忆列表）⇒ 整块下掉。
                             ⛔ 中枢/会话的旧分层视图不许在任何一个弹窗里复活。 */}
                       </SettingsDialog>
                     )}
@@ -167,7 +167,7 @@ return (
                         />
                         {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
                             ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。
-                            ⛔ 这一块是 **内置金字塔的第二根轴**（本机 memory.json ⇄ TencentDB Gateway），
+                            ⛔ 这一块是 **内置记忆的第二根轴**（本机 memory.json ⇄ TencentDB Gateway），
                             只对 builtin 有意义 —— MCP 用自己的 memory.db、云端后端走 memapi。 */}
                         {backendDetail === "builtin" ? <MemoryModePane app={app} /> : null}
                       </SettingsDialog>

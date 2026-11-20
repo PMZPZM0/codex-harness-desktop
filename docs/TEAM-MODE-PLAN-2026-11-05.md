@@ -42,7 +42,7 @@
 | 委派 | `delegation.ts` + `dispatch-core`（同一目标复用子会话、`originThreadId` 归属） | ✅ **直接复用** |
 | @ 选择 | `src/lib/dispatch-mention.mjs`（kind 分类 + 开关联动 + Enter 全灰） | ✅ 复用，**加一个 kind** |
 | 每个伙伴独立上下文 | 子会话 + 独立工作区（`sessions/<threadId>/`） | ✅ 复用 |
-| 记忆分级 | 八层金字塔 + `project/userData` 分域 + `dispatch.originThreadId` | ⚠️ **缺 `origin`（来源 id）与"团队"作用域** |
+| 记忆分级 | 八层旧版分层记忆 + `project/userData` 分域 + `dispatch.originThreadId` | ⚠️ **缺 `origin`（来源 id）与"团队"作用域** |
 | 群 | 无 | 🆕 新增（视图层，不碰引擎） |
 | 卡片消息 | 工具卡渲染体系（`ItemView` + 各卡组件） | 🆕 新增 schema 子集，复用渲染壳 |
 | 成本归因 | 有 token/usage 采集 | 🆕 新增账本（维度 `(agent, source)`） |
@@ -292,7 +292,7 @@ type LedgerRow = {
 | 组织树 | 主伙伴 + 5 个下级（自建 3 + 企业智能体员工 2），上级可以是外人 | 群内 `leadId` + 每伙伴 `managerId` + `canDelegate[]`（委派白名单） | `team-members.mjs` + 群设置 UI | P0 |
 | 每伙伴独享状态 | 积分账本 / 技能集 / 记忆库 / 在职天数 | 技能集=成员 `skills`（已有）、记忆=子会话作用域（已有）、账本新增、在职天数=创建时间派生 | 成员模型扩 3 字段 | P0/P4 |
 | 委派 = 群消息 + @ | 群里 @ open_id，目标收到自己的事件 | @ 伙伴 → 派给子会话（同 §9.2） | 复用 | P0 |
-| 记忆四级 + `origin` | 索引 / 分类 / 基线 / 安全，每条带 `origin=群ID-人` | 八层金字塔已有，补 `origin` 与团队作用域 | `memory-layers` + `memory_write` | **P1** |
+| 记忆四级 + `origin` | 索引 / 分类 / 基线 / 安全，每条带 `origin=群ID-人` | 八层旧版分层记忆已有，补 `origin` 与团队作用域 | `memory-layers` + `memory_write` | **P1** |
 | 设备反向长连 | daemon 主动出站 `wss://…`，企业内网可落地 | 新增「设备」概念：应用出站长连到自己的 hub；或复用 `remote.ts` 反向做 | 新板块 `harness-team-device` | P5 |
 | 单设备租约 | 一台设备「所有人可用」，必须串行 | 租约 `{deviceId, agentId, expiresAt}`，`finally` 必释放 | 纯函数 + 设备侧 | P5 |
 | 计费 `(agent, source)` | 7 天 22,745 积分拆三类 | 账本行 `(agentId, source, tokens, msgId)`，来源 = `human` / 上级 id / `automation` | `team-ledger.mjs` + 报表 | P4 |

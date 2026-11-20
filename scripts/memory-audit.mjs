@@ -43,19 +43,19 @@ const mod = await import(pathToFileURL(join(ROOT, "dist-electron", "memory-lesso
 const { shouldRememberLine, CORRECTION_CATEGORY } = mod;
 
 const MEM = join(WS, ".codex-harness", "memory");
-/** 层归属：按目录/文件名推断（与金字塔落点表同源）。 */
-function layerOf(rel) {
-  if (/^LESSONS\.md$|^lessons\//.test(rel)) return "L2 纪律";
-  if (/^logs\//.test(rel)) return "L4 日志";
-  if (/^rollup\//.test(rel)) return "L5 月度";
-  if (/^archive\//.test(rel)) return "L6 归档";
-  if (/^project\/BACKGROUND\.md$/.test(rel)) return "L3 背景";
-  if (/^project\/MEMORY\.md$/.test(rel)) return "L1 长期";
-  if (/^USER\.md$/.test(rel)) return "L0 画像";
+/** 文件归属：按目录/文件名推断（⛔ 11-20 起不再有 L0–L7 层号，直接报文件）。 */
+function fileOf(rel) {
+  if (/^LESSONS\.md$|^lessons\//.test(rel)) return "lessons";
+  if (/^logs\//.test(rel)) return "logs";
+  if (/^rollups?\//.test(rel)) return "rollups";
+  if (/^archive\//.test(rel)) return "archive";
+  if (/^project\/BACKGROUND\.md$/.test(rel)) return "project/BACKGROUND.md";
+  if (/^project\/MEMORY\.md$/.test(rel)) return "project/MEMORY.md";
+  if (/^USER\.md$/.test(rel)) return "USER.md";
   return "其它";
 }
 /** 预算（字符）：与 memory-layers.ts 的 MEMORY_BUDGET 同口径（基准倍率 ×1）。 */
-const BUDGET = { "L0 画像": 4000, "L1 长期": 12000, "L2 纪律": 8000, "L3 背景": 6000, "L4 日志": 40000, "L5 月度": 12000 };
+const BUDGET = { "USER.md": 8000, "project/MEMORY.md": 24000, lessons: 16000, "project/BACKGROUND.md": 12000, logs: 40000, rollups: 12000 };
 
 function walk(dir, base = dir) {
   const out = [];
@@ -79,13 +79,13 @@ for (const f of files) {
   const text = readFileSync(f.path, "utf8");
   const lines = text.split(/\r?\n/);
   const entries = lines.filter((l) => /^\s*[-*]\s+\S/.test(l));
-  const layer = layerOf(f.rel);
-  usage.push({ ...f, layer, chars: text.length, lineCount: lines.length, entries: entries.length });
+  const file = fileOf(f.rel);
+  usage.push({ ...f, file, chars: text.length, lineCount: lines.length, entries: entries.length });
 
   /* ⛔ **用户纠错永不参与审计**（保护项，只增不减）—— 按分类文件直接跳过。 */
   if (/corrections\.md$/.test(f.rel)) continue;
   /* 只挑「纪律类」文件里的条目行：日志/归档/月度里本来就是流水，不该被清。 */
-  if (layer !== "L2 纪律") continue;
+  if (file !== "lessons") continue;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     /* ⛔ 只审**条目行**（`- ` / `* ` 开头），跳过标题 / 引用 / 代码围栏 ——
@@ -102,10 +102,10 @@ for (const f of files) {
 
 const byLayer = {};
 for (const u of usage) {
-  const b = (byLayer[u.layer] ||= { files: 0, chars: 0, entries: 0, budget: BUDGET[u.layer] || 0 });
+  const b = (byLayer[u.file] ||= { files: 0, chars: 0, entries: 0, budget: BUDGET[u.file] || 0 });
   b.files++; b.chars += u.chars; b.entries += u.entries;
 }
-const days = usage.filter((u) => u.layer === "L4 日志").map((u) => ({ date: (u.rel.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || u.rel, chars: u.chars })).sort((a, b) => (a.date < b.date ? -1 : 1));
+const days = usage.filter((u) => u.file === "logs").map((u) => ({ date: (u.rel.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || u.rel, chars: u.chars })).sort((a, b) => (a.date < b.date ? -1 : 1));
 
 const report = {
   workspace: WS,

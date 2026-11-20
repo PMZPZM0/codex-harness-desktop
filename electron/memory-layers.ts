@@ -12,11 +12,11 @@ import { effectiveMemoryBackend } from "./memory-backend";
 import { atomsEntriesRoot, markUsed, readAtoms, readUsage } from "./memory/atoms-store";
 import { renderAtomsBlock, selectAtoms } from "./memory/atoms-select";
 import { isInjectable } from "./memory/atoms-format";
-/* P2 批次 4（10-18）：布局常量 / 预算 / 金字塔 / 水位 / 蒸馏切分等**纯逻辑**已切到 ./memory/layers-budget。
+/* P2 批次 4（10-18）：布局常量 / 预算 / 蒸馏切分等**纯逻辑**已切到 ./memory/layers-budget。
    ⛔ 重导出保持对外 API；类区仍使用的符号在下方显式回引。 */
 export * from "./memory/layers-budget";
-import { MEMORY_DIR, MEMORY_SUB, ARCHIVE_DIR, PROJECT_DIR, LESSONS_DIR, LOGS_DIR, ROLLUP_DIR, MEMORY_FILE, BACKGROUND_FILE, LESSON_FILES, LESSON_MISC_FILE, PENDING_MCP_SECTION, LEGACY_LESSONS, LEGACY_MARK, MEMORY_BUDGET, DEFAULT_MEMORY_SCALE, normalizeMemoryScale, scaledMemoryBudget, LESSONS_MAX_LINES, DISTILL_AFTER_DAYS, AUTO_DISTILL_INTERVAL_MS, DISTILL_MIN_CHARS, MEMORY_DISTILL_THRESHOLD, ROLLUP_BUDGET, layerWatermarks, splitDistill, DISTILL_PROMPT, today, daysBetween, clamp, isScratchWorkspace } from "./memory/layers-budget";
-import type { MemoryBudget, PyramidLayerId, MemoryLayersSnapshot, DistillPick, DistillResult } from "./memory/layers-budget";
+import { MEMORY_DIR, MEMORY_SUB, ARCHIVE_DIR, PROJECT_DIR, LESSONS_DIR, LOGS_DIR, ROLLUP_DIR, MEMORY_FILE, BACKGROUND_FILE, LESSON_FILES, LESSON_MISC_FILE, PENDING_MCP_SECTION, LEGACY_LESSONS, LEGACY_MARK, MEMORY_BUDGET, DEFAULT_MEMORY_SCALE, normalizeMemoryScale, scaledMemoryBudget, LESSONS_MAX_LINES, DISTILL_AFTER_DAYS, AUTO_DISTILL_INTERVAL_MS, DISTILL_MIN_CHARS, MEMORY_DISTILL_THRESHOLD, ROLLUP_BUDGET, splitDistill, DISTILL_PROMPT, today, daysBetween, clamp, isScratchWorkspace } from "./memory/layers-budget";
+import type { MemoryBudget, MemoryLayersSnapshot, DistillPick, DistillResult } from "./memory/layers-budget";
 
 /**
  * 记忆分层（对齐 WorkBuddy 的三层 + 碎片池）
@@ -276,10 +276,10 @@ export class MemoryLayers {
    */
   async appendLesson(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean> {
     /* ⛔ 09-25「记忆后端二选一」：用户启用 MCP 记忆服务**且服务确实装好**时，记忆一律走 MCP，
-       内置记忆金字塔停止捕获写入 —— 否则同一条纪律会在 MCP 库里存一份、在 lessons/*.md 里再存一份。
+       内置记忆停止捕获写入 —— 否则同一条纪律会在 MCP 库里存一份、在 lessons/*.md 里再存一份。
        ⛔ 判据必须是 `effectiveMemoryBackend()`（带可用性回退），**不是** `memoryBackend()`：
        用户选了 MCP 但服务没装/装坏时（原生模块装不上的环境很常见），若这里也让位 ⇒
-       记忆一处都不写 = **彻底丢记忆**。宁可回到金字塔，也不能丢。 */
+       记忆一处都不写 = **彻底丢记忆**。宁可回到内置记忆，也不能丢。 */
     if (effectiveMemoryBackend() === "mcp") return false;
     /* 10-20：云端后端同样让位 —— 记忆在 memapi 侧自动注入/回写，本地再写就是两份。 */
     if (effectiveMemoryBackend() === "cloud") return false;
@@ -510,46 +510,9 @@ export class MemoryLayers {
     return total;
   }
 
-  /** 金字塔各层当前用量（水位判定 + 设置页展示）。L7 碎片池由 MemoryStore 管，这里不统计。 */
-  async layerUsage(workspace?: string): Promise<Partial<Record<PyramidLayerId, number>>> {
-    const dir = this.projectDir(workspace);
-    return {
-      L0: (await this.readUser()).length,
-      L1: dir ? (await this.readProject(workspace)).length : 0,
-      L2: dir ? (await this.readLessons(workspace)).length : 0,
-      L3: dir ? (await this.readBackground(workspace)).length : 0,
-      L4: await this.logChars(dir),
-      L5: await this.dirChars(dir, ROLLUP_DIR),
-      L6: await this.dirChars(dir, ARCHIVE_DIR),
-      L7: 0,
-    };
-  }
-
-  /**
-   * 水位提示：只列**已达 90% 蒸馏线**的层（平时返回空串，不占 token）。
-   * 这是「引擎自己知道什么时候该蒸馏」的唯一通道 —— 它每轮都随常驻记忆注入。
-   */
-  async watermarkHint(workspace?: string): Promise<string> {
-    const [statuses, pending] = await Promise.all([
-      this.layerUsage(workspace).then((used) => layerWatermarks(used, this.scale)),
-      this.pickDistill(workspace),
-    ]);
-    const hot = statuses.filter((s) => s.needDistill);
-    if (!hot.length) return "";
-    const lines = hot.map((s) => {
-      const pct = Math.round((s.ratio ?? 0) * 100);
-      /* ③ L1 压缩没有本地自动执行（用户数据不代删）：明确指给引擎 —— 由它直接编辑文件合并同主题 */
-      const how = s.id === "L1" ? "（L1 压缩由**你**执行：直接编辑 project/MEMORY.md，合并同主题、删过时条目；本地不代删用户数据）" : "";
-      return `- ${s.id} ${s.name} 已到 ${pct}%（${s.used}/${s.budget} 字）⇒ 蒸馏去向：${s.sink}${how}`;
-    });
-    return [
-      ...lines,
-      pending ? `（已为你备好待蒸馏的日志：${pending.dates.length} 天 / ${pending.chars} 字；本地蒸馏入口见指令第 9 条）` : "（先把该层压缩，再继续当前任务）",
-    ].join("\n");
-  }
 
   // ── 整洁与清理（记忆管理面用的动作；规则见 electron/memory-hygiene.ts） ──
-  /** L6 冷存档概况（整洁报告用）。冷存档不参与注入，只被统计与清空。 */
+  /** 冷存档概况（整洁报告用）。冷存档不参与注入，只被统计与清空。 */
   async archiveStats(workspace?: string): Promise<{ files: number; bytes: number }> {
     const dir = this.projectDir(workspace);
     if (!dir) return { files: 0, bytes: 0 };
@@ -707,20 +670,15 @@ export class MemoryLayers {
         blocks.push(`## 近期工作日志（最近 ${kept.length} 天）\n${kept.join("\n\n")}${note}`);
       }
     }
-    /* 水位提示：只在某层到 90% 线时才非空 —— 引擎据此自己决定"先蒸馏再干活"。
-       ⛔ 必须放在 [Harness 常驻记忆 …] 标记**之内**：这段是注入给引擎的，不是给用户看的，
-          显示侧按标记对整段剥离（user-refs.ts），放外面会漏进用户气泡。 */
-    const hint = includeWorkspace ? await this.watermarkHint(workspace) : "";
-    if (!blocks.length) return hint ? { text: `\n\n[Harness 常驻记忆]\n${hint}\n[常驻记忆结束]\n`, stats: { chars: hint.length, over: true } } : { text: "", stats: { chars: 0, over: false } };
+    if (!blocks.length) return { text: "", stats: { chars: 0, over: false } };
 
     let body = blocks.join("\n\n");
-    const over = lessons.over || user.over || background.over || project.over || body.length > budget.total || Boolean(hint);
+    const over = lessons.over || user.over || background.over || project.over || body.length > budget.total;
     /* ⛔ 兜底（正常不会触发：各层与日志段都已按各自预算 clamp ⇒ 四层之和 + logs 恒 ≤ total）。
        真触发说明**预算配置不自洽**了 —— 提示必须指向这一点，别含糊说"尾部被截断"，
        否则下次又会被当成"容量不够"去调大 total（该修的是不自洽本身）。 */
     if (body.length > budget.total) body = `${body.slice(0, budget.total).trimEnd()}\n\n> ⛔ 常驻记忆仍超出总预算 ${body.length - budget.total} 字（各层都已按预算钳制 ⇒ 是预算配置不自洽）。先蒸馏（指令第 9 条）再干活。`;
-    const tail = hint ? `\n\n${hint}` : "";
-    return { text: `\n\n[Harness 常驻记忆 · 以下为已确认的长期上下文，与当前请求冲突时以当前请求为准]\n${body}${tail}\n[常驻记忆结束]\n`, stats: { chars: body.length + hint.length, over } };
+    return { text: `\n\n[Harness 常驻记忆 · 以下为已确认的长期上下文，与当前请求冲突时以当前请求为准]\n${body}\n[常驻记忆结束]\n`, stats: { chars: body.length, over } };
   }
 
   // ── 蒸馏 ──────────────────────────────────────────────────────
@@ -917,9 +875,6 @@ export class MemoryLayers {
         total,
         over: user.length > budget.user || background.length > budget.background || project.length > budget.project || lessonsChars > budget.lessons || total > budget.total,
       },
-      /* 金字塔八层水位（needDistill = 已达 90% 线）—— 设置页据此展示漏斗与"该蒸馏了"
-         ⛔ 必须带当前倍率：容量放大后水位条若还按基准预算画，会出现"没用多少却报 95%"的假警报。 */
-      layers: layerWatermarks(await this.layerUsage(workspace), this.scale),
       /* 纪律与坑的分类计数（纠错单独一类，用户 09-22 要求） */
       lessonGroups: groupLessonSections(lessons),
       pendingDistill: { dates: pending?.dates ?? [], chars: pending?.chars ?? 0 },

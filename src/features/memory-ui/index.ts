@@ -15,11 +15,11 @@ export {
   MemorySection, MemoryState, MemorySkeleton, MemoryBadge, MemoryTag, MemoryWeight, MemoryTime, MemoryList,
 } from "./primitives";
 export {
-  PyramidView, McpBackendView, ActorMemoryView, TeamMemoryView, DispatchedTimelineView, MemoryEntryRow,
+  McpBackendView, ActorMemoryView, TeamMemoryView, DispatchedTimelineView, MemoryEntryRow,
 } from "./views";
 export {
   MEMORY_KIND_META, SCOPE_META,
   type MemoryKind, type AnyMemory, type MemorySourceMap, type MemoryEntry,
-  type PyramidMemory, type McpBackendMemory, type ActorMemory, type DispatchedSession,
+  type McpBackendMemory, type ActorMemory, type DispatchedSession,
   type LoadState,
 } from "./types";

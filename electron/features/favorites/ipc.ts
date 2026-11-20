@@ -46,7 +46,7 @@ async function favoritesTouch(id: string) {
 }
 
 /**
- * 把收藏写进 Agent 记忆（记忆金字塔的层文件）。
+ * 把收藏写进 Agent 记忆（内置记忆文件）。
  * scope 语义与 `memory:layers:write` 完全一致（复用同一份 layers 实现，不自己拼文件）：
  *   user = L0 用户档案（跨项目）；project = L1 项目记忆；background = L3 项目背景；lessons = L2 纪律
  * ⛔ 只**追加**：先读该层当前文本，再写回（层文件是整份覆盖语义，不读就写 = 抹掉用户已有记忆）。

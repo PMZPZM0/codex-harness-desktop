@@ -3,9 +3,9 @@
 export type MemoryScopeKind = "cross-project" | "project" | "session";
 export type MemoryInjectTier = "first" | "resident" | "last" | "never";
 
-export interface MemoryLayerRule {
-  /** 层 id（必须与 electron/memory-layers.ts 的 MEMORY_PYRAMID 完全一致 —— 守卫【110】钉） */
-  layer: string;
+export interface MemoryFileRule {
+  /** 文件落点（如 `project/MEMORY.md`、`lessons/*.md`）—— 旧版层号表已删除，以文件为准 */
+  target: string;
   name: string;
   scope: MemoryScopeKind;
   /** 存储范围：存在哪、几份 */
@@ -32,7 +32,7 @@ export interface MemorySessionScope {
 export declare const MEMORY_SCOPE_LABEL: Record<MemoryScopeKind, string>;
 export declare const MEMORY_SCOPE_HINT: Record<MemoryScopeKind, string>;
 export declare const MEMORY_INJECT_LABEL: Record<MemoryInjectTier, string>;
-export declare const MEMORY_LAYER_RULES: readonly MemoryLayerRule[];
+export declare const MEMORY_FILE_RULES: readonly MemoryFileRule[];
 export declare const MEMORY_SESSION_SCOPES: readonly MemorySessionScope[];
-export declare function layersByScope(scope: MemoryScopeKind): MemoryLayerRule[];
-export declare function layersByInject(tier: MemoryInjectTier): MemoryLayerRule[];
+export declare function filesByScope(scope: MemoryScopeKind): MemoryFileRule[];
+export declare function filesByInject(tier: MemoryInjectTier): MemoryFileRule[];

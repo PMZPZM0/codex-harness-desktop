@@ -29,7 +29,7 @@
 
 ## 二、现状（实读）
 
-### 2.1 八层金字塔（真相源 `electron/memory-layers.ts`）
+### 2.1 八层旧版分层记忆（真相源 `electron/memory-layers.ts`）
 
 | 层 | 落点 | 预算 | 谁写 | 满了 |
 |---|---|---|---|---|
@@ -57,7 +57,7 @@
 pipeline: { everyNConversations: 5, l1IdleTimeoutSeconds: 600, l2Min/MaxIntervalSeconds: 900/3600 },
 recall: { enabled: true, maxResults: 5, scoreThreshold: 0.3, strategy: hybrid } }`
 
-它自己的分层（L0 原始 → L1 抽取 → L2/L3 沉淀）**与本地金字塔同构**，但：
+它自己的分层（L0 原始 → L1 抽取 → L2/L3 沉淀）**与本地记忆同构**，但：
 **L0 是无条件写入的**（`writeL0: true`）⇒ 云端目前就是"流水账"，只是它有 `scoreThreshold: 0.3` 在**召回**端把关。
 
 ---
@@ -118,7 +118,7 @@ recall: { enabled: true, maxResults: 5, scoreThreshold: 0.3, strategy: hybrid } 
 | **注入方式** | 常驻四层（L2/L0/L1/L3）+ L4 尾段 | 由 `memapi` 在**请求层**注入 | 模型按需检索（工具） | 模型按需检索（MCP 工具） |
 | **容量** | 90000 字符（四层 60000 + 日志 30000） | 由 Memory Hub 管（服务端配额） | 磁盘 | `quotaMb`（默认 1 GB）+ 次数 |
 | **优先级** | 低 | **高（与知识库同时生效时，云端优先于本地）** | 低 | 高 |
-| **失败时** | 降级到内置金字塔 | 回退纯模型端点（已实现） | 报错 | 报错 |
+| **失败时** | 降级到内置记忆 | 回退纯模型端点（已实现） | 报错 | 报错 |
 
 ### 4.1 优先级规则（**新增，需写进注入与工具语义**）
 
@@ -134,7 +134,7 @@ recall: { enabled: true, maxResults: 5, scoreThreshold: 0.3, strategy: hybrid } 
 
 ---
 
-## 五、金字塔 ↔ 云端分层的映射
+## 五、旧版分层记忆 ↔ 云端分层的映射
 
 | 本地 | 云端 | 语义 |
 |---|---|---|

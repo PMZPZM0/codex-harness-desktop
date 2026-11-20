@@ -11,24 +11,23 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
-import { ChevronDown, Layers, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
-  ActorMemoryView, DispatchedTimelineView, McpBackendView, PyramidView, TeamMemoryView,
+  ActorMemoryView, DispatchedTimelineView, TeamMemoryView,
 } from "./views";
 import { MemorySkeleton, MemoryState } from "./primitives";
 import {
   LOCAL_MEMORY_CONNECTOR, normalizeDelegates, normalizeEntries, normalizeMcpBackend,
-  normalizeMember, normalizePyramid, parseNamespace, statOf, type MemberCard,
+  normalizeMember, parseNamespace, statOf, type MemberCard,
 } from "./normalize";
 import {
   MEMORY_KIND_META, type ActorMemory, type DispatchedSession, type LoadState,
-  type McpBackendMemory, type MemoryKind, type PyramidMemory,
+  type McpBackendMemory, type MemoryKind,
 } from "./types";
 
 /* ══ 取数：⛔ 统一在这里，视图不碰 IPC ═══════════════════════════════════ */
 
 export type MemorySources = {
-  pyramid: PyramidMemory | null;
   mcp: McpBackendMemory | null;
   main: ActorMemory | null;
   subagents: ActorMemory[];
@@ -38,7 +37,7 @@ export type MemorySources = {
 };
 
 const EMPTY: MemorySources = {
-  pyramid: null, mcp: null, main: null, subagents: [], experts: [], teams: [], dispatched: [],
+  mcp: null, main: null, subagents: [], experts: [], teams: [], dispatched: [],
 };
 
 /** ⛔ 桥接读取：通道缺失/抛错时返回兜底值而**不炸** —— 前端要能降级显示而不是整页白屏。 */
@@ -65,15 +64,12 @@ export function useMemorySources(workspace: string, enabled: boolean): {
     setError("");
     try {
       const bridge = (window as any).codex;
-      /* ⛔⛔ hygiene:plan 是**唯一**能拿到 `archive` 的通道（`memory:layers:read` 的
-         返回体里没有这个字段 —— 上午那次白屏就是读它读出来的）。
-         ⛔ 它是只读的（apply 需 confirm:true），所以取它没有副作用。 */
-      const [pyramid, mcp, namespaces, delegates, hygiene] = await Promise.all([
-        safe<unknown>(() => bridge.readMemoryLayers(workspace), null),
+      /* ⛔ 11-20：不再读 layers / hygiene —— 旧版层表与层水位已整体删除；
+         这里只取新版记忆需要的数据：后端状态 + fabric 命名空间 + 被调度会话。 */
+      const [mcp, namespaces, delegates] = await Promise.all([
         safe<unknown>(() => bridge.readMemoryBackend(), null),
         safe<any[]>(() => bridge.listFabricNamespaces(workspace), []),
         safe<unknown>(() => bridge.listDelegates(), null),
-        safe<{ archive?: { files?: number; bytes?: number } } | null>(() => bridge.planMemoryHygiene(workspace), null),
       ]);
       const actors = await buildActorViews(bridge, workspace, namespaces ?? [], delegates);
       /* 被调度的 memoryCount 要按 threadId 查 fabric ⇒ 先建“命名空间 → 条数”索引。
@@ -84,7 +80,6 @@ export function useMemorySources(workspace: string, enabled: boolean): {
         if (ns?.namespace) nsIndex.set(String(ns.namespace), num(ns.entries));
       }
       setData({
-        pyramid: pyramid ? normalizePyramid(pyramid, hygiene?.archive) : null,
         mcp: mcp ? normalizeMcpBackend(mcp) : null,
         main: actors.main,
         subagents: actors.subagents,
@@ -237,9 +232,8 @@ async function buildActorViews(bridge: any, workspace: string, namespaces: any[]
 
 /* ══ 外壳 ═════════════════════════════════════════════════════════════ */
 
-/** tab 用的 kind 子集 = **作用域维度**（⛔ 不是 MemoryKind 全集：pyramid / mcp-backend
- *  仍是独立数据源，但它们不做 tab —— 见下面 TABS 的注释）。类型收窄还有个好处：
- *  counts 与 TABS 的键对不上时**编译期就报错**（这次修正就是它先把问题顶出来的）。 */
+/** tab 用的 kind 子集 = **作用域维度**。类型收窄的好处：
+ *  counts 与 TABS 的键对不上时**编译期就报错**。 */
 type ScopeTabKind = "main" | "subagent" | "expert" | "team" | "dispatched";
 
 const TABS: { kind: ScopeTabKind; label: string }[] = [
@@ -248,14 +242,7 @@ const TABS: { kind: ScopeTabKind; label: string }[] = [
   { kind: "expert", label: MEMORY_KIND_META.expert.label },
   { kind: "team", label: MEMORY_KIND_META.team.label },
   { kind: "dispatched", label: MEMORY_KIND_META.dispatched.label },
-  /* ⛔⛔ 这里**只放作用域维度**（「这是谁的记忆」）。← 10-10 用户反馈修正：
-     原来把 `pyramid` 与 `mcp-backend` 也并列成 tab，是**把两个正交维度混在一起**了 ——
-     金字塔（L0–L7）是**横切分层机制**、MCP 是**存储位置**，它们跟"谁的记忆"不是一回事。
-     更糟的是计数口径：其它 tab 显示**条目数**，而 pyramid 显示的是**层数**（L0–L7 恒为 8）、
-     mcp-backend 是**布尔转 1** ⇒ 用户看到"金字塔 8、其它全 0"，读出来的结论是
-     「记忆全被归到了金字塔这一类」（用户原话）。
-     ⇒ 两者改为**常驻概览条**（见 MemoryOverview）：切到任一作用域都看得到层水位与后端，
-       而不再是并列分类。⛔ MemoryKind 类型层的七类数据源**不变**（它们仍是独立数据源）。 */
+  /* ⛔ 这里**只放作用域维度**（「这是谁的记忆」）。11-20：旧版分层概览条已整体删除。 */
 ];
 
 /** 记忆工作台：按类别切页展示记忆，可跳回来源会话。 */
@@ -267,9 +254,7 @@ export function MemoryWorkbench({ workspace, onOpenThread, onNotice }: {
   const { data, state, error, reload } = useMemorySources(workspace, true);
   const [tab, setTab] = useState<MemoryKind>("main");
 
-  /* ⛔ 计数**只统计条目数**（口径统一）。10-10 修正：原来 pyramid 填的是 `layers.length`
-     （层数，恒 8）、mcp-backend 填的是 `data.mcp ? 1 : 0`（布尔转数字）—— 量与意义都不同，
-     摆在同一排 tab 上就是在骗人。两者已移出 tab（见 MemoryOverview）。 */
+  /* ⛔ 计数**只统计条目数**（口径统一）。 */
   const counts = useMemo(() => ({
     main: data.main?.stats.total ?? 0,
     subagent: data.subagents.reduce((s, a) => s + a.stats.total, 0),
@@ -311,15 +296,6 @@ export function MemoryWorkbench({ workspace, onOpenThread, onNotice }: {
 
       <p className="mui-blurb">{MEMORY_KIND_META[tab].blurb}</p>
 
-      {/* 机制概览（**常驻**）：金字塔层水位 + 存储后端。
-          ⛔ 它不是 tab —— 金字塔与后端跟"谁的记忆"是两个正交维度（见 TABS 上的注释）；
-            放在这里 ⇒ 切到任一作用域都看得到"金字塔现在什么水位、记忆存在哪"。 */}
-      <MemoryOverview
-        pyramid={data.pyramid ?? emptyPyramid()}
-        mcp={data.mcp ?? emptyMcp()}
-        state={state} error={error} onRetry={reload}
-      />
-
       {state === "loading" && !hasAnyData(data) && <MemorySkeleton rows={4} />}
       {state === "error" && <MemoryState state="error" error={error} empty="读取失败" onRetry={reload} />}
 
@@ -347,50 +323,10 @@ export function MemoryWorkbench({ workspace, onOpenThread, onNotice }: {
   );
 }
 
-/**
- * 「机制概览」—— 金字塔（L0–L7 分层）与存储后端**常驻**在每个作用域视图上方。
- *
- * ⛔⛔ 为什么不做成并列 tab（10-10 用户反馈修正）：金字塔是**横切分层机制**、后端是
- * **存储位置**，两者与「这是谁的记忆」（作用域维度）正交。并列成 tab 时的实际后果是
- * 计数口径串了味 —— pyramid 那格填的是**层数**（L0–L7 恒 8）、mcp 那格是**布尔**，
- * 而作用域那几格是**条目数** ⇒ 用户看到「金字塔 8、其它全 0」，读出来就是
- * 「记忆全归到了金字塔这一类」。⇒ 改成概览条：默认一行摘要（有内容的层 + 需蒸馏 + 后端），
- * 点开才是完整的七层水位与后端详情（能力一点没少）。
- */
-function MemoryOverview({ pyramid, mcp, state, error, onRetry }: {
-  pyramid: PyramidMemory; mcp: McpBackendMemory;
-  state: LoadState; error: string; onRetry: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const layers = Array.isArray(pyramid?.layers) ? pyramid.layers : [];
-  const withContent = layers.filter((l) => (l.used ?? 0) > 0);
-  const needDistill = layers.filter((l) => l.needDistill).length;
-  const summary = withContent.length
-    ? withContent.map((l) => `${l.id} ${Math.round((l.ratio ?? 0) * 100)}%`).join(" · ")
-    : "七层还没有内容";
-  return (
-    <div className="mui-overview" data-layers={layers.length}>
-      <button type="button" className="mui-overview-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <Layers size={13} />
-        <strong>记忆分层</strong>
-        <span className="mui-overview-summary">{summary}</span>
-        {needDistill ? <span className="mui-overview-warn">{needDistill} 层需蒸馏</span> : null}
-        <span className="mui-overview-backend">存储：{mcp?.active ? "本地 MCP" : "内置分层"}</span>
-        <ChevronDown size={14} className={"mui-overview-chevron" + (open ? " is-open" : "")} />
-      </button>
-      {open && (
-        <div className="mui-overview-body">
-          <PyramidView data={pyramid} />
-          <McpBackendView data={mcp} state={state} error={error} onRetry={onRetry} />
-        </div>
-      )}
-    </div>
-  );
-}
 
 function hasAnyData(d: MemorySources): boolean {
   return Boolean(
-    d.pyramid || d.mcp || d.main || d.subagents.length || d.experts.length || d.teams.length || d.dispatched.length,
+    d.mcp || d.main || d.subagents.length || d.experts.length || d.teams.length || d.dispatched.length,
   );
 }
 
@@ -400,10 +336,6 @@ function emptyActor(actorName: string, actorId: string): ActorMemory {
     createdAt: Date.now(), updatedAt: Date.now(),
     stats: { total: 0, pinned: 0, archived: 0, chars: 0 },
   };
-}
-
-function emptyPyramid(): PyramidMemory {
-  return normalizePyramid(null, null);
 }
 
 function emptyMcp(): McpBackendMemory {

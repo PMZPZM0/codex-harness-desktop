@@ -1542,7 +1542,7 @@
 .memory-funnel-toolbar { align-items: center; gap: 10px; display: flex; }
 .memory-funnel-toolbar-label { color: var(--muted); font-size: 11.5px; }
 .memory-funnel-chips { flex-wrap: wrap; gap: 6px; display: flex; }
-/* 会话筛选下拉（10-17：金字塔页由并排 chips 改为 AppSelect，会话多时不再横向铺开）。
+/* 会话筛选下拉（10-17：会话多时由并排 chips 改为 AppSelect，不再横向铺开）。
    视觉样式由 AppSelect 自带（与全站下拉一致）；这里只给宽度。 */
 .memory-funnel-select { min-width: 220px; max-width: 420px; }
 .memory-funnel-chip {
@@ -1876,42 +1876,6 @@
   white-space: nowrap;
 }
 
-/* ── 记忆金字塔仪表盘（09-23 新增）：八层水位 + 90% 蒸馏线 + 流转 + 联动跳转 ── */
-.memory-pyramid { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 12px; }
-.memory-pyramid-head { align-items: flex-start; justify-content: space-between; gap: 12px; display: flex; flex-wrap: wrap; }
-.memory-pyramid-title { gap: 10px; display: flex; align-items: flex-start; min-width: 0; }
-.memory-pyramid-icon { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); width: 30px; height: 30px; border-radius: 9px; place-items: center; display: grid; color: var(--accent); flex: none; }
-.memory-pyramid-title div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.memory-pyramid-title strong { font-size: 13px; font-weight: 600; color: var(--text); }
-.memory-pyramid-title span { font-size: 11px; color: var(--muted); }
-.memory-pyramid-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; flex: none; }
-.memory-pyramid-alert { display: inline-flex; align-items: center; gap: 4px; border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line-soft)); color: var(--red); border-radius: 999px; padding: 3px 9px; }
-.memory-pyramid-pending { border: 1px solid var(--line-soft); background: var(--bg); border-radius: 999px; padding: 3px 9px; color: var(--muted); }
-.memory-pyramid-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.memory-pyramid-layer { display: flex; flex-direction: column; gap: 2px; }
-.memory-pyramid-row { display: grid; grid-template-columns: 34px 96px 1fr 42px 84px 16px; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 5px 8px; cursor: pointer; }
-.memory-pyramid-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); border-color: var(--line-soft); }
-.memory-pyramid-id { font-size: 11px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
-.memory-pyramid-name { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memory-pyramid-bar { position: relative; height: 8px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
-.memory-pyramid-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--green); transition: width .25s ease; }
-.memory-pyramid-bar-fill.hot { background: var(--red); }
-.memory-pyramid-line { position: absolute; top: 0; bottom: 0; left: 90%; width: 1px; background: color-mix(in srgb, var(--red) 55%, transparent); }
-.memory-pyramid-pct { font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-.memory-pyramid-usage { font-size: 11px; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
-.memory-pyramid-go { color: var(--faint); }
-.memory-pyramid-flow { font-size: 10px; color: var(--faint); padding-left: 42px; display: inline-flex; align-items: center; gap: 3px; }
-.memory-pyramid-layer.need-distill .memory-pyramid-flow { color: var(--red); }
-.memory-pyramid-groups { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
-.memory-pyramid-groups-label { font-size: 11px; color: var(--muted); }
-.memory-pyramid-group-cards { display: flex; gap: 8px; flex-wrap: wrap; }
-.memory-pyramid-group-card { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); padding: 6px 10px; cursor: pointer; min-width: 84px; }
-.memory-pyramid-group-card:hover { border-color: var(--line-soft); background: color-mix(in srgb, var(--text) 4%, transparent); }
-.memory-pyramid-group-card strong { font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
-.memory-pyramid-group-card span { font-size: 11px; color: var(--muted); }
-.memory-pyramid-group-card small { font-size: 10px; color: var(--faint); }
-.memory-pyramid-actions { display: flex; gap: 8px; align-items: center; }
-
 /* ── 常驻记忆注入预览（09-23 新增）：把真正注入模型的文本摊开给用户看 ── */
 .memory-inject { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 12px; }
 .memory-inject-head { align-items: flex-start; justify-content: space-between; gap: 12px; display: flex; flex-wrap: wrap; }
@@ -1924,8 +1888,6 @@
 .memory-inject-empty { margin: 0; font-size: 11px; color: var(--faint); }
 .memory-inject-body { margin: 0; max-height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 11px; line-height: 1.5; color: var(--muted); background: color-mix(in srgb, var(--text) 3%, transparent); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; }
 .memory-inject-body.open { max-height: 420px; }
-.memory-pyramid-reveal { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; border: 1px solid var(--line-soft); background: var(--bg); border-radius: 6px; padding: 1px 6px; font-size: 10px; color: var(--muted); cursor: pointer; }
-.memory-pyramid-reveal:hover { color: var(--text); border-color: var(--line); }
 .memory-funnel-empty .primary-setting { margin-top: 10px; }
 .memory-funnel-empty p strong { color: var(--text); font-weight: 600; }
 

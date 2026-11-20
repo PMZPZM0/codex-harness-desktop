@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
 import { MEMORY_CATEGORIES } from "../app-view/constants";
 import { describeSchedule } from "../app-view/helpers/text";
 import { basename } from "../../lib/basename";
-import { MEMORY_INJECT_LABEL, MEMORY_SCOPE_HINT, MEMORY_SCOPE_LABEL, MEMORY_SESSION_SCOPES, layersByScope } from "../../lib/memory-scope-rules.mjs";
+import { MEMORY_INJECT_LABEL, MEMORY_SCOPE_HINT, MEMORY_SCOPE_LABEL, MEMORY_SESSION_SCOPES, filesByScope } from "../../lib/memory-scope-rules.mjs";
 import { GlobalSearchView } from "../../components/IndexLibrary";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { MemoryFunnel, MemoryInjectPreview } from "../memory";
@@ -27,8 +27,8 @@ import { Cloud, CloudOff, Search, Settings2 } from "lucide-react";
 import type { HarnessAppApi } from "../app-view/types";
 import type { SettingsPage } from "../app-view/types";
 
-/** ⓪ 分层规则（三作用域 / 八层明细 / 优先级 / 引用与继承 / 会话级存储 / L2→技能出边）
- *  → 挂进「金字塔记忆架构」弹窗。
+/** ⓪ 分层规则（三作用域 / 各文件明细 / 优先级 / 引用与继承 / 会话级存储 / 纪律→技能出边）
+ *  → 挂进「内置记忆架构」弹窗。
  *  ⛔ 规则数据全部来自 src/lib/memory-scope-rules.mjs（唯一真相源）—— 这里只渲染，
  *    ⛔ 不另写一份层表（两处层表必然漂移）。这个「出边」块是 10-10 架构评审的落地项，
  *    ⛔ 别当成"可删的说明文字"：技能 / 插件是**能力面**，不属于记忆架构。 */
@@ -41,12 +41,12 @@ export function LayerRulesPane() {
             <header className="memory-rule-scope-head">
               <span className="memory-rule-scope-chip">{MEMORY_SCOPE_LABEL[scope]}</span>
               <span className="memory-rule-scope-hint">{MEMORY_SCOPE_HINT[scope]}</span>
-              <em className="memory-rule-scope-layers">{layersByScope(scope).map((rule: any) => rule.layer).join(" · ")}</em>
+              <em className="memory-rule-scope-layers">{filesByScope(scope).map((rule: any) => rule.name).join(" · ")}</em>
             </header>
-            {layersByScope(scope).map((rule: any) => (
-              <article className="memory-rule-row" key={rule.layer} data-layer={rule.layer}>
+            {filesByScope(scope).map((rule: any) => (
+              <article className="memory-rule-row" key={rule.target} data-file={rule.target}>
                 <header className="memory-rule-row-head">
-                  <b>{rule.layer}</b><strong>{rule.name}</strong>
+                  <b>{rule.target}</b><strong>{rule.name}</strong>
                   <i className="memory-rule-tier">{MEMORY_INJECT_LABEL[rule.inject as keyof typeof MEMORY_INJECT_LABEL]}</i>
                 </header>
                 <dl className="memory-rule-facts">
@@ -64,8 +64,8 @@ export function LayerRulesPane() {
       <div className="memory-center-block">
         <div className="memory-center-block-head"><div><strong>出边：记忆 → 能力</strong><span>记忆只往外送出一样东西 —— 攒够的纪律会升级成可复用的技能。</span></div></div>
         <article className="memory-rule-row">
-          <header className="memory-rule-row-head"><b>L2 →</b><strong>技能库</strong><i className="memory-rule-tier">退出记忆预算</i></header>
-          <p className="memory-rule-note">L2（纪律与记忆）在满水位之前，先按分类把反复出现的条目**升级为技能**：技能是可复用能力（全局或项目级），不再占用常驻注入预算；升级完再压缩 L2 原文。⛔ 技能 / 插件清单不放在记忆架构里（它们是能力面）。</p>
+          <header className="memory-rule-row-head"><b>纪律 →</b><strong>技能库</strong><i className="memory-rule-tier">退出记忆预算</i></header>
+          <p className="memory-rule-note">纪律文件在满水位之前，先按分类把反复出现的条目**升级为技能**：技能是可复用能力（全局或项目级），不再占用常驻注入预算；升级完再压缩纪律原文。⛔ 技能 / 插件清单不放在记忆架构里（它们是能力面）。</p>
         </article>
       </div>
       <div className="memory-center-block">
@@ -81,7 +81,7 @@ export function LayerRulesPane() {
   );
 }
 
-/** ① 会话来源记忆（原「记忆库与会话记忆」页的 fabric 部分）→ 挂进「金字塔记忆架构」弹窗 */
+/** ① 会话来源记忆（原「记忆库与会话记忆」页的 fabric 部分）→ 挂进「内置记忆架构」弹窗 */
 export function MemorySourcesPane({ app }: { app: HarnessAppApi }) {
   return (
     <div className="memory-center-block">
@@ -197,9 +197,9 @@ export function ResidentMemoryPane({ app }: { app: HarnessAppApi }) {
           （见 MemoryCenterSection 的 atoms 卡片）。这里只留常驻记忆该管的东西 ——
           ⛔ 同一套界面在两处渲染，用户会以为改了一个另一个没变。 */}
       <MemoryInjectPreview workspace={app.memoryManagementWorkspace} onNotice={app.setNotice} />
-      {/* ⛔ 11-11 用户令「金字塔的蒸馏那些配套功能、工具全部删干净」：
-         分层正文编辑（L0–L7 层文件）与「层水位 / 蒸馏 / 清理」整块下线 ——
-         ⛔ 它们只在金字塔体系里有意义；新结构一条记忆一个文件，改正文去「记忆条目」。
+      {/* ⛔ 11-11 用户令「旧版记忆的蒸馏配套、工具全部删干净」：
+         分层正文编辑（各层文件）与「层水位 / 蒸馏 / 清理」整块下线 ——
+         ⛔ 它们只在旧版分层记忆体系里有意义；新结构一条记忆一个文件，改正文去「记忆条目」。
          ⛔ 后端通道保留：引擎的自动压缩（0.6 阈值）还要用，删了会丢上下文而非"更干净"。 */}
     </div>
   );
@@ -226,16 +226,16 @@ export function MemorySearchPane({ app }: { app: HarnessAppApi }) {
   );
 }
 
-/** ⑤ 内置金字塔保存在哪（本机 memory.json ⇄ TencentDB Gateway + 云端配置）→ 挂进「记忆后端选项」弹窗
+/** ⑤ 内置记忆保存在哪（本机 memory.json ⇄ TencentDB Gateway + 云端配置）→ 挂进「记忆后端选项」弹窗
  *  ⛔ 只搬「保存位置」这一段：工作区开关那一行**面板里已经有**（BackendConsolePanel），
  *    不重复渲染同一开关（同一切换器出现两次必然状态不同步）。
- *  ⛔⛔ 这块**只服务内置金字塔**（memoryStore 的本机文件 / Gateway 远端那根轴）——
+ *  ⛔⛔ 这块**只服务内置记忆**（memoryStore 的本机文件 / Gateway 远端那根轴）——
  *    MCP 后端存自己的 memory.db、云端后端走 memapi，都不走这里 ⇒ 调用方只在 builtin 下渲染。 */
 export function MemoryModePane({ app }: { app: HarnessAppApi }) {
   return (
     <div className="memory-center-block">
       <div className="memory-center-block-head">
-        <div><strong>内置金字塔保存在哪</strong><span>只对内置金字塔生效：存本机 memory.json，或同步到 TencentDB Gateway（召回 / 回写，并保留本机缓存）。MCP 用自己的 memory.db、云端后端走 memapi，都不受这里影响。</span></div>
+        <div><strong>内置记忆保存在哪</strong><span>只对内置记忆生效：存本机 memory.json，或同步到 TencentDB Gateway（召回 / 回写，并保留本机缓存）。MCP 用自己的 memory.db、云端后端走 memapi，都不受这里影响。</span></div>
         <button className="secondary-setting" onClick={() => app.setMemoryConfigOpen(true)}><Settings2 size={13} />云端配置</button>
       </div>
       <div className="memory-mode-switch" role="tablist" aria-label="记忆来源">

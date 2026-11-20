@@ -92,7 +92,7 @@ const DOMAIN_DESCRIPTIONS = {
   "qq": "QQ 通道",
   "wecom-webhook": "企业微信 webhook 通道",
   "channels": "IM 通道总开关与状态",
-  "memory": "记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi）",
+  "memory": "记忆全链路（内置记忆读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置记忆 / 本地 MCP 记忆服务 / 云端 memapi）",
   "skills": "技能经验包（导入/启停/市场安装/本地列表）",
   "skill-packs": "**精选技能包**（10-30，开发工具页按需安装）：list 三个第三方技能包的状态 / install 下载仓库 `skills/` 子树、每个 SKILL.md 过安全审查后落 `<codex-home>/skills`、装完重启引擎 / uninstall 只删自己 marker 记下的目录。⛔ 不是模型工具（模型侧看到的技能仍由引擎技能表提供），给设置页 UI 用",
   "autoUpdate": "自动化能力与引擎的**后台自动更新**：桌面自动化 nuphus / Mac 电脑操作 open-computer-use / Codex 引擎各一个独立开关（缺省即开，存 app-settings.json）；浏览器自动化 Ego Lite 单独一个开关（默认关，开启后后台跑官方 ego-browser upgrade）。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据",
@@ -226,7 +226,7 @@ lines.push("| 定时 / 周期任务 | **调度器**（`scheduler:*`） | 任务�
 lines.push("| 把会话接到 IM | **渠道 Bot**（`channel-bot:*` / `weixin:*` / `telegram:*`） | — |");
 lines.push("| 记录好的桌面流程 | **RPA 配方**（`rpa:*`） | 键鼠级回放，适合无 API 的老软件 |");
 lines.push("| 浏览器 / 桌面自动化 | 专技能 `desktop-automation`（nuphus MCP）、`browser-skill`（ego-browser） | 应用里关掉能力总闸后这些工具**不存在**，别当成坏了 |");
-lines.push("| 换记忆后端 | 设置 → 记忆 → 记忆后端（内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi，**三选一**） | ⛔ 三者互斥：**落点与工具名随后端变**，别混用（内置=写 `lessons/`；MCP=`local_memory__memory_write`；云端=**无工具**、上游自动收记忆） |");
+lines.push("| 换记忆后端 | 设置 → 记忆 → 记忆后端（内置记忆 / 本地 MCP 记忆服务 / 云端 memapi，**三选一**） | ⛔ 三者互斥：**落点与工具名随后端变**，别混用（内置=写 `lessons/`；MCP=`local_memory__memory_write`；云端=**无工具**、上游自动收记忆） |");
 lines.push("| 换知识库后端 | 设置 → 知识库 → 后端（本地项目库 / 云端 weknora） | 本地 = `knowledge_search` / `knowledge_add`；云端 = `cloud_kb__ask` 等 6 个 MCP 工具。判定看工具列表里有没有 `cloud_kb__` 前缀 |");
 lines.push("| 主题 / 外观 | `src/lib/themes.ts`（多主题扩展点） | — |");
 lines.push("");

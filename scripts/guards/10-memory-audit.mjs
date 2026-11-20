@@ -107,7 +107,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   (/scope: "user" \| "background" \| "project" \| "lessons"/.test(envSrc) ? ok : fail)("【102】vite-env 声明同步 lessons scope");
   const instr = readFileSync(join(ROOT, "electron/developer-instructions.ts"), "utf8");
   (/LESSONS\.md/.test(instr) && /坑/.test(instr) ? ok : fail)("【102】引擎指令要求「踩坑留痕」（LESSONS.md + 格式）");
-    /* 10-18：DISTILL_PROMPT / 金字塔等已切到 memory/layers-budget.ts（P2 批次 4）⇒ 两源拼接 */
+    /* 10-18：DISTILL_PROMPT 等已切到 memory/layers-budget.ts（P2 批次 4）⇒ 两源拼接 */
   const layersSrc = readFileSync(join(ROOT, "electron/memory-layers.ts"), "utf8")
     + readFileSync(join(ROOT, "electron/memory", "layers-budget.ts"), "utf8");
   (/现有踩坑与纪律/.test(layersSrc) ? ok : fail)("【102】蒸馏输入带上坑清单（否则蒸馏会把坑丢掉）");
@@ -208,19 +208,18 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   /* ══ 【104】原 L8569–L8640 ══ */
   {
 {
-  console.log(C.bold("\n【104】记忆金字塔：八层 / 90% 漏斗 / 自助蒸馏真跑"));
+  console.log(C.bold("\n【104】记忆预算 / 蒸馏切分 / 旧版层表已删除（负向）"));
   let mem = null;
   try { mem = await import("../../dist-electron/memory-layers.js"); }
   catch (error) { fail(`【104】记忆分层产物读不到（先 npm run build）：${error?.message ?? error}`); }
 
   if (mem) {
-    const { MEMORY_PYRAMID, MEMORY_DISTILL_THRESHOLD, layerWatermarks, splitDistill, MemoryLayers, MEMORY_DISTILL_SKILL, MEMORY_BUDGET, MEMORY_SCALE_OPTIONS, scaledMemoryBudget, normalizeMemoryScale } = mem;
+    const { MEMORY_DISTILL_THRESHOLD, splitDistill, MemoryLayers, MEMORY_DISTILL_SKILL, MEMORY_BUDGET, MEMORY_SCALE_OPTIONS, scaledMemoryBudget, normalizeMemoryScale } = mem;
+    /* ⛔⛔ 11-20 用户令「旧版分层记忆一个字符都不想看到，连根拔掉」：
+       层表与水位函数改为**负向断言** —— 谁把它们加回来，这里立刻红。 */
+    (mem.MEMORY_PYRAMID === undefined ? ok : fail)("【104】⛔ 旧版层表 MEMORY_PYRAMID 已删除（不许复活）");
+    (mem.layerWatermarks === undefined ? ok : fail)("【104】⛔ 水位函数 layerWatermarks 已删除（不许复活）");
 
-    /* ① 层表 */
-    (MEMORY_PYRAMID.length === 8 ? ok : fail)(`【104】金字塔八层齐全（实际 ${MEMORY_PYRAMID.length}）`);
-    const ids = MEMORY_PYRAMID.map((l) => l.id).join(",");
-    (ids === "L0,L1,L2,L3,L4,L5,L6,L7" ? ok : fail)(`【104】层 id 顺序为 L0..L7（实际 ${ids}）`);
-    (MEMORY_PYRAMID.every((l) => l.budget >= 0 && l.sink && l.writer && l.where) ? ok : fail)("【104】每层都有 落点 / 预算 / 谁写 / 蒸馏去向");
     (MEMORY_DISTILL_THRESHOLD === 0.9 ? ok : fail)(`【104】蒸馏线 = 90%（实际 ${MEMORY_DISTILL_THRESHOLD}）`);
 
     /* ①b 注入预算**算术自洽**（2026-10-10 修「记忆很快被占满」的回归防线）──────────
@@ -243,24 +242,14 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
         ? ok : fail)(`【104】倍率档含 ×2/×4/×8/×10/×16（实际 ${MEMORY_SCALE_OPTIONS.join("/")}）`);
       (normalizeMemoryScale(8) === 8 && normalizeMemoryScale("3") === 1 && normalizeMemoryScale(0) === 1 && normalizeMemoryScale("x") === 1
         ? ok : fail)("【104】倍率归一化：只认 1/2/4/8/10/16，其余回基准（手改配置也写不出 NaN 预算）");
-      const wm8 = layerWatermarks({ L1: MEMORY_PYRAMID.find((l) => l.id === "L1").budget * 8 * 0.5 }, 8);
-      (Math.abs((wm8.find((s) => s.id === "L1").ratio ?? -1) - 0.5) < 1e-9 ? ok : fail)(
-        "【104】水位按倍率算（×8 下用到一半 = 50%，⛔ 不是按基准算出的 400% 假警报）");
     }
 
-    /* ② 水位纯函数（边界 + 外部层 + 一致性） */
-    const budgets = Object.fromEntries(MEMORY_PYRAMID.map((l) => [l.id, l.budget]));
-    const wm = layerWatermarks({ L1: budgets.L1 * 0.89, L4: budgets.L4 * 0.9 });
-    (wm.find((s) => s.id === "L1").needDistill === false ? ok : fail)("【104】89% 不触发蒸馏");
-    (wm.find((s) => s.id === "L4").needDistill === true ? ok : fail)("【104】正好 90% 触发蒸馏（边界含等于）");
-    (wm.find((s) => s.id === "L6").ratio === null && wm.find((s) => s.id === "L6").needDistill === false ? ok : fail)("【104】冷存档（budget 0）不参与触发");
-    (wm.length === 8 && wm.every((s) => s.needDistill === (s.ratio !== null && s.ratio >= MEMORY_DISTILL_THRESHOLD)) ? ok : fail)("【104】needDistill 与 ratio 严格一致（不是恒真假绿）");
 
     /* ③ 两段切分（含"模型漏标题"的退回路径） */
     const two = splitDistill("## 核心\n- 约定 A\n\n## 纪要\n- 今天干了 B\n");
-    (two.core.includes("约定 A") && two.digest.includes("今天干了 B") ? ok : fail)("【104】两段切分：核心→L1 / 纪要→L5");
+    (two.core.includes("约定 A") && two.digest.includes("今天干了 B") ? ok : fail)("【104】两段切分：核心→项目宪法 / 纪要→月度卷宗");
     const one = splitDistill("- 没有标题的一条结论\n");
-    (one.core.includes("没有标题") && one.digest === "" ? ok : fail)("【104】模型漏标题 ⇒ 退回单段（整段进 L1，内容不丢）");
+    (one.core.includes("没有标题") && one.digest === "" ? ok : fail)("【104】模型漏标题 ⇒ 退回单段（整段进项目宪法，内容不丢）");
     (splitDistill("").core === "" && splitDistill("").digest === "" ? ok : fail)("【104】空输出不炸");
 
     /* ④ 真跑：临时 workspace 上走完整漏斗 */
@@ -273,14 +262,12 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
      * （假红把真断言盖住了：实测 `trigger=age / 1 天`）。现在取「今天往前 6 天」⇒ 永远落在
      * 30 天窗口内，稳定走 watermark 路径。 */
     const day = (n) => new Date(Date.now() - (6 - n) * 86_400_000).toISOString().slice(0, 10);
-    /* 6 天日志（v2 布局：logs/），合计 6×8000=48000 字 > L4 预算（logPerDay × logDays）的 90% ⇒ 必然触发水位 */
+    /* 6 天日志（v2 布局：logs/）：只用来验证注入按天钳制与蒸馏取数，旧版水位判定已删除 */
     mkdirSync(join(memDir, "logs"), { recursive: true });
     for (let i = 0; i < 6; i += 1) writeFileSync(join(memDir, "logs", `${day(i)}.md`), `## ${day(i)}\n${"日志内容".repeat(2000)}\n`, "utf8");
-    /* 11-19 用户令：记忆金字塔已删 ⇒ 水位 / 蒸馏链路的测试整段下架，
-       只留两条**负向**断言防复活（以后谁把水位提示加回来就会红）。 */
-    const hint = await inst.watermarkHint(ws);
-    (!String(hint).includes("记忆水位") ? ok : fail)("【104】水位提示已移除（金字塔已删）");
-    (!(await inst.context(ws)).text.includes("记忆水位") ? ok : fail)("【104】常驻记忆块里不再有水位提示");
+    /* 11-20：水位链路整段删除 ⇒ 只剩负向断言 + 常驻块里不许再出现「某层已到 N%」的水位行。 */
+    (typeof inst.watermarkHint === "undefined" ? ok : fail)("【104】⛔ 实例上已没有 watermarkHint（旧版提示通道已拆）");
+    (!/已到 \d+%/.test((await inst.context(ws)).text) ? ok : fail)("【104】常驻记忆块里不再出现「某层已到 90%」这类水位行");
     rmSync(ws, { recursive: true, force: true });
 
     /* ── 10-31 用户令：「记忆蒸馏不要开新会话，会话自己蒸馏」──
@@ -319,17 +306,15 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     );
 
     /* ⑤ 与指令 / 技能同源 */
-    const skillSrc = readFileSync(join(ROOT, "electron", "builtin-skills", "08-skill-memory-distill.ts"), "utf8");
-    const missingIds = MEMORY_PYRAMID.map((l) => l.id).filter((id) => !skillSrc.includes(`**${id}**`));
-    (missingIds.length === 0 ? ok : fail)(`【104】技能正文含全部八层${missingIds.length ? "，缺：" + missingIds.join(",") : ""}`);
-    (/rollups/.test(skillSrc) && /archive/.test(skillSrc) ? ok : fail)("【104】技能写明 L5 月卷 / L6 冷存档落点");
-    (!readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8").includes(String.fromCharCode(34)+"memory-distill"+String.fromCharCode(34)) ? ok : fail)("【104】memory-distill 已从 entries 下架（金字塔已删）");
+    const distillSkillFile = join(ROOT, "electron", "builtin-skills", "08-skill-memory-distill.ts");
+    (!existsSync(distillSkillFile) ? ok : fail)("【104】⛔ 旧版蒸馏技能文件已删除（层表配套，不许复活）");
+    (!readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8").includes(String.fromCharCode(34)+"memory-distill"+String.fromCharCode(34)) ? ok : fail)("【104】memory-distill 已从 entries 下架（旧版分层记忆已删）");
     try {
       const { buildDevInstructions } = await import("../../dist-electron/developer-instructions.js");
       const instr = buildDevInstructions({});
-      (!instr.includes(MEMORY_DISTILL_SKILL) ? ok : fail)("【104】引擎指令不再点名 memory-distill（金字塔已删）");
-      (!instr.includes("记忆水位") ? ok : fail)("【104】引擎指令不再写水位触发（金字塔已删）");
-      (!instr.includes("memory pyramid") ? ok : fail)("【104】引擎指令里不再有金字塔段（阈值拼装一并移除）");
+      (!instr.includes(MEMORY_DISTILL_SKILL) ? ok : fail)("【104】引擎指令不再点名 memory-distill（旧版蒸馏已删）");
+      (!instr.includes("记忆水位") ? ok : fail)("【104】引擎指令不再写水位触发（旧版判据已删）");
+      (!instr.includes("memory pyramid") ? ok : fail)("【104】引擎指令里不再有旧版分层段（阈值拼装一并移除）");
     } catch (error) { fail(`【104】引擎指令产物读不到：${error?.message ?? error}`); }
   }
 }
@@ -511,15 +496,15 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const { CLEANUP_RULES, HYGIENE_ACTIONS, HYGIENE_ACTION_LABEL, isHygieneAction, lintLessonLines, planHygiene, suggestedActions } = hyg;
 
     /* ① 规则表 */
-    (CLEANUP_RULES.length === 8 ? ok : fail)(`【107】清理规则八层齐全（实际 ${CLEANUP_RULES.length}）`);
-    (CLEANUP_RULES.map((r) => r.layer).join(",") === "L0,L1,L2,L3,L4,L5,L6,L7" ? ok : fail)("【107】规则层 id 与金字塔一致（L0..L7）");
-    (CLEANUP_RULES.every((r) => r.when && r.action && r.protect && r.trace) ? ok : fail)("【107】每层都写明「何时清 / 动作 / 保护项 / 留痕」");
-    const l0 = CLEANUP_RULES.find((r) => r.layer === "L0");
-    (/禁止/.test(l0.action) ? ok : fail)("【107】L0 用户档案：规则写明禁止自动压缩/删除");
-    const l2 = CLEANUP_RULES.find((r) => r.layer === "L2");
-    (/用户纠错/.test(l2.protect) ? ok : fail)("【107】L2 保护项点名「用户纠错」（只许压缩措辞、不许删条）");
-    const l6 = CLEANUP_RULES.find((r) => r.layer === "L6");
-    (/二次确认/.test(l6.action) ? ok : fail)("【107】L6 冷存档：清空需二次确认且告知不可回溯");
+    (CLEANUP_RULES.length === 8 ? ok : fail)(`【107】清理规则八类齐全（实际 ${CLEANUP_RULES.length}）`);
+    (CLEANUP_RULES.map((r) => r.target).join(",") === "USER.md,project/MEMORY.md,lessons/*.md,project/BACKGROUND.md,logs/*.md,rollups/*.md,archive/*.md,memory.json" ? ok : fail)("【107】规则按文件落点列出（⛔ 不再有 L0..L7 层号）");
+    (CLEANUP_RULES.every((r) => r.when && r.action && r.protect && r.trace) ? ok : fail)("【107】每类都写明「何时清 / 动作 / 保护项 / 留痕」");
+    const l0 = CLEANUP_RULES.find((r) => r.target === "USER.md");
+    (/禁止/.test(l0.action) ? ok : fail)("【107】用户档案（USER.md）：规则写明禁止自动压缩/删除");
+    const l2 = CLEANUP_RULES.find((r) => r.target === "lessons/*.md");
+    (/用户纠错/.test(l2.protect) ? ok : fail)("【107】纪律（lessons）保护项点名「用户纠错」（只许压缩措辞、不许删条）");
+    const l6 = CLEANUP_RULES.find((r) => r.target === "archive/*.md");
+    (/二次确认/.test(l6.action) ? ok : fail)("【107】冷存档（archive）：清空需二次确认且告知不可回溯");
     (HYGIENE_ACTIONS.length === 3 ? ok : fail)("【107】清理动作白名单 = 3 个（purge-archive / prune-pool / tidy-lessons）");
     (isHygieneAction("purge-archive") && isHygieneAction("prune-pool") && isHygieneAction("tidy-lessons") ? ok : fail)("【107】白名单内的动作被接受");
     (!isHygieneAction("rm-rf") && !isHygieneAction("") && !isHygieneAction(null) && !isHygieneAction({}) ? ok : fail)("【107】未知 / 空 / 非字符串动作一律拒绝（白名单不是「有就行」）");
@@ -531,16 +516,15 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (lintCodes.includes("lesson-no-mark") && lintCodes.includes("lesson-no-date") ? ok : fail)(`【107】lint 抓到缺日期/缺分类标记（${lintCodes.join(",")}）`);
     (lintLessonLines("- 2026-09-22 ⚠️ 纠错：规范条目 → 结论\n").length === 0 ? ok : fail)("【107】规范条目零告警（不误报）");
     const issues = planHygiene({
-      layers: [{ id: "L4", name: "每日日志", where: "logs/", budget: 40000, used: 38000, ratio: 0.95, needDistill: true, writer: "自动", sink: "沉 L5" }],
       lessonText: "- 2026-09-22 ⚠️ 纠错：ok → fine\n",
       archive: { files: 400, bytes: 3 * 1024 * 1024 },
       fragments: { total: 12, expiring: 2, expired: 3 },
       hasWorkspace: false,
     });
     const codes2 = issues.map((i) => i.code);
-    (/layer-over|fragments-expired|archive-large|no-workspace/.test(codes2.join(" ")) ? ok : fail)(`【107】plan 汇总四类待办（${codes2.join(",")}）`);
-    (suggestedActions([{ severity: "warn", layer: "L7", code: "fragments-expired", message: "" }, { severity: "warn", layer: "L2", code: "lesson-no-mark", message: "" }, { severity: "info", layer: "L6", code: "archive-large", message: "" }]).join(",") === "prune-pool,tidy-lessons,purge-archive" ? ok : fail)("【107】待办→动作映射正确（顺序稳定）");
-    (planHygiene({ layers: [], lessonText: "", archive: { files: 1, bytes: 10 }, fragments: { total: 0, expiring: 0, expired: 0 }, hasWorkspace: true }).length === 0 ? ok : fail)("【107】干净状态零待办");
+    (/fragments-expired|archive-large|no-workspace/.test(codes2.join(" ")) ? ok : fail)(`【107】plan 汇总三类待办（${codes2.join(",")}）`);
+    (suggestedActions([{ severity: "warn", target: "memory.json", code: "fragments-expired", message: "" }, { severity: "warn", target: "lessons/*.md", code: "lesson-no-mark", message: "" }, { severity: "info", target: "archive/*.md", code: "archive-large", message: "" }]).join(",") === "prune-pool,tidy-lessons,purge-archive" ? ok : fail)("【107】待办→动作映射正确（顺序稳定）");
+    (planHygiene({ lessonText: "", archive: { files: 1, bytes: 10 }, fragments: { total: 0, expiring: 0, expired: 0 }, hasWorkspace: true }).length === 0 ? ok : fail)("【107】干净状态零待办");
 
     /* ③ 真跑动作 */
     if (memMod3) {
@@ -591,8 +575,8 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (/export function MemoryHygienePanel/.test(panelsSrc) ? ok : fail)("【107】整洁面板组件存在");
     (/pending === action/.test(panelsSrc) && /确认执行/.test(panelsSrc) ? ok : fail)("【107】UI 危险动作走二次确认（点一次只展开确认条）");
     const panelUse = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryPanes.tsx"), "utf8");
-    /* ⛔ 11-11 用户令「金字塔的蒸馏那些配套功能删干净」：整洁面板（层水位 + 清理）
-       随金字塔下线 ⇒ 判据反过来：**不再挂进记忆页**（组件文件可留，渲染处必须没有）。 */
+    /* ⛔ 11-11 用户令「旧版记忆的蒸馏配套删干净」：整洁面板（层水位 + 清理）
+       随旧版一起下线 ⇒ 判据反过来：**不再挂进记忆页**（组件文件可留，渲染处必须没有）。 */
     (!/<MemoryHygienePanel/.test(panelUse) ? ok : fail)("【107】整洁面板已从记忆页下线（⛔ 11-11 起不再渲染）");
   }
 
@@ -1040,7 +1024,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
 }
 
   /* ══ 【150】记忆后端二选一（09-25 加）══
-     用户原话：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用金字塔记忆，这样重复了」。
+     用户原话：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用内置记忆，这样重复了」。
      三条不变量：① 后端判定必须是叶子模块（放进 runtime-refs 会与 memory-layers 成环）；
      ② 内置记忆的写入入口必须让位（否则同一条记忆存两份）；③ 两个记忆技能互斥（否则模型
      同时收到「写 lessons/」与「调 MCP 工具」两套矛盾指引）。 */

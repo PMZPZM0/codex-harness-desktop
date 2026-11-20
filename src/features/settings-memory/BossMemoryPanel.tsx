@@ -39,7 +39,7 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
 }) {
   const [sessions, setSessions] = useState<BossSessionRow[]>([]);
   /* 当前**生效**的记忆后端（⛔ 必读：MCP 未安装 / 云端未开通会自动回退 builtin）——
-     面板显示的是本地金字塔那份，切到 MCP/云端后它就不再被写入 ⇒ 必须说清楚，
+     面板显示的是本地记忆那份，切到 MCP/云端后它就不再被写入 ⇒ 必须说清楚，
      否则用户看到空面板会以为坏了。 */
   const [backend, setBackend] = useState<{ backend: string; effective: string; fallbackReason: string | null } | null>(null);
   const [activeId, setActiveId] = useState<string>("");
@@ -306,7 +306,7 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
               </p>
             ) : null}
             {/* ⛔⛔ 11-11 用户令「四个模块同步更新，我不想再看见旧的」：
-                这里原来画的是 L0–L7 层水位条 + 蒸馏标记（金字塔那一套）。
+                这里原来是旧版层水位条 + 蒸馏标记（已下线）。
                 ⇒ 换成：这个中枢的记忆是否已有内容 + 它自己的目录。
                 ⛔ 中枢记忆的条目由它自己的会话维护，设置页不代它编造条目列表。 */}
             <div className="boss-mem-layers">

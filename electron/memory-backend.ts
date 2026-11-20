@@ -7,9 +7,9 @@
  *    所以判定放在这个只依赖 `electron` + `app-settings` 的**叶子模块**，两边都能安全正向引用。
  *
  * 二选一（用户 09-25 明确「不要重复」）：
- *   - "builtin"（默认）：内置记忆金字塔（L0~L7 + 纪律/坑分类写入）。
+ *   - "builtin"（默认）：内置记忆（用户档案 / 项目宪法 / 纪律 / 日志 + 分类写入）。
  *   - "mcp"：优先用 MCP 记忆服务（@vheins/local-memory-mcp，可选安装，不内置）；
- *     此时内置金字塔**停止捕获写入**（`MemoryLayers.appendLesson` 会让位）。
+ *     此时内置记忆**停止捕获写入**（`MemoryLayers.appendLesson` 会让位）。
  */
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -54,7 +54,7 @@ export function localMemoryMcpInstalled(): boolean {
  *  为什么多一层：用户选了 MCP、但服务**没装/装坏了**（用户 09-25：「我的电脑不行，用户电脑肯定也不行」——
  *  依赖原生模块 better-sqlite3 的包在禁 npm scripts / 无构建工具链 / 网络受限的环境里装不上），
  *  若此时内置也让位 ⇒ **记忆一处都不写 = 彻底丢记忆**，这比"重复"严重得多。
- *  ⇒ 选了 MCP 但不可用时**回退内置**：宁可回到金字塔，也不能丢。 */
+ *  ⇒ 选了 MCP 但不可用时**回退内置**：宁可回到内置记忆，也不能丢。 */
 export function effectiveMemoryBackend(): MemoryBackend {
   const configured = memoryBackend();
   if (configured === "cloud") {
@@ -62,12 +62,12 @@ export function effectiveMemoryBackend(): MemoryBackend {
        对话上游仍停在纯模型端点 —— 此时若还声称 cloud，提示层会教模型"什么都不用做，云端自动收"，
        实际一条都存不下（静默丢记忆）。⇒ 回退内置，让记忆至少落在本机可读的地方。 */
     if (cloudMemoryUsable()) return "cloud";
-    console.warn("[memory] 记忆后端选了云端，但云端记忆未开通/未接通 ⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
+    console.warn("[memory] 记忆后端选了云端，但云端记忆未开通/未接通 ⇒ 本轮回退内置记忆，避免记忆丢失");
     return "builtin";
   }
   if (configured !== "mcp") return "builtin";
   if (!localMemoryMcpInstalled()) {
-    console.warn("[memory] 记忆后端选了 MCP，但服务未安装（入口缺失）⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
+    console.warn("[memory] 记忆后端选了 MCP，但服务未安装（入口缺失）⇒ 本轮回退内置记忆，避免记忆丢失");
     return "builtin";
   }
   return "mcp";
@@ -152,10 +152,10 @@ export function memoryBackendStatus(): MemoryBackendStatus {
      （`describeCloudMemoryReason("")` 会说出"尚未确认开通状态"，与实际相反）。 */
   const cloudFallback = backend === "cloud" && !cloudUsable
     ? (cloud.state === "unknown"
-      ? "已选云端记忆，但开通状态还没确认：在「记忆后端选项」里确认一次，或去「云账号」开通。当前仍走内置金字塔，记忆不会丢。"
+      ? "已选云端记忆，但开通状态还没确认：在「记忆后端选项」里确认一次，或去「云账号」开通。当前仍走内置记忆，记忆不会丢。"
       : cloud.state === "active"
-        ? "已选云端记忆，已开通但还没接通（缺记忆凭据或对话上游未切）：在「记忆后端选项」里点「接通云端记忆」即可。当前仍走内置金字塔，记忆不会丢。"
-        : `已选云端记忆，但${describeCloudMemoryReason(cloud.reason)}：当前仍走内置金字塔（记忆不会丢）。去「云账号」处理后再选一次即可。`)
+        ? "已选云端记忆，已开通但还没接通（缺记忆凭据或对话上游未切）：在「记忆后端选项」里点「接通云端记忆」即可。当前仍走内置记忆，记忆不会丢。"
+        : `已选云端记忆，但${describeCloudMemoryReason(cloud.reason)}：当前仍走内置记忆（记忆不会丢）。去「云账号」处理后再选一次即可。`)
     : null;
   return {
     backend,
@@ -165,7 +165,7 @@ export function memoryBackendStatus(): MemoryBackendStatus {
     installRoot,
     installCommand: `"${bundledNodePath()}" "${memoryInstallerPath()}" --force`,
     fallbackReason: cloudFallback ?? (backend === "mcp" && !installed
-      ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
+      ? "已选 MCP，但服务未安装：当前仍走内置记忆（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
       : null),
     cloudActivation: {
       state: cloud.state,

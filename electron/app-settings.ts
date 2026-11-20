@@ -18,11 +18,11 @@ import { existsSync, readFileSync } from "node:fs";
  *   一句「只影响说法、不影响内容」的语气指引，随该会话自己的 developer instructions 下发；
  *   状态按会话各自一份（渲染层键族 agent-mood-<threadId>），A 会话不会改到 B 会话的语气。
  * - memoryBackend: **记忆后端二选一**（09-25 加，用户明确要求「不重复」）：
- *   - "builtin"（默认缺省）：内置记忆金字塔（L0~L7 + 纪律/坑分类写入）。
+ *   - "builtin"（默认缺省）：内置记忆（用户档案 / 项目宪法 / 纪律 / 日志 + 分类写入）。
  *   - "mcp"：**优先用 MCP 记忆服务**（@vheins/local-memory-mcp，可选安装，装在
  *     `<userData>/memory-mcp`，见 scripts/install-memory-mcp.cjs）。
- *     ⛔ 选它之后内置金字塔**停止捕获写入**（`MemoryLayers.appendLesson` 会让位），
- *     否则会出现「MCP 写一份、金字塔再写一份」的双份记忆。
+ *     ⛔ 选它之后内置记忆**停止捕获写入**（`MemoryLayers.appendLesson` 会让位），
+ *     否则会出现「MCP 写一份、旧版分层记忆再写一份」的双份记忆。
  * 以后新开关都往这里加。
  */
 export type AppSettings = {
@@ -53,7 +53,7 @@ export type AppSettings = {
   /** 模型目录自愈回执（10-24）：启动时修复损坏的 model-catalog.json 后写入，
    *  渲染层读一次展示成可见提醒后就清掉（不残留）。 */
   modelCatalogRepairNotice?: string;
-  /** 记忆后端："builtin"= 内置记忆金字塔（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
+  /** 记忆后端："builtin"= 内置记忆（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
   memoryBackend?: "builtin" | "mcp" | "cloud";
   /** 知识库后端："local"=项目本地库（kb:*）；"cloud"=云端 weknora（MCP 工具） */
   kbBackend?: "local" | "cloud";

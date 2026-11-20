@@ -5,9 +5,9 @@
  * 10-05 上午那版 `types.ts` 是**照着"理想形状"手写的**，没有对着主进程
  * handler 的真实返回体核对 ⇒ 三个视图各错一处：
  *
- *   ① 金字塔   前端读 `data.archive.files`
+ *   ① 旧版分层记忆   前端读 `data.archive.files`
  *              ⇒ `MemoryLayersSnapshot` **根本没有 archive 字段**（它在
- *                `memory:hygiene:plan` 的返回体里）⇒ 点开金字塔即白屏。
+ *                `memory:hygiene:plan` 的返回体里）⇒ 点开旧版分层记忆即白屏。
  *   ② MCP 后端  前端读 `data.active / connector / ready / sinkLabel`
  *              ⇒ `MemoryBackendStatus` 的字段叫 `effective / installed /
  *                serverPath / fallbackReason`，**四个字段一个都不存在**
@@ -63,46 +63,6 @@ function bool(v: unknown, fallback = false): boolean {
 function ts(v: unknown): number | null {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/* ══ ① 金字塔：MemoryLayersSnapshot ⇒ PyramidMemory ═══════════════════
- * 真实来源：`memory:layers:read` → `memoryLayers.snapshot()` + `entries`
- * ⛔ archive 不在这个返回体里（它只在 hygiene:plan 里）⇒ 由调用方用
- *   `memory:hygiene:plan` 补进来，本函数只负责"没给就归零"。
- */
-
-export function normalizePyramid(raw: unknown, archive?: { files?: unknown; bytes?: unknown } | null): import("./types").PyramidMemory {
-  const r = obj(raw);
-  const layers = arr(r.layers).map((l: unknown) => {
-    const x = obj(l);
-    const budget = num(x.budget, 0);
-    const ratio = x.ratio == null ? null : num(x.ratio, 0);
-    return {
-      id: str(x.id, "L?"),
-      name: str(x.name, "未命名层"),
-      where: str(x.where, "未标注"),
-      writer: str(x.writer, "未标注"),
-      sink: str(x.sink, "未标注"),
-      budget,
-      used: num(x.used, 0),
-      ratio,
-      needDistill: bool(x.needDistill, false),
-    };
-  });
-  return {
-    kind: "pyramid",
-    /* ⛔ 主进程 snapshot **没有 id 字段** ⇒ 别用 `str(r.id, ...)` 假装有：
-       那样会恒为兜底值，看起来"正常"实际是假数据。金字塔是**每工作区一份**，
-       用 projectDir（真存在且稳定）当标识才有意义。 */
-    id: str(obj(r.paths).projectDir, "pyramid"),
-    createdAt: num(r.createdAt, 0),
-    updatedAt: num(r.updatedAt, 0),
-    layers,
-    archive: {
-      files: num(obj(archive).files, 0),
-      bytes: num(obj(archive).bytes, 0),
-    },
-  };
 }
 
 /* ══ ② 本地 MCP 后端：MemoryBackendStatus ⇒ McpBackendMemory ══════════

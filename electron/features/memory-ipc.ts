@@ -4,7 +4,7 @@
  * 域：memory(17 通道 + gateway/backend/mcp/hygiene 子面)
  *
  * 为什么拆出来：原 `memory-rpa-ipc.ts` 一个板块承载 memory / rpa / tasks / scheduler 四个前缀，
- * 其中 `memory` 一家就占了绝大部分（记忆金字塔 + 后端切换 + MCP 安装器 + 整洁清理），
+ * 其中 `memory` 一家就占了绝大部分（内置记忆 + 后端切换 + MCP 安装器 + 整洁清理），
  * 混在一起时"记忆"这个功能的边界完全看不出来。
  *
  * ⛔⛔ 三条不能动的实证口径（本次纯搬迁，一字未改）：
@@ -446,7 +446,7 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
     ipcHost.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
     ipcHost.handle("memory:layers:read", async (_event, workspace?: string) => ({ ...(await memoryLayers.snapshot(workspace)), entries: await memoryStore.stats() }));
-    /* ── 记忆原子（11-10 用户令：废弃金字塔，改用「索引 + 原子条目」的新界面）──────
+    /* ── 记忆原子（11-10 用户令：废弃旧版分层，改用「索引 + 原子条目」的新界面）──────
        ⛔ 这两个通道是**新界面唯一的数据源**：界面不自己拼路径、不自己解析 frontmatter。
        ⛔ 坏文件照实返回数量（broken），界面要能看见「有几条读不出来」——静默跳过等于骗人。 */
     ipcHost.handle("memory:atoms:list", async (_event, workspace?: string) => {
@@ -650,13 +650,13 @@ export const memoryFeature = defineFeature<null>({
     });
 
     /* ── 记忆整洁与清理（09-22 用户：「记忆管理和记忆整洁，记忆清理规则都要写好」）──
-       · plan = 只读：把「哪层满了 / 哪里格式不齐 / 能清什么」算成待办 + 附上清理规则表。
-       · apply = 动作：⛔ **必须** `confirm === true`，⛔ 动作走**白名单**。守卫【107】断言这两条。 */
+       · plan = 只读：把「哪里格式不齐 / 能清什么」算成待办 + 附上清理规则表。
+       · apply = 动作：⛔ **必须** `confirm === true`，⛔ 动作走**白名单**。守卫【107】断言这两条。
+       ⛔ 11-20：不再返回 layers（旧版层水位已整体删除），待办只来自纪律格式 / 冷存档 / 碎片池。 */
     ipcHost.handle("memory:hygiene:plan", async (_event, workspace?: string) => {
       const snapshot = await memoryLayers.snapshot(workspace);
       const [archive, pool] = await Promise.all([memoryLayers.archiveStats(workspace), memoryStore.stats()]);
       const issues = planHygiene({
-        layers: snapshot.layers,
         lessonText: snapshot.lessons,
         archive,
         fragments: { total: pool.total, expiring: pool.expiringSoon, expired: pool.expiring },
@@ -667,7 +667,6 @@ export const memoryFeature = defineFeature<null>({
         labels: HYGIENE_ACTION_LABEL,
         actions: suggestedActions(issues),
         issues,
-        layers: snapshot.layers,
         lessonGroups: snapshot.lessonGroups,
         archive,
         pool: { total: pool.total, pinned: pool.pinned, expiring: pool.expiring, max: pool.max, ttlDays: pool.ttlDays },

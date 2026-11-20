@@ -35,7 +35,7 @@
 | `electron/builtin-skills/` | **20 个内置技能**（含元技能 `skill-authoring` / `memory-distill` / `self-review` / `memory-hygiene` / `memory-classify` / `skill-audit`；09-29 新增 `image-generation` 与重写后的 `video-generation`；10-05 新增 `frontend-canvas`（前端开发画布组件手册，44 种字段速查）） | 启动时 `ensureBuiltinSkills` 落盘到 `$CODEX_HOME/skills`（守卫【103】；中文导读与 entries 一一对应，守卫【229】） |
 | **AI 画布工作流板块**（09-29 立，见 §2.1） | 渲染层 `src/features/drama-canvas/` 14 文件 / 3737 行；IPC 域 `drama-canvas` **2** + `video` **7** + `builtin`（生图）；CSS `src/styles/21-drama-canvas.css` **1519 行**；内置技能 `image-generation` / `video-generation`；MCP 工具 `image_generate` / `video_generate` / `video_status` / `video_concat` | **五层全占的独立功能板块**：界面 + 状态 + 存储 + IPC + 引擎工具/技能 |
 | **前端开发板块**（10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发；10-06 起画布 = 上游钉死提交 + 本仓补丁层，见 AGENTS.md 同名小节） | 渲染层 `src/features/ui-sketch/` 6 文件 / 501 行 + CSS `src/styles/26-ui-sketch.css` 160 行；**零 IPC**（不进 manifest / registry）；宿主侧新协议 `sketch://`（`electron/sketch-protocol.ts` + `boot.ts`）；随包第三方产物 `public/sketch/`（4.2MB，MIT，= 上游 039ec31 + 8 组件补丁；构建器 `scripts/sketch-fork/`）；内置技能 `frontend-canvas`（组件手册） | **嵌第三方静态站的板块样板**：不并源码进仓（克隆到 .workbuddy/tmp + 定点补丁），接缝全在我们这一侧（协议 / CSP / 只读桥 / 挂载 / 预览触发）；守卫【283】162 条 + 验收项 `ui-sketch` 11 条（10-06 重写：三形态探针）。⚠️ 曾接过一版"组件库送进草图"，用户实测后判没用 ⇒ 已整块删除，【283】留负向断言防复活 |
-| 记忆原子（11-10 起替代金字塔） | `entries/<scope>/[<群id>]/<id>.md` 一条一文件 + `INDEX.md` 索引 + `.changelog.jsonl` | 格式 / 召回 / 落盘单一真相源 = `electron/memory/atoms-*.ts`（守卫 12bj）；金字塔界面已下线，旧层快照仍作注入兜底（`electron/memory-layers.ts`，守卫【104】） |
+| 记忆原子（11-10 起替代旧版分层记忆） | `entries/<scope>/[<群id>]/<id>.md` 一条一文件 + `INDEX.md` 索引 + `.changelog.jsonl` | 格式 / 召回 / 落盘单一真相源 = `electron/memory/atoms-*.ts`（守卫 12bj）；旧版分层记忆界面已下线，旧层快照仍作注入兜底（`electron/memory-layers.ts`，守卫【104】） |
 | 记忆目录布局 | `<workspace>/.codex-harness/memory/` 下 `project/` `lessons/` `logs/` `rollups/` `archive/` `atoms/`（`entries/{project,rule,session/<群id>}/` + `INDEX.md` + `.changelog.jsonl`） | v2 分类分文件夹；v1 散文件由 `migrateLayout()` 搬（守卫【106】）；atoms 目录不存在时注入自动回退旧层逻辑 |
 | 记忆分类 | `lessons/` 内一个分类一个文件（**用户纠错单独一类**，永不淘汰） | 分类名与判定 = `electron/memory-lessons.ts`（守卫【105】） |
 | 记忆整洁与清理 | 三个动作：`prune-pool` / `tidy-lessons` / `purge-archive`（白名单 + 二次确认） | 规则表与判定 = `electron/memory-hygiene.ts`（守卫【107】） |
@@ -312,11 +312,11 @@
 | **禁止破坏性同步** | 不用 `push --force` / `reset --hard` / `checkout -- .`（会把对方成果抹掉）；需要时先问用户 |
 | **§0 数字口径** | 数字是**某 SHA 的快照**；并发期允许漂移，以**最新一次提交**为准，由最后收尾的那一路负责同步，并在提交信息里写明同步到哪个 SHA |
 
-## 11. 记忆与技能（经验包）：目录化的记忆金字塔 + 技能沉淀
+## 11. 记忆与技能（经验包）：目录化的旧版分层记忆 + 技能沉淀
 
 这套东西是给**引擎自己**用的记忆与经验（不是应用的功能页）—— 规则在这里，实现只有一个真相源。
 
-### 11.1 记忆金字塔（L0–L7，每层满 90% 往下蒸一层）
+### 11.1 旧版分层记忆（L0–L7，每层满 90% 往下蒸一层）
 
 **全部落在一个目录** `<workspace>/.codex-harness/memory/`，**按层 / 分类分子文件夹**（v2，09-22 起：文件夹保存不会乱）：
 

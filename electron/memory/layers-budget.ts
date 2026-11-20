@@ -2,7 +2,7 @@
  * memory/layers-budget.ts —— 记忆分层的**目录布局 + 预算 + 纯函数**。
  *
  * 从 electron/memory-layers.ts（1129 行）切出（P2 批次 4）：这一段无 fs / path / this 依赖，
- * 是「布局常量 / 注入预算 / 金字塔表 / 水位 / 蒸馏切分 / scratch 判定」—— 纯逻辑，可单测。
+ * 是「布局常量 / 注入预算 / 蒸馏切分 / scratch 判定」—— 纯逻辑，可单测。
  * ⛔ 对外仍经 memory-layers.ts 重导出 —— 调用方零改动。
  */
 import { CORRECTION_CATEGORY, PITFALL_CATEGORY, PREFERENCE_CATEGORY, SOP_CATEGORY } from "../memory-lessons";
@@ -117,70 +117,16 @@ export const AUTO_DISTILL_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** 日志太短不值得调模型 */
 export const DISTILL_MIN_CHARS = 200;
 
-/**
- * ── 记忆金字塔（L0–L7）与 90% 漏斗 ───────────────────────────────────────────────
- * 用户 09-22 要求：「每层满了 90% 就往下蒸馏一层核心记忆，而且必须让 Codex 自己完成」。
- * 于是这里定义**层表**（谁写、写在哪、多少预算、满了沉到哪），水位与"要不要蒸馏"由下面的
- * layerWatermarks 纯函数算，再由 context() 用**水位提示行**下发 —— 引擎因此不需要额外工具就知道
- * 该蒸馏哪一层（提示只在 ≥90% 时才出现，日常不占 token）。
- *
- *   L0 用户档案 USER.md            ← 用户手写（跨项目，最稳定）
- *   L1 项目宪法 MEMORY.md          ← 蒸馏产物：本项目必须遵守的约定 / 选型 / 结论
- *   L2 纪律与记忆 lessons/<分类>.md ← 捕获链自动追加 + 引擎补写（**用户纠错单独一类**；满了先升级为技能再压缩）
- *   L3 项目背景 BACKGROUND.md      ← 用户 / 引擎（本项目快速入门）
- *   L4 每日日志 YYYY-MM-DD.md      ← 捕获链自动；满 90% 或满 30 天 ⇒ 沉 L5，原文进 L6
- *   L5 月度卷宗 rollups/YYYY-MM.md ← 蒸馏产物（比日志短、比 L1 细）
- *   L6 冷存档 archive/*.md         ← 蒸馏时原文移位（可回溯，**不进注入**）
- *   L7 碎片池 memory.json          ← MemoryStore 按 TTL 淘汰（不在本模块统计字符）
- */
+/** 90% 判据：日志段 / 月卷用到这个比例就算「该蒸馏了」 */
 export const MEMORY_DISTILL_THRESHOLD = 0.9;
-/** 「怎么蒸」的说明书放在按需加载的技能里（每轮指令只留触发与职责，省 token —— 与本仓渐进披露纪律一致） */
+/* 蒸馏技能名（蒸馏仍由引擎按技能执行；层表已删） */
 export const MEMORY_DISTILL_SKILL = "memory-distill";
 export const ROLLUP_BUDGET = 12000;
-
-export type PyramidLayerId = "L0" | "L1" | "L2" | "L3" | "L4" | "L5" | "L6" | "L7";
-export type PyramidLayerDef = {
-  id: PyramidLayerId;
-  name: string;
-  where: string;
-  /** 字符预算；0 = 不按字符统计（冷存档 / 外置池） */
-  budget: number;
-  writer: string;
-  /** 满 90% 之后"往下沉"到哪一层 */
-  sink: string;
-};
-export const MEMORY_PYRAMID: readonly PyramidLayerDef[] = [
-  { id: "L0", name: "用户档案", where: "USER.md（userData 下，跨项目）", budget: MEMORY_BUDGET.user, writer: "用户手写", sink: "人工精简（不自动删）" },
-  { id: "L1", name: "项目宪法", where: `${PROJECT_DIR}/${MEMORY_FILE}`, budget: MEMORY_BUDGET.project, writer: "蒸馏（本地 / 引擎）", sink: "同层压缩：合并同主题、删过时" },
-  { id: "L2", name: "纪律与记忆", where: `${LESSONS_DIR}/<分类>.md`, budget: MEMORY_BUDGET.lessons, writer: "捕获链自动 + 引擎", sink: "先升级为技能（skill-authoring）再压缩" },
-  { id: "L3", name: "项目背景", where: `${PROJECT_DIR}/${BACKGROUND_FILE}`, budget: MEMORY_BUDGET.background, writer: "用户 / 引擎", sink: "稳定下来的升格进 L1" },
-  { id: "L4", name: "每日日志", where: `${LOGS_DIR}/YYYY-MM-DD.md`, budget: MEMORY_BUDGET.logPerDay * MEMORY_BUDGET.logDays, writer: "捕获链自动", sink: "沉 L5 月度卷宗（原文进 L6 冷存档）" },
-  { id: "L5", name: "月度卷宗", where: `${ROLLUP_DIR}/YYYY-MM.md`, budget: ROLLUP_BUDGET, writer: "蒸馏", sink: "沉 L1 项目宪法" },
-  { id: "L6", name: "冷存档", where: `${ARCHIVE_DIR}/*.md`, budget: 0, writer: "蒸馏（原文移位）", sink: "终态：可回溯，不进注入" },
-  { id: "L7", name: "碎片池", where: "memory.json（MemoryStore）", budget: 0, writer: "捕获链自动", sink: "按 TTL 淘汰，淘汰记录进 pruned.jsonl" },
-];
-
-export type PyramidLayerStatus = PyramidLayerDef & { used: number; ratio: number | null; needDistill: boolean };
-
-/** 按「层 id → 当前字符数」算水位（**纯函数**：预检【104】直接真跑它，不依赖文件系统）。
- *  ⛔ scale 只作用于**输出**的 budget（MEMORY_PYRAMID 仍是基准值）—— 水位统一按当前倍率算，
- *  否则容量放大后水位条还按旧预算画，会出现"明明没用多少却报 95%"的假警报。 */
-export function layerWatermarks(used: Partial<Record<PyramidLayerId, number>> = {}, scale: unknown = DEFAULT_MEMORY_SCALE): PyramidLayerStatus[] {
-  const k = normalizeMemoryScale(scale);
-  return MEMORY_PYRAMID.map((layer) => {
-    const cur = Math.max(0, Math.round(used[layer.id] ?? 0));
-    const budget = layer.budget > 0 ? layer.budget * k : 0;
-    /* 外部层（budget 0：冷存档 / 碎片池）不按字符算比例，也就永远不触发蒸馏 */
-    if (budget <= 0) return { ...layer, budget, used: cur, ratio: null, needDistill: false };
-    const ratio = cur / budget;
-    return { ...layer, budget, used: cur, ratio, needDistill: ratio >= MEMORY_DISTILL_THRESHOLD };
-  });
-}
 
 export type DistillSplit = { core: string; digest: string };
 
 /**
- * 把蒸馏输出切成两段：`## 核心`（→ L1 项目宪法）与 `## 纪要`（→ L5 月度卷宗）。
+ * 把蒸馏输出切成两段：`## 核心`（→ 项目宪法）与 `## 纪要`（→ 月度卷宗）。
  * 纯函数，预检【104】直接真跑。
  * ⛔ 标题缺失/写错时**必须退回单段模式**（整段当核心进 L1）—— 宁可 L5 空着，也不能让内容凭空消失。
  */
@@ -209,8 +155,6 @@ export type MemoryLayersSnapshot = {
   paths: { user: string; projectDir: string; background: string; project: string; lessons: string; logDir: string };
   logs: { date: string; chars: number }[];
   budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number; over: boolean };
-  /** 金字塔八层水位（设置页展示；needDistill = 已达 90% 蒸馏线） */
-  layers: PyramidLayerStatus[];
   /** L2 纪律与坑的**分类计数**（设置页显示"用户纠错 N 条 / 任务经验 N 条 …"） */
   lessonGroups: { category: string; count: number; chars: number }[];
   pendingDistill: { dates: string[]; chars: number };
@@ -251,7 +195,7 @@ export const DISTILL_PROMPT = `你是记忆蒸馏器。下面是某个项目过�
 - 一次性任务细节、临时路径、中间过程
 - 寒暄、重复内容、当天即失效的状态
 
-输出要求（**两段式**：程序按标题切分，分别落进金字塔的两层）：
+输出要求（**两段式**：程序按标题切分，分别落进项目宪法与月度卷宗）：
 - 先输出一节「## 核心」= **长期有效的项目宪法**：项目约束、架构约定、技术选型及其理由、用户偏好与禁忌。
   不超过 20 行，每行一句话，信息密度优先。
 - 再输出一节「## 纪要」= 这批日志的**阶段纪要**：做了什么、结论是什么、还有什么没做完。不超过 30 行，按主题分组。

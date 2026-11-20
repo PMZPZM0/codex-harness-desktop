@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
  *   主进程都回退成 builtin —— 渲染层的工具面与卡片必须跟着回退，否则会出现
  *   「界面说云端、模型其实按内置写」的双口径。
  * ⛔ 旧实现是 `effective === "mcp" ? "mcp" : "builtin"` ⇒ **cloud 被静默折叠成 builtin**，
- *   症状是切了云端后记忆中心卡片仍显示「内置金字塔」、云端专属说明也不出现。
+ *   症状是切了云端后记忆中心卡片仍显示「内置记忆」、云端专属说明也不出现。
  */
 function backendOfStatus(status: unknown): "builtin" | "mcp" | "cloud" {
   const effective = String((status as { effective?: unknown } | null)?.effective ?? "");
@@ -124,7 +124,7 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
     const stored = localStorage.getItem(MODE_KEY);
     return stored === "cloud" ? "cloud" : "local";
   });
-  /* 记忆后端（内置金字塔 ⇄ MCP）：工具面据此收敛 —— MCP 后端已有自己的 memory-write，
+  /* 记忆后端（内置记忆 ⇄ MCP）：工具面据此收敛 —— MCP 后端已有自己的 memory-write，
      不能再把宿主的 memory_write 一起暴露（同名双写，见 10-20 修复）。 */
   const [memoryBackend, setMemoryBackend] = useState<"builtin" | "mcp" | "cloud">("builtin");
   const [workspaceMemoryEnabled, setWorkspaceMemoryEnabled] = useState<boolean>(() => localStorage.getItem(WORKSPACE_KEY) !== "false");

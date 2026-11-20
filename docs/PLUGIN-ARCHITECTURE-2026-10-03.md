@@ -224,7 +224,7 @@ DeepSeek 运行在 CLI/Node，可以宣称"不存在需要打补丁的特权内�
 | **IM 通道（按平台拆）** | weixin · telegram · feishu · dingtalk · qq · wecom-webhook · ponytail · channels | 每平台一个插件，**共享 `im-gateway` 接缝** |
 | **机器人** | bot · bots · bot-binding · bot-stream · channel-bot | ⚠️ 见下方"前缀归一化" |
 | **团队与调度** | teams · agents · subagents · commands · team-threads · team-runs | 专家团 / 子智能体 / 调度 |
-| **记忆** | memory · rpa · tasks · scheduler | 记忆金字塔 / 定时任务 |
+| **记忆** | memory · rpa · tasks · scheduler | 旧版分层记忆 / 定时任务 |
 | **技能与插件市场** | skills · skill-discipline · builtin · plugins · plugin · tools · hooks | 技能包 / 插件市场 / 内置能力 |
 | **模型** | openai · custom-model · model-specs | 账号 / 自定义模型 / 规格 |
 | **连接器** | connectors · mcp-servers · prompt | OAuth / MCP / 提示词增强 |

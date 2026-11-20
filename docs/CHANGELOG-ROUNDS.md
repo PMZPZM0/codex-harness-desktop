@@ -2518,13 +2518,13 @@ localStorage 脏值。外观页由注册表 `map` 渲染，**新增主题 = 表�
 
 ### 🧠 记忆后端二选一（09-25 立，守卫【150】）
 
-用户要求：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用金字塔记忆，这样重复了」。
+用户要求：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用内置记忆，这样重复了」。
 
 **两个后端互斥，同一时刻只用一个**：
 
 | 后端 | 设置值 | 写入去哪 | 配套技能 |
 |---|---|---|---|
-| 内置记忆金字塔（**默认**） | `memoryBackend: "builtin"` | 工作区 `lessons/*.md` + `MEMORY.md`（`MemoryLayers.appendLesson`） | `memory-classify` |
+| 内置旧版分层记忆（**默认**） | `memoryBackend: "builtin"` | 工作区 `lessons/*.md` + `MEMORY.md`（`MemoryLayers.appendLesson`） | `memory-classify` |
 | MCP 记忆服务 | `memoryBackend: "mcp"` | MCP 工具（`@vheins/local-memory-mcp`） | `memory-mcp-backend` |
 
 - 设置项在 `app-settings.json` 的 `memoryBackend`（类型见 `electron/app-settings.ts`；新开关一律加那里）。
@@ -2532,7 +2532,7 @@ localStorage 脏值。外观页由注册表 `map` 渲染，**新增主题 = 表�
   1. `electron/memory-backend.ts` = 后端判定的**叶子模块**。⛔ 不许把它放进 `runtime-refs.ts`
      —— 后者已 import `memory-layers`，反向引用会成 require 环（守卫【147】同族）。
   2. `MemoryLayers.appendLesson()` 开头让位：`memoryBackend() === "mcp"` 时直接 `return false`
-     ⇒ 内置金字塔**停止捕获**，不会与 MCP 各存一份。
+     ⇒ 内置记忆**停止捕获**，不会与 MCP 各存一份。
   3. `ensureBuiltinSkills()` 末尾按后端**改名切换** `SKILL.md ⇄ SKILL.md.disabled`：
      mcp → 只启用 `memory-mcp-backend`；builtin → 只启用 `memory-classify`。
      （改名而非删除，切回来立刻恢复。）
@@ -2559,7 +2559,7 @@ node scripts/install-memory-mcp.cjs --ignore-scripts  # 受限环境逃生口（
 **禁 npm scripts / 无构建工具链 / 取不到预编译二进制**的环境里会**装得上但起不来**。
 
 - 捕获链与技能互斥一律用 `effectiveMemoryBackend()`（**不是** `memoryBackend()`）：
-  选了 mcp 但服务入口缺失 ⇒ **回退内置金字塔**并 `console.warn`。
+  选了 mcp 但服务入口缺失 ⇒ **回退内置记忆**并 `console.warn`。
   ⛔ 若此处按裸 `memoryBackend()` 让位，坏安装环境下会**记忆一处都不写 = 彻底丢记忆** ——
   这比"重复"严重得多，所以宁可回退。
 - 安装器必须提供 `--verify`（真起一次服务做 MCP 握手，15s 超时）：只判文件存在会把坏安装报成"已就绪"。

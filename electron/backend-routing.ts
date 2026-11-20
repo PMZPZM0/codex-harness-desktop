@@ -122,7 +122,7 @@ export function memoryRoute(): MemoryRoute {
       skill: "memory-cloud-backend",
       store: "云端 memapi（随账号走，按账号隔离）",
       tools: [],
-      how: "云端记忆由对话上游自动注入与写入 —— ⛔ 你**不需要**调用任何记忆工具，也⛔ 不要往 lessons/*.md / MEMORY.md 手写（那套是内置金字塔的位置，云端不会读它）。只要正常回答，记忆会被上游自动收走。",
+      how: "云端记忆由对话上游自动注入与写入 —— ⛔ 你**不需要**调用任何记忆工具，也⛔ 不要往 lessons/*.md / MEMORY.md 手写（那套是内置记忆的位置，云端不会读它）。只要正常回答，记忆会被上游自动收走。",
     };
   }
   return {

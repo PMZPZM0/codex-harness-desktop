@@ -1,12 +1,12 @@
 /**
  * 记忆后端三板块（10-21 用户要求）。
  *
- * 用户原话：「记忆中心要拆细一点，本地金字塔记忆、MCP 记忆、云端记忆，加一个开关，
+ * 用户原话：「记忆中心要拆细一点，本地记忆、MCP 记忆、云端记忆，加一个开关，
  * 开那个生效那个，就不用再在记忆后端选了，拆成三个板块。」
  *
  * 设计：三块各自一张板（标题 + 状态 + 开关 + 管理入口），开关是**三选一**：
  *   · 只有就绪的后端才能打开（MCP 未安装 / 云端未开通时开关禁用，点「安装 / 开通」去处理）；
- *   · 关掉当前生效的 MCP / 云端 = 回到本地金字塔；本地金字塔本身不能关（全关请用顶部的「已启用」）；
+ *   · 关掉当前生效的 MCP / 云端 = 回到本地记忆；本地记忆本身不能关（全关请用顶部的「已启用」）；
  *   · 实际生效以后端回报的 `effective` 为准：MCP 未就绪自动回退时，开关跟着落在本地并在板上说明。
  *
  * ⛔ 切换/安装/开通的 IPC 与 BackendConsolePanel 同源（readMemoryBackend / setMemoryBackend /
@@ -45,7 +45,7 @@ const BOARDS: {
   { id: "cloud", name: "云端记忆", icon: Cloud, tone: "ic-violet", desc: "memapi 跨设备；对话自动注入与回写，按云账号隔离。" },
 ];
 
-/** 记忆后端三块板：本地金字塔 / MCP / 云端各一块，开关决定哪个生效。 */
+/** 记忆后端三块板：本地记忆 / MCP / 云端各一块，开关决定哪个生效。 */
 export function MemoryBackendBoards({ memoryEnabled, fallbackBackend, onManage, onNotice }: {
   memoryEnabled: boolean;
   fallbackBackend: MemoryBackendId;
@@ -87,7 +87,7 @@ export function MemoryBackendBoards({ memoryEnabled, fallbackBackend, onManage, 
       if (result?.refused) {
         onNotice(`未切换：${String(result?.cloudActivation?.reasonText ?? result.refused)}`);
       } else if (id === "mcp" && result?.effective !== "mcp") {
-        onNotice(`已记下选择，但 MCP 未就绪 —— 当前仍走本地金字塔${result?.fallbackReason ? `：${String(result.fallbackReason).slice(0, 120)}` : ""}`);
+        onNotice(`已记下选择，但 MCP 未就绪 —— 当前仍走本地记忆${result?.fallbackReason ? `：${String(result.fallbackReason).slice(0, 120)}` : ""}`);
       } else {
         onNotice(id === "builtin" ? "已切回本地记忆库" : id === "mcp" ? "已切到 MCP 记忆：重启应用后引擎侧生效" : "已切到云端记忆：记忆由 memapi 自动注入与回写");
       }
@@ -107,7 +107,7 @@ export function MemoryBackendBoards({ memoryEnabled, fallbackBackend, onManage, 
     if (!checked) {
       // 本地是兜底，不能关成"没有任何后端"；要全关请用顶部总开关。
       if (id === "builtin") {
-        onNotice("本地金字塔是兜底后端；要全部关闭记忆，请用页面顶部的「已启用」");
+        onNotice("本地记忆是兜底后端；要全部关闭记忆，请用页面顶部的「已启用」");
         return;
       }
       if (id === current) void switchTo("builtin");

@@ -18,7 +18,7 @@ import { NO_AI_SLOP_SKILL } from "./builtin-skills/04-skill-no-ai-slop";
 import { I_HAVE_ADHD_SKILL } from "./builtin-skills/05-skill-adhd";
 import { DOC_CONVERT_SKILL } from "./builtin-skills/06-skill-doc-convert";
 import { SKILL_AUTHORING_SKILL } from "./builtin-skills/07-skill-authoring";
-/* 11-19：记忆金字塔已删 ⇒ 蒸馏技能不再注册（文件保留备查）。 */
+/* 11-19：旧版分层记忆已删除 ⇒ 蒸馏技能不再注册（文件保留备查）。 */
 import { SELF_REVIEW_SKILL } from "./builtin-skills/09-skill-self-review";
 import { MEMORY_HYGIENE_SKILL } from "./builtin-skills/10-skill-memory-hygiene";
 import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify";
@@ -148,7 +148,7 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 元技能「怎么造技能」：经验包的积累通道。写成技能而不是塞进 developer_instructions，
     // 是因为格式正文只在"真要沉淀时"才需要被读（渐进披露，省每轮 token）。
     ["skill-authoring", SKILL_AUTHORING_SKILL],
-    // 元技能「怎么蒸记忆金字塔」：水位提示出现时按它把那一层压下去（引擎自助，用户 09-22 点名）
+    // 元技能「怎么蒸记忆文件」：水位提示出现时按它把那一层压下去（引擎自助，用户 09-22 点名）
     // ── 09-23 用户点名要的四件（「技能配置与集成…内置为默认能力」）─────────────────
     // 收尾复盘：任务完成后自我总结 → 识别错误/改进点 → 沉淀为记忆与技能（自我进化的入口）
     ["self-review", SELF_REVIEW_SKILL],
@@ -250,7 +250,7 @@ export async function ensureBuiltinSkills(skillsDir: string) {
 
   /* 09-25 记忆后端**互斥**：启用 MCP 记忆后端时只留 memory-mcp-backend，内置分类技能必须停用。
      ⛔ 不这么做的话，引擎会同时读到两套互相矛盾的写法（一套让它往 lessons/*.md 写、
-     一套让它调 MCP 工具）—— 用户原话：「不要 mcp 写了记忆，又用金字塔记忆，这样重复了」。
+     一套让它调 MCP 工具）—— 用户原话：「不要 mcp 写了记忆，又用内置记忆，这样重复了」。
      ⛔ 用**改名**（SKILL.md ⇄ SKILL.md.disabled）而不是删目录：切回内置时立刻恢复，不用重写盘。
      ⛔ 这是后端语义驱动的强制切换（与「能力总闸」同源），会覆盖对这两个技能的手动启停。 */
   try {
