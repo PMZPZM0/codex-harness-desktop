@@ -891,7 +891,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  /* 11-19：去掉独立展开箭头后，文件夹图标左缘与上方「新建任务 / 项目/任务」图标对齐（约 21px）。 */
+  /* 11-19：去掉独立展开箭头后，文件夹图标左缘与上方「项目/任务」tab 图标严格对齐（截图像素 x=20）。 */
   padding: 4px 4px 4px 12px;
 }
 .project-item-toggle {
@@ -901,7 +901,8 @@
   flex: 1;
   min-width: 0;
   height: 28px;
-  padding: 0 9px;
+  /* 左侧只留 1px：容器已有 12px + 列表内边距，文件夹图标才能和上方 tab 图标同为 x=20。 */
+  padding: 0 9px 0 1px;
   border: 0;
   background: transparent;
   color: var(--text);
