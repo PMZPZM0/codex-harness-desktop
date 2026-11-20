@@ -72,13 +72,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Gamepad2, GraduationCap, LayoutTemplate, Music2, PackageOpen, Palette, Puzzle, Smartphone, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, Copy, Files, Film, Gamepad2, GraduationCap, LayoutTemplate, Music2, PackageOpen, Palette, Puzzle, Smartphone, Trash2, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
 import { RuntimeToolsPanel } from "./RuntimeToolsPanel";
 import { ToolsHealthPanel } from "./ToolsHealthPanel";
-import { CapabilityChainPanel } from "./CapabilityChainPanel";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
 import { OpenfilmCard } from "../openfilm";
@@ -96,10 +95,10 @@ import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel,
 
 export type DevtoolsSettingsSectionProps = {
   /** 11-18：卡片 → 负责专家（点一下去专家中心）。没传就不显示这一行。 */
-  onOpenExperts?: (expert: string, tool: string) => void; downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
+  onOpenExperts?: (expert: string, tool: string) => void; downloadSource?: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "frontend-design" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
+type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "phone" | "laya" | "feishu-cli" | "frontend-design" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
 
@@ -111,7 +110,6 @@ const CARD_EXPERT: Record<string, string> = {
   "tools-devchain": "筑基",
   "tools-system": "筑基",
   "tools-health": "筑基",
-  "capability": "筑基",
   "laya": "筑基",
   "tools-auto": "掌控",
   "phone": "掌控",
@@ -148,7 +146,7 @@ function CardBody({ card, onOpen }: { card: CardSpec; onOpen: () => void }) {
 
 /** 开发工具设置：运行时安装/卸载、进度与能力探测入口。 */
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
-  const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
+  const { setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
   const [openCard, setOpenCard] = useState<DevtoolsCardKey | null>(null);
   /* 分类卡「一键卸载」的确认（真删本地文件，不可恢复）：卡片上直接点 → 弹确认 → 才执行。 */
   const [confirmCardUninstall, setConfirmCardUninstall] = useState<{ card: string; title: string; list: RuntimeRow[] } | null>(null);
@@ -220,7 +218,6 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const otherCards: CardSpec[] = [
     { key: "skill-packs", icon: <PackageOpen size={15} />, title: "精选技能包", desc: "第三方技能：工程流程 / 图表设计 / 循证生活指南，装到本地技能目录", stat: skillPackStat },
     { key: "moekoe", icon: <Music2 size={15} />, title: "MoeKoe 音乐", desc: "外部酷狗客户端：Codex 通过 6521 API 搜歌/播放", stat: runtimeInstalling === "moekoe" ? "安装中…" : moekoeRuntime?.installed ? "已安装 · 可从 Codex 调用" : "未安装 · 点开安装" },
-    { key: "capability", icon: <CircleCheck size={15} />, title: "当前能力链路", desc: "同一件事有多个后端时，现在实际走的是哪条", stat: capabilityRows.length ? `${capabilityRows.length} 项能力` : "正在读取状态…" },
     { key: "phone", icon: <Smartphone size={15} />, title: "手机控制", desc: "让 Codex 直接操作手机：看屏幕、点按、打字、读日志", stat: "Android（adb）· iPhone 需 mac" },
     { key: "laya", icon: <Brain size={15} />, title: "Laya 智能判断", desc: "思考等级「自动」档的本地决策端（Python）", stat: "本地 · 可选安装" },
     { key: "feishu-cli", icon: <Bot size={15} />, title: "飞书 CLI", desc: "官方命令行（@larksuite/cli）：让 Codex 代你操作飞书", stat: "按需安装 · 需登录一次" },
@@ -357,11 +354,6 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       {openCard === "openfilm" && activeOtherCard && (
         <SettingsDialog title={activeOtherCard.title} icon={<Film size={15} />} hint="第三方开源项目 · 按需下载 · 不随包分发" size="md" onClose={() => setOpenCard(null)}>
           <OpenfilmCard />
-        </SettingsDialog>
-      )}
-      {openCard === "capability" && activeOtherCard && (
-        <SettingsDialog title={activeOtherCard.title} icon={<CircleCheck size={15} />} hint="前端只渲染，判据来自 capability-registry" onClose={() => setOpenCard(null)}>
-          <CapabilityChainPanel capabilityRows={capabilityRows} capabilityError={capabilityError} />
         </SettingsDialog>
       )}
       {openCard === "phone" && activeOtherCard && (

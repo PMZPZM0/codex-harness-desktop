@@ -14,8 +14,6 @@ const ExtensibilitySettingsSection = lazy(() => import("../../../../../settings-
 /** 设置页分组：开发工具（运行时安装、能力探测、控制台）。 */
 export function devPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
-    capabilityError,
-    capabilityRows,
     devRuntimes,
     installDevRuntime,
     runtimeInstalling,
@@ -36,7 +34,7 @@ export function devPages(app: HarnessAppApi): Partial<Record<SettingsPage, Setti
     void app.startMemberDirectSession(team, team.lead, `请帮我检查「${tool}」的就绪情况，并给出下一步建议。`);
   };
   return {
-    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={openExpert} /> },
+    devtools: { render: () => <DevtoolsSettingsSection setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={openExpert} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
   };
 }

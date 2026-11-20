@@ -138,7 +138,6 @@
   "src/features/settings-cloud/CloudAccountSection.tsx": 2,
   "src/features/settings-commands/CommandsSettingsSection.tsx": 29,
   "src/features/settings-computer/ComputerSettingsSection.tsx": 5,
-  "src/features/settings-devtools/CapabilityChainPanel.tsx": 4,
   "src/features/settings-devtools/DevtoolsSettingsSection.tsx": 16,
   "src/features/settings-devtools/DomainsPanel.tsx": 6,
   "src/features/settings-devtools/EgoLiteCard.tsx": 3,

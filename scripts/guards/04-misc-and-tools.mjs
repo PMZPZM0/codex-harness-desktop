@@ -353,7 +353,7 @@ console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
   );
   /* 结构指纹：卡片用 `data-card={card.key}` 渲染（DOM 上可定位）—— 后续 UI 断言靠它选元素。 */
   (/data-card=\{card\.key\}/.test(dtPage) ? ok : fail)("卡片网格以 card.key 渲染 data-card（DOM 定位锚）");
-  const CARD_KEYS = ["tools-health", "skill-packs", "moekoe", "capability", "phone", "laya", "feishu-cli", "filee", "openfilm", "domains", "plugins"];
+  const CARD_KEYS = ["tools-health", "skill-packs", "moekoe", "phone", "laya", "feishu-cli", "filee", "openfilm", "domains", "plugins"];
   const missingCard = CARD_KEYS.filter((k) => !new RegExp(`key: "${k}"`).test(dtPage));
   (missingCard.length === 0 ? ok : fail)(`其余板块卡片齐全（缺：${missingCard.join("/") || "无"}）`);
   const missingDialog = CARD_KEYS.filter((k) => !new RegExp(`openCard === "${k}"`).test(dtPage));
@@ -398,7 +398,7 @@ console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
         面板组件出现在那里 = 内容内嵌回一级页（那正是用户 10-10 反馈的长滚动堆叠）。 */
   const firstDialogAt = dtPage.indexOf("<SettingsDialog");
   const levelOne = firstDialogAt > 0 ? dtPage.slice(0, firstDialogAt) : dtPage;
-  const panelNames = ["RuntimeToolsPanel", "ToolsHealthPanel", "CapabilityChainPanel", "PhoneHarnessCard", "LayaCard"];
+  const panelNames = ["RuntimeToolsPanel", "ToolsHealthPanel", "PhoneHarnessCard", "LayaCard"];
   const leaked = panelNames.filter((n) => levelOne.includes(`<${n}`));
   (leaked.length === 0 ? ok : fail)(`⛔ 面板组件只在弹窗分支里渲染（漏回一级页的：${leaked.join("/") || "无"}）`);
   const notInDialog = panelNames.filter((n) => dtPage.indexOf(`<${n}`) < firstDialogAt);
