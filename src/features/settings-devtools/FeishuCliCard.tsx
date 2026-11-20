@@ -80,6 +80,9 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
   const uninstalling = runtimeUninstalling === "feishu-cli";
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
+  /* 安装提示词由主进程 runtime:list 下发（单一真相源，与开发工具运行时列表同源）。
+     专用卡不经过 RuntimeToolsPanel，必须自己取一次，否则网差时用户没有「交给 Codex 装」的出口。 */
+  const [installPrompt, setInstallPrompt] = useState("");
   const releaseRef = useRef<number>(0);
   /* refresh 在间隔里跑，拿不到闭包里的最新 busy ⇒ 用 ref 镜像判断「当前这条链接属于哪个流程」。 */
   const busyRef = useRef(busy);
@@ -144,6 +147,19 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
   };
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  /* 提示词内容是静态的，装/卸都不变 ⇒ 挂载时取一次即可（不跟 2 秒轮询一起重取）。 */
+  useEffect(() => {
+    let live = true;
+    void window.codex.listRuntimes()
+      /* listRuntimes 的公开类型没带 fallbackPrompt（只有运行时列表组件用扩展类型读它）⇒ 这里本地收窄。 */
+      .then((rows) => {
+        const row = (rows as Array<{ id?: unknown; fallbackPrompt?: unknown }>).find((item) => item.id === "feishu-cli");
+        if (live) setInstallPrompt(typeof row?.fallbackPrompt === "string" ? row.fallbackPrompt : "");
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, []);
 
   // 拿到授权链接后每 2 秒看一次状态（登录/配置完成后自动收起链接）
   useEffect(() => {
@@ -217,6 +233,19 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
   };
 
   const copy = () => { if (link) void copyTextToClipboard(link).then(() => setNotice?.("链接已复制")).catch(() => undefined); };
+  /** 网差装不上时的正路：复制主进程下发的安装提示词，交给任意会话里的 Codex 装。 */
+  const copyInstallPrompt = () => {
+    if (!installPrompt) { setNotice?.("安装提示词还没取到，稍后再试"); return; }
+    void copyTextToClipboard(installPrompt)
+      .then(() => setNotice?.("已复制安装提示词", "到任意会话里发给 Codex，它会在这台机器上装"))
+      .catch(() => setNotice?.("复制失败，请重试"));
+  };
+  /** 示例句点一下就复制 —— 用户不用手打，也不会把 CLI 参数抄错。 */
+  const copyExample = (text: string) => {
+    void copyTextToClipboard(text)
+      .then(() => setNotice?.("已复制示例", "粘贴到会话里，按实际群名 / 文档名改一下即可"))
+      .catch(() => setNotice?.("复制失败，请手动选中复制"));
+  };
 
   return (
     <>
@@ -237,6 +266,11 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
             ) : null}
           </span>
           <div className="runtime-actions">
+            {installPrompt ? (
+              <button type="button" className="runtime-prompt-copy" title="复制安装提示词 —— 发到任意会话里，Codex 会在这台机器上装" aria-label="复制飞书 CLI 的安装提示词" onClick={copyInstallPrompt}>
+                <Copy size={14} />
+              </button>
+            ) : null}
             {status?.installed ? <>
                 <span className="runtime-badge installed">已安装</span>
                 <button
@@ -345,7 +379,9 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
         </ol>
 
         <div className="feishu-cli-examples">
-          {EXAMPLES.map((text) => <span className="feishu-cli-example" key={text}>{text}</span>)}
+          {EXAMPLES.map((text) => (
+            <button type="button" className="feishu-cli-example" key={text} title="点击复制这句" onClick={() => copyExample(text)}>{text}</button>
+          ))}
         </div>
 
         <ul className="feishu-cli-notes">

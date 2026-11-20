@@ -55,5 +55,21 @@ ok(/\"channel\": \"prompt:translate\"/.test(manifest) && /prompt:translate/.test
 ok(extensions.includes('"github-trending"'),
   "自定义功能入口的设置页白名单包含 github-trending");
 
+/* ── 11-20 配套工具与提示词 ───────────────────────────────────────────────
+   页面是给人看的；Codex 侧要能按需查同一口径的榜单，才叫「配套工具」。
+   ⛔ 工具只进能力网关、不进 CORE（不为它常驻 schema 花每轮 token）；页面提示词只在复制时用。 */
+const dispatchCore = read("electron/features/dispatch-core.ts");
+const dispatchRpc = read("electron/features/dispatch-rpc.ts");
+const trendingTool = read("electron/features/github-trending.ts");
+const profiles = read("electron/tool-profiles.ts");
+const coreBlock = (profiles.match(/CORE_TOOLS[^=]*=\s*\[([\s\S]*?)\]/) ?? ["", ""])[1];
+ok(/name:\s*"github_trending"/.test(dispatchCore) && /name === "github_trending"/.test(dispatchRpc)
+  && /gh-proxy\.com\/https:\/\/\$\{api\}/.test(trendingTool) && !/await fetch\(/.test(dispatchRpc),
+  "Codex 有 github_trending 工具（schema + 分发；抓取在独立模块，执行端不自己发 HTTP）");
+ok(/"github_trending"/.test(profiles) && !coreBlock.includes("github_trending"),
+  "工具只登记画像 / 岗位增量，不进 CORE（按需从能力网关调用）");
+ok(/copyPrompt/.test(page) && /github_trending/.test(page) && /copyTextToClipboard/.test(page),
+  "页面提供「复制提示词」，且提示词点名真实工具 github_trending（不常驻注入）");
+
 console.log(`\n【github-trending】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

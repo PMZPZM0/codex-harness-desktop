@@ -12,8 +12,9 @@
  *   ⛔ 不做假更新按钮（点了不换资源只会让用户以为坏了）；真正升级随应用版本发布。
  *   ⛔ 上游两个仓库都没有 Release，只能比 `commits?per_page=1` 的 SHA/日期。
  */
-import { useCallback, useEffect, useState } from "react";
-import { Check, ExternalLink, Library, LoaderCircle, MousePointerClick, RefreshCw, TriangleAlert, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Copy, ExternalLink, Library, LoaderCircle, MousePointerClick, RefreshCw, TriangleAlert, Wand2 } from "lucide-react";
+import { copyTextToClipboard } from "../../lib/clipboard";
 
 type Phase = "idle" | "checking" | "done" | "error";
 type CheckState = { phase: Phase; text: string };
@@ -53,6 +54,14 @@ async function latestCommit(repo: string): Promise<LatestCommit> {
 
 const short = (value: string) => value.slice(0, 7);
 
+/** 配套工具的提示词：只给用户复制，不常驻注入（复制才花 token）。
+ *  ⛔ 每条只指向真实工具，不写「应该可以」的能力。 */
+const COMPANION_PROMPTS = {
+  uiverse: "先调用 ui_component_search 找需要的组件，再用 ui_component_get 取完整 HTML+CSS，按项目主题改造；不要从零手写。工具不在表里就走 harness_tools 网关。",
+  m3e: "先用 frontend_get_doc 读当前设计稿，再按我的要求修改并用 frontend_apply_doc 写回；不要凭记忆重写整份文档。工具不在表里就走 harness_tools 网关。",
+  workflow: "先用 workflow_read 读当前画布与节点，再按连线顺序执行；产物用 workflow_writeback 写回对应节点。",
+} as const;
+
 /** 前端与设计卡片：三个内置能力的上游仓库、当前版本与「检查更新」通道。 */
 export function FrontendDesignCard() {
   const [checks, setChecks] = useState<Record<"uiverse" | "m3e", CheckState>>({
@@ -66,6 +75,23 @@ export function FrontendDesignCard() {
     version: M3E.fallbackVersion,
     pinned: M3E.fallbackPinned,
   });
+  const [copied, setCopied] = useState<"uiverse" | "m3e" | "workflow" | "">("");
+  const copyTimerRef = useRef(0);
+
+  useEffect(() => () => { if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current); }, []);
+  const copyPrompt = async (id: keyof typeof COMPANION_PROMPTS) => {
+    try {
+      await copyTextToClipboard(COMPANION_PROMPTS[id]);
+      setCopied(id);
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopied(""), 1600);
+    } catch { /* 复制失败时不改按钮态，用户可再点一次 */ }
+  };
+  const copyButton = (id: keyof typeof COMPANION_PROMPTS, label: string) => (
+    <button type="button" className="runtime-prompt-copy" title={`复制「${label}」的使用提示词`} aria-label={`复制 ${label} 的使用提示词`} onClick={() => void copyPrompt(id)}>
+      {copied === id ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
 
   /* 内置产物自带 CANVAS-BUILD.json（上游版本 + 固定提交），优先用它显示真实版本。 */
   useEffect(() => {
@@ -140,6 +166,7 @@ export function FrontendDesignCard() {
               <em className={`runtime-hint ${checks.uiverse.phase === "error" ? "is-error" : ""}`}>{statusIcon(checks.uiverse)} {checks.uiverse.text}</em>
             </span>
             <div className="runtime-actions">
+              {copyButton("uiverse", "组件库")}
               <button type="button" className="secondary-setting" disabled={checks.uiverse.phase === "checking"} onClick={() => void runCheck("uiverse")}>
                 <RefreshCw size={13} />检查更新
               </button>
@@ -155,6 +182,7 @@ export function FrontendDesignCard() {
               <em className={`runtime-hint ${checks.m3e.phase === "error" ? "is-error" : ""}`}>{statusIcon(checks.m3e)} {checks.m3e.text}</em>
             </span>
             <div className="runtime-actions">
+              {copyButton("m3e", "前端画布")}
               <button type="button" className="secondary-setting" disabled={checks.m3e.phase === "checking"} onClick={() => void runCheck("m3e")}>
                 <RefreshCw size={13} />检查更新
               </button>
@@ -169,14 +197,14 @@ export function FrontendDesignCard() {
               <small>内置生图 / 视频 / 短剧工作流（卡片连线把上一张结果喂给下一步）· 没有独立上游仓库</small>
               <em className="runtime-hint">随应用更新：工作流模板与画布功能跟应用版本一起发布</em>
             </span>
-            <div className="runtime-actions"><span className="runtime-badge installed">随应用更新</span></div>
+            <div className="runtime-actions">{copyButton("workflow", "AI 画布工作流")}<span className="runtime-badge installed">随应用更新</span></div>
           </div>
         </div>
 
         <section className="feishu-cli-guide">
           <div className="feishu-cli-guide-head">
             <strong>能做什么</strong>
-            <small>三块都是内置能力，不占额外安装；检查更新只查上游有没有新提交，真正升级随应用版本发布</small>
+            <small>三块都是内置能力，不占额外安装；每行的复制按钮给的是能直接发给 Codex 的短提示词</small>
           </div>
           <div className="feishu-cli-cap-grid">
             <div className="feishu-cli-cap"><span className="feishu-cli-cap-icon"><Library size={15} /></span><span className="feishu-cli-cap-copy"><strong>3800+ 现成控件</strong><small>按 11 类浏览，真实预览 + HTML/CSS 源码，一键复制</small></span></div>

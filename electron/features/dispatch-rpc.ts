@@ -31,6 +31,7 @@ import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd } from "../runtime-refs";
 import { mutableState, scheduler } from "../main";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
+import { fetchGithubTrending } from "./github-trending";
 import { designMdCategoryLabel, designMdGet, designMdList } from "../design-md-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
 import { DUPLICATE_CRITERIA, KNOWLEDGE_GATE_CRITERIA, KNOWLEDGE_GATE_INSTRUCTIONS } from "../laya-judge";
@@ -375,6 +376,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const cats = r.categories.map((c) => `${c.key}=${c.label}(${c.count})`).join("，");
     return { ok: true, output: [head, `分类：${cats}`, ...lines].filter(Boolean).join("\n") };
   }
+  if (name === "github_trending") return fetchGithubTrending(args);
   /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用这两个工作流」）────────────────
      ⛔ 执行端与画布卡片**共用同一套 core**（generateImageResilient / video-gen 的 submit·poll·download）
         —— 同一动作两套实现是本仓反复踩过的坑（文案漂移、行为不一致、修一处漏一处）。

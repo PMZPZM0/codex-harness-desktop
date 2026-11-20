@@ -10,7 +10,8 @@
  * ⛔ 不造假「Trending」：页面底部写明口径（GitHub 无公开 Trending API）；翻不出来的条目显示原文。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, Flame, LoaderCircle, RefreshCw, Star, TriangleAlert } from "lucide-react";
+import { Check, Copy, ExternalLink, Flame, LoaderCircle, RefreshCw, Star, TriangleAlert } from "lucide-react";
+import { copyTextToClipboard } from "../../lib/clipboard";
 
 type Since = "daily" | "weekly" | "monthly";
 
@@ -77,6 +78,8 @@ export function GithubTrendingPage() {
   const [translations, setTranslations] = useState<Record<string, string>>(readTransCache);
   const [translating, setTranslating] = useState(false);
   const [notice, setNotice] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef(0);
   const requestRef = useRef(0);
   const translatingKeysRef = useRef(new Set<string>());
 
@@ -181,6 +184,20 @@ export function GithubTrendingPage() {
 
   const openRepo = (url: string) => { void window.codex.openExternal(url).catch(() => undefined); };
 
+  /* 提示词只写给用户复制，不常驻注入 —— 不发出去就不花 token（11-19 工具/技能新规则）。 */
+  useEffect(() => () => { if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current); }, []);
+  const copyPrompt = async () => {
+    const prompt = `用 github_trending 取${SINCE_META[since].label}前 20 个热门仓库，按语言分组，挑 3 个与我当前项目相关的，说明用途和上手方式。`;
+    try {
+      await copyTextToClipboard(prompt);
+      setCopied(true);
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setNotice("复制失败，请手动选中页面内容复制");
+    }
+  };
+
   return (
     <section className="settings-section stack github-trending" data-github-trending>
       <div className="gh-trend-head">
@@ -203,6 +220,9 @@ export function GithubTrendingPage() {
               </button>
             ))}
           </div>
+          <button type="button" className="secondary-setting" onClick={() => void copyPrompt()} title="复制给 Codex 的提示词（用 github_trending 工具取榜单）">
+            {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "已复制" : "复制提示词"}
+          </button>
           <button type="button" className="secondary-setting" onClick={() => void load(true)} disabled={loading}>
             {loading ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />}刷新
           </button>

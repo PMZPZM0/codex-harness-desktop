@@ -1893,7 +1893,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   padding: 4px 9px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--bg);
   color: var(--muted); font-size: 10.5px;
+  font-family: inherit; text-align: left; cursor: pointer;
 }
+.feishu-cli-example:hover { border-color: var(--link); color: var(--link); }
 .feishu-cli-notes {
   margin: 0; padding-left: 16px;
   display: flex; flex-direction: column; gap: 3px;

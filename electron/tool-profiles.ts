@@ -51,6 +51,7 @@ export const HOST_TOOL_CATALOG: readonly string[] = [
   "compact_context", "memory_recall", "memory_write", "task_add", "task_update",
   "skill_search", "skill_install", "find_skills", "mcp_tools", "mcp_call", "laya_judge", "image_generate", "image_view", "image_edit", "image_info",
   "media_search", "media_detail", "media_preview", "photocraft", "frontend_get_doc", "frontend_apply_doc",
+  "ui_component_search", "ui_component_get", "design_md", "github_trending",
   "connector_search", "connector_install", "feishu_cli", "filee_convert", "openmaic", "apkstart", "husk",
   "rpa_save", "rpa_run", "rpa_schedule",
   "openfilm_status", "openfilm_make_film", "openfilm_check", "openfilm_render", "openfilm_get", "openfilm_skill",
@@ -59,17 +60,18 @@ export const HOST_TOOL_CATALOG: readonly string[] = [
 /** 岗位增量：按专家 profession / 团队 category 里的关键词匹配，命中即并入。 */
 export const ROLE_EXTRAS: Record<string, readonly string[]> = {
   // 产品 / 运营 / 内容
-  product: ["media_search", "media_detail", "media_preview", "skill_search", "memory_recall"],
+  product: ["media_search", "media_detail", "media_preview", "skill_search", "memory_recall", "github_trending"],
   // 工程 / 研发 / 后端 / 前端
   engineering: [
-    "frontend_get_doc", "frontend_apply_doc",
+    "frontend_get_doc", "frontend_apply_doc", "ui_component_search", "ui_component_get", "design_md",
+    "github_trending",
     "connector_search", "connector_install",
     "feishu_cli", "filee_convert", "openmaic", "apkstart", "husk",
     "rpa_save", "rpa_run", "rpa_schedule",
   ],
   // 设计 / 视觉 / 影音
   design: [
-    "frontend_get_doc", "frontend_apply_doc",
+    "frontend_get_doc", "frontend_apply_doc", "ui_component_search", "ui_component_get", "design_md",
     "image_edit", "image_info", "photocraft",
     "media_search", "media_detail", "openfilm_status", "openfilm_make_film", "openfilm_get",
   ],

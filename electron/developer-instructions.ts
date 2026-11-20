@@ -388,7 +388,7 @@ const CAPABILITY_INSTRUCTIONS =
    不提醒就不会去查库。判据式写法（前端任务才相关），不占太多预算。 */
 const UI_COMPONENT_INSTRUCTIONS =
   `\n12) UI COMPONENT LIBRARY — when building ANY frontend UI (web page / component / settings panel), search the built-in Uiverse library FIRST:\n` +
-  `   \`ui_component_search\` (by category/keyword) + \`ui_component_get\` (fetch full HTML+CSS, MIT) — 3,800+ ready-made components (buttons, cards, checkboxes, forms, inputs, notifications, loaders, …). Prefer adapting one of these over hand-writing from scratch; paste the fetched code into the user's project and adjust to their theme. If the tools are absent from your tool table, say so instead of inventing component code.`;
+  `   \`ui_component_search\` (by category/keyword) + \`ui_component_get\` (fetch full HTML+CSS, MIT) — 3,800+ ready-made components (buttons, cards, checkboxes, forms, inputs, notifications, loaders, …). Prefer adapting one of these over hand-writing from scratch; paste the fetched code into the user's project and adjust to their theme. If they are not in your tool table (the profile hides them), call them through \`harness_tools({ name: "ui_component_search", args: {…} })\` — same for get; never invent component code.`;
 
 /* ── 第 13 条：前端开发画布（10-05 夜立，用户：「涉及手机前端开发能主动调用这个工具做手机前端UI」；
    同日再改：「网页版也有选项…工具内容也更新一下，手机电脑 网页前端UI都有」）──

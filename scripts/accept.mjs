@@ -2971,6 +2971,56 @@ const CHECKS = [
       h.check("④ 结束/完成后自动收起", cleared === true);
     },
   },
+  {
+    id: "codex-copy-prompts",
+    name: "提示词复制：飞书安装 / 前端三工具 / GitHub 热门（11-20）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".app-shell") && !!document.querySelector(".sidebar-settings")`, { label: "主界面侧栏", timeoutMs: 12000 });
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(500);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); b?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="frontend-design"]')`, { label: "前端与设计卡", timeoutMs: 12000 });
+      await h.eval(`(function(){ document.querySelector('.devtools-card[data-card="frontend-design"] .devtools-card-open')?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog")`, { label: "前端与设计弹窗", timeoutMs: 8000 });
+      await wait(400);
+      const frontend = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        const btns=[...d.querySelectorAll(".runtime-prompt-copy")];
+        return { count: btns.length, titles: btns.map(function(b){ return b.getAttribute("title")||""; }) };
+      })()`);
+      h.check("① 前端与设计三个配套工具都有提示词复制入口", frontend.count === 3 && frontend.titles.every((t) => /使用提示词/.test(t)), JSON.stringify(frontend));
+      await h.eval(`(function(){ document.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
+      await wait(300);
+
+      await h.eval(`(function(){ document.querySelector('.devtools-card[data-card="feishu-cli"] .devtools-card-open')?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog")`, { label: "飞书 CLI 弹窗", timeoutMs: 8000 });
+      await wait(1200);
+      const feishu = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        return {
+          promptCopy: d.querySelectorAll(".runtime-prompt-copy").length,
+          examples: [...d.querySelectorAll(".feishu-cli-example")].map(function(b){ return b.tagName; }).join(","),
+        };
+      })()`);
+      h.check("② 飞书 CLI 有常驻安装提示词复制，示例句是可点的按钮", feishu.promptCopy >= 1 && feishu.examples.split(",").length >= 3 && !feishu.examples.split(",").includes("SPAN"), JSON.stringify(feishu));
+      await h.eval(`(function(){ document.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
+      await wait(300);
+
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="GitHub 热门"; }); b?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector("[data-github-trending]")`, { label: "GitHub 热门页", timeoutMs: 12000 });
+      const copied = await h.eval(`(function(){
+        const b=[...document.querySelectorAll(".gh-trend-actions button")].find(function(x){ return /复制提示词/.test(x.textContent||""); });
+        if(!b) return { found:false };
+        b.click();
+        return { found:true };
+      })()`);
+      await wait(500);
+      const copiedLabel = await h.eval(`(function(){ const b=[...document.querySelectorAll(".gh-trend-actions button")].find(function(x){ return /已复制/.test(x.textContent||""); }); return b ? (b.textContent||"") : ""; })()`);
+      h.check("③ GitHub 热门有「复制提示词」，点了有已复制反馈", copied.found === true && /已复制/.test(copiedLabel), JSON.stringify({ copied, copiedLabel }));
+      await h.eval(`(function(){ document.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
+    },
+  },
 ];
 
 

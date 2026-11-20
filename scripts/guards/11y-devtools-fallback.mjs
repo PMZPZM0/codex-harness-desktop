@@ -75,6 +75,19 @@ ok(/runtimeProgress\?\.\[runtime\.id\][^;]*startsWith\("安装失败"\)/.test(pa
   "消费侧：开发工具页按同一个前缀判断「这个工具刚装失败了」");
 ok(/runtime-prompt-copy/.test(page) && /copyTextToClipboard\((?:runtime\.)?fallbackPrompt\)/.test(page),
   "常驻图标：每个可下载工具的卡片上有「复制安装提示词」图标（复制的是主进程下发的原文，不等失败才出现）");
+/* 11-20：飞书 CLI 是专用卡（DEDICATED_IDS），不经过 RuntimeToolsPanel ⇒ 这条链必须单独钉，
+   否则它装不上时用户没有「交给 Codex 装」的出口（11-18 已出现同型缺口）。 */
+const feishuCard = read("src/features/settings-devtools/FeishuCliCard.tsx");
+ok(/listRuntimes\(\)/.test(feishuCard) && /fallbackPrompt/.test(feishuCard)
+  && /runtime-prompt-copy/.test(feishuCard) && /copyInstallPrompt/.test(feishuCard),
+  "飞书 CLI 专用卡同样有常驻「复制安装提示词」（提示词取 runtime:list，不自己拼）");
+/* 11-20 用户令「新增配套工具的提示词…按新规则来，不要臃肿」：内置资源不硬装，
+   给的是**短使用提示词**（复制才进会话，不常驻）。提示词必须点名真实工具。 */
+const frontendCard = read("src/features/settings-devtools/FrontendDesignCard.tsx");
+ok(/COMPANION_PROMPTS/.test(frontendCard) && /runtime-prompt-copy/.test(frontendCard)
+  && /ui_component_search/.test(frontendCard) && /frontend_get_doc/.test(frontendCard)
+  && /workflow_read/.test(frontendCard),
+  "前端与设计卡三个配套工具各有短提示词复制（点名真实工具，不常驻注入）");
 ok(/runtime-failed/.test(page) && /failed: true,\s*error:/.test(page) && /setRuntimeModal\(\{ id: runtime\.id/.test(page),
   "卡片失败摘要可点开重看完整报错（弹窗关闭后报错不丢 —— 从 runtimeProgress 的同一前缀行重建）");
 ok(/\.runtime-prompt-copy\b/.test(css) && /\.runtime-failed\b/.test(css),

@@ -398,6 +398,22 @@ function dispatchMcpTools(): unknown[] {
         required: ["action"],
       },
     },
+    /* ── GitHub 热门（11-20）：与设置 → 发现 →「GitHub 热门」同一口径 ──────────────
+       GitHub 没有公开 Trending API，取「最近创建 + star 最多」；页面用 gh-proxy 国内镜像，
+       这里也走同序候选。⛔ 只进能力网关（不进 CORE）：用户问「最近什么项目火」才调，
+       不为它常驻 schema 占预算。 */
+    {
+      name: "github_trending",
+      description: "查 GitHub 近期热门仓库（按「最近创建 + star 最多」，与设置里的热门榜单同口径）。用户问「GitHub 最近什么火 / 有什么热门项目」时用；返回仓库名、star、语言和简介（原始英文，需要中文就自己翻）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          since: { type: "string", enum: ["daily", "weekly", "monthly"], description: "榜单周期：daily=近 1 天 / weekly=近 7 天 / monthly=近 30 天（缺省 weekly）" },
+          language: { type: "string", description: "可选：按语言筛选，如 TypeScript / Python / Rust" },
+          limit: { type: "number", description: "返回条数（缺省 10，最多 30）" },
+        },
+      },
+    },
     /* ── 3D 预览（2026-10-05，用户拍板「生成 3D 图了 Codex 要晓得怎么调用、打开预览」）──
        引擎拿到 .glb / .gltf（鲁班 Lux3D 管线导出、外部下载等）后调用它，应用内弹出可旋转缩放的
        3D 预览，不用去文件夹找第三方查看器。执行端在 dispatch-rpc.ts：路径过可信根 + 扩展名白名单
