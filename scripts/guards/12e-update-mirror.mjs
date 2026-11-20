@@ -1,5 +1,5 @@
 /**
- * 更新链镜像化判据（10-11 立；11-19 按实测重排）：资产「直连 → ghfast → hk.gh-proxy → gh-proxy」，API 仍镜像优先。
+ * 更新链镜像化判据（10-11 立；11-20 按实测重排）：资产「直连 → gh-proxy → hk.gh-proxy → ghfast」，API 仍镜像优先。
  *
  * 失效方式全是静默的：镜像表被复制出第二份（改镜像顺序要动三处还漏）、mirrorCandidates 对
  * 自定义清单/非 GitHub host 也加前缀（把用户自建分发地址发给第三方反代 = 信息泄露）、
@@ -31,8 +31,8 @@ const updates = codeOnly(read("electron/updates.ts"));
 const official = codeOnly(read("electron/codex-official-market.ts"));
 
 /* ── 单一真相源 ── */
-ok(/export const GH_MIRROR_PREFIXES = \["", "https:\/\/ghfast\.top\/", "https:\/\/hk\.gh-proxy\.com\/", "https:\/\/gh-proxy\.com\/"\] as const/.test(mirrorSrc),
-  "镜像表唯一一份在 gh-mirror.ts：**直连 → ghfast → hk.gh-proxy → gh-proxy**（11-19 实测 4MB Range：ghfast 0.82MB/s > gh-proxy 0.42MB/s > hk 302 不可用；「一分钟 1M」= 慢源排在最前）");
+ok(/export const GH_MIRROR_PREFIXES = \["", "https:\/\/gh-proxy\.com\/", "https:\/\/hk\.gh-proxy\.com\/", "https:\/\/ghfast\.top\/"\] as const/.test(mirrorSrc),
+  "镜像表唯一一份在 gh-mirror.ts：**直连 → gh-proxy → hk.gh-proxy → ghfast**（11-20 实测 16MB Range：gh-proxy 0.68MB/s > ghfast 0.095MB/s > hk 302 不可用；⛔ 顺序已反转两次，发版前必须重测）");
 ok(/export const GH_API_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/hk\.gh-proxy\.com\/", ""\] as const/.test(mirrorSrc),
   "API 单独一套序（镜像优先）：api.github.com 直连在国内不通，不能与资产共用「直连优先」");
 ok(/"https:\/\/ghfast\.top\/"/.test(codeOnly(mirrorSrc)),
@@ -47,8 +47,8 @@ ok(/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(official),
   const { mirrorCandidates, GH_MIRROR_PREFIXES } = await import("../../electron/gh-mirror.ts");
   const url = "https://github.com/a/b/releases/download/v1/x.exe";
   const got = mirrorCandidates(url);
-  ok(got.length === 4 && got[0] === url && got[1] === "https://ghfast.top/" + url
-    && got[2] === "https://hk.gh-proxy.com/" + url && got[3] === "https://gh-proxy.com/" + url,
+  ok(got.length === 4 && got[0] === url && got[1] === "https://gh-proxy.com/" + url
+    && got[2] === "https://hk.gh-proxy.com/" + url && got[3] === "https://ghfast.top/" + url,
     "真值：github.com 资产 → **直连第一**、三档镜像按 11-19 实测吞吐兜底");
   const apiGot = mirrorCandidates("https://api.github.com/repos/x/y/releases/latest");
   ok(apiGot.length === 3 && apiGot[0] === "https://gh-proxy.com/https://api.github.com/repos/x/y/releases/latest",

@@ -31,10 +31,12 @@
  */
 
 /** 大文件资产/源码包的前缀序：**直连优先**，镜像只作兜底（空串 = 直连，必须排第一）。
- *  11-19 用户实测「镜像下载一分钟 1M」⇒ 重新实测 4MB Range 吞吐（`curl -r 0-4194303`）：
- *  ghfast.top **0.82 MB/s** > gh-proxy.com 0.42 MB/s > hk.gh-proxy.com 302 后不可用（objects 直连被墙）
- *  ⇒ ghfast 加回第二档（11-15 因 Range 403 删过一次，现已恢复 206）。 */
-export const GH_MIRROR_PREFIXES = ["", "https://ghfast.top/", "https://hk.gh-proxy.com/", "https://gh-proxy.com/"] as const;
+ *  ⛔ 每次发版前必须重测（镜像会变，已经反转两次）：
+ *   11-15 ghfast 对 Range 请求 403 → 删；11-19 复测 ghfast 0.82MB/s 最快 → 加回第二档；
+ *   11-20 复测**又反转**：gh-proxy.com 0.68 MB/s（单次峰值到过 10.2MB/s，波动大）
+ *   > ghfast.top 0.095 MB/s（掉到几十 KB/s，用户实测「一直 0%」），hk 仍 302 不可用
+ *   ⇒ gh-proxy 提到第二档。⛔ 别按旧结论钉死顺序。 */
+export const GH_MIRROR_PREFIXES = ["", "https://gh-proxy.com/", "https://hk.gh-proxy.com/", "https://ghfast.top/"] as const;
 
 /** 元数据 API 的前缀序：镜像优先（api.github.com 直连在国内常 403/超时）。 */
 export const GH_API_MIRROR_PREFIXES = ["https://gh-proxy.com/", "https://hk.gh-proxy.com/", ""] as const;
