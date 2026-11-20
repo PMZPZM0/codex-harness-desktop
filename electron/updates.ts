@@ -348,42 +348,49 @@ export async function downloadUpdate(
 
 export type DifferentialDownloadResult = { path: string; version: string; differential: true };
 
-/** 差分缓存自愈（11-19 用户令：「我要的是用户差分更新」）。
+/** 差分缓存自愈（11-20 重写 —— 11-19 那版理解是**错的**，它自己把差分废掉了）。
  *
- *  electron-updater 的 NSIS 差分靠**成对**的本地缓存：`<updater 缓存目录>/installer.exe`
- *  ＋同目录 `current.blockmap`。只要其中一份缺失或与新 blockmap 配不上对，它会静默回退整包
- *  —— 用户侧看到的就是「每次更新都下 668MB」，而且这个状态会一直保持（缓存不会自己修好）。
- *  实测：本机缓存里只有 2026-10-12 的 `installer.exe`（386MB），没有 `current.blockmap`
- *  ⇒ 配对失效 ⇒ 从那时起每次更新都是整包。
+ *  ⛔⛔ 真实机制（读 electron-updater / app-builder-lib 源码得出，别再改回去）：
+ *   · 差分需要的是**上一版的安装包本体** `<updater 缓存>/installer.exe`（NSIS 差分的 oldFile）。
+ *     这个文件由**安装器自己**在安装完成时写回：
+ *     `app-builder-lib/templates/nsis/include/installer.nsh` →
+ *     `copyFile "$EXEPATH" "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"`。
+ *     手工装 exe 也会写（同一条 section）—— 这点也和 11-19 的说法不同。
+ *   · `current.blockmap` **不是必需品**：缺了它 updater 会拿 `latest.yml` 里的 blockmap URL
+ *     去服务器下载**旧版本**的 blockmap（`AppUpdater.differentialDownloadInstaller`：
+ *     「No cached blockmap for the old installer, downloading it from …」）。
+ *   · 而且**整包下载完成后 updater 会主动删掉** `current.blockmap`（`done()` 的 else 分支，
+ *     防止陈旧 blockmap 配上新文件「毒害」下一轮）。
+ *  ⇒ 所以「缺 blockmap 就把 installer.exe 一起删掉」等于自断双腿：下一版没有 oldFile，
+ *     差分必然失败→回退整包；整包装完又没有 blockmap ⇒ 再被判一次「配对失效」⇒ **永远整包**。
+ *     这正是 11-19 之后连着几版都下 668MB 的真正原因（不是缓存坏了，是我们自己删的）。
  *
- *  ⇒ 下载前先自愈：**缺任一份就两份都删**。下一轮 updater 重新拉一次完整包并写回成对的缓存，
- *    从此这一台机器就进入「几十兆差分」；⛔ 不删安装目录、不删用户数据，只动自家 updater 缓存。
- *  真删失败（文件被占用）只跳过，不阻断更新。 */
-function healDifferentialCache(): void {  try {
+ *  ⇒ 现在只做**一件必要清理**：blockmap 孤零零存在、却没有 installer.exe 时删掉它
+ *    （它对不上任何安装包，留着会被当成 oldBlockmap 导致 sha512 校验失败）。
+ *    ⛔ 永远不许删 `installer.exe` —— 它是下一版差分唯一的 oldFile。 */
+function healDifferentialCache(): void {
+  try {
     const localAppData = process.env.LOCALAPPDATA || process.env.APPDATA || "";
     if (!localAppData) return;
     const dir = path.join(localAppData, `${app.getName()}-updater`);
     const installer = path.join(dir, "installer.exe");
     const blockmap = path.join(dir, "current.blockmap");
-    const hasInstaller = existsSync(installer);
-    const hasBlockmap = existsSync(blockmap);
-    if (hasInstaller === hasBlockmap) return;
-    if (hasInstaller) rmSync(installer, { force: true });
-    if (hasBlockmap) rmSync(blockmap, { force: true });
+    if (!existsSync(installer) && existsSync(blockmap)) rmSync(blockmap, { force: true });
   } catch {
     /* 自愈是尽力而为：失败不影响正常下载 */
   }
 }
 
-/** 本机是否已具备差分基线（`installer.exe` 与 `current.blockmap` 成对存在）。
- *  用途：用户选了「补丁」但本机没有基线时，界面必须**明说本次会下完整包**，
- *  ⛔ 不许静默——11-19 用户实测「明明选的差分更新，还是下了 668MB」。 */
+/** 本机是否已具备差分条件。
+ *  ⛔ 11-20 修正：**只看 `installer.exe`**（上一版的安装包本体）；blockmap 缺了 updater 会自己下载，
+ *    所以「blockmap 不在」不等于「本次会是整包」—— 11-19 用「成对」当判据，把能差分的机器也报成整包。
+ *  用途：用户选了「补丁」而本机确实没有安装包缓存时，界面必须**明说本次会下完整包**。 */
 export function hasDifferentialBaseline(): boolean {
   try {
     const localAppData = process.env.LOCALAPPDATA || process.env.APPDATA || "";
     if (!localAppData) return false;
     const dir = path.join(localAppData, `${app.getName()}-updater`);
-    return existsSync(path.join(dir, "installer.exe")) && existsSync(path.join(dir, "current.blockmap"));
+    return existsSync(path.join(dir, "installer.exe"));
   } catch {
     return false;
   }

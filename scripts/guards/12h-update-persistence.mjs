@@ -283,11 +283,13 @@ console.log(JSON.stringify(out));
   ok((ipc.match(/showUpdateSplash\(targetVersion\)/g) ?? []).length >= 2
     && ipc.includes('spawn(lastVerifiedUpdatePath, ["--updated", "/S"]'),
     "差分/完整包两条路在退出前都拉起小窗，安装器仍静默（不弹 NSIS 向导）");
-  ok(splash.includes("正在安装更新") && splash.includes("请勿重复启动")
+  ok(splash.includes("splash-main.js") && splash.includes("process.execPath")
     && splash.includes("detached: true") && splash.includes("windowsHide: true"),
-    "小窗文案与进程方式正确（独立进程、无控制台）");
-  ok(splash.includes("Get-Process") && splash.includes("安装似乎没有完成") && splash.includes("ShowDialog"),
-    "新版本启动后自动关闭；超时改成「未完成」提示，不会永久挂着");
+    "小窗走独立 Electron 入口（⛔ 别退回 PowerShell + Add-Type：实测冷启动 2–4 秒，装完才出来，用户看不到）");
+  const splashMain = readFileSync(join(ROOT, "electron/splash-main.ts"), "utf8");
+  ok(splashMain.includes("正在安装更新") && splashMain.includes("请勿重复启动")
+    && splashMain.includes("安装似乎没有完成") && splashMain.includes("tasklist"),
+    "小窗文案齐全，且靠 tasklist 判断「新版本起来后自动关 / 超时改成未完成」");
   ok(ipc.includes("showMacUpdateReminder")
     && (ipc.match(/showMacUpdateReminder\(/g) ?? []).length >= 2
     && splash.includes("osascript") && splash.includes("display notification"),
