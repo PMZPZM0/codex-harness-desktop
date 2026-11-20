@@ -43,6 +43,7 @@ import {
   FileCode2,
   FileText,
   FileWarning,
+  Folder,
   FolderOpen,
   FolderPlus,
   FolderTree,
@@ -996,10 +997,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
                         <div className="project-item-head">
                           <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
-                            <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
-                            {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力）。
+                            {/* 11-19 用户令：「展开折叠图标删了，项目图标左边对齐上面；项目图标做两张」
+                                ⇒ 去掉独立箭头，文件夹图标自己表示状态：展开 = 打开的文件夹，折叠 = 闭合文件夹。
                                 11-01 用户令：普通项目蓝、含指挥中枢的项目琥珀色 —— 一眼区分"这是中枢那个盘"。 */}
-                            <FolderOpen size={13} className={hasBossThread ? "ic-amber" : "ic-blue"} />
+                            {expanded
+                              ? <FolderOpen size={13} className={hasBossThread ? "ic-amber" : "ic-blue"} />
+                              : <Folder size={13} className={hasBossThread ? "ic-amber" : "ic-blue"} />}
                             {projectTag && <span className="entity-tag project-custom-tag" style={{ "--tag-color": projectTag.color } as any} title={`标签：${projectTag.text}`}>{projectTag.text}</span>}
                             <strong>{projectNameOf(cwd)}</strong>
                           </button>

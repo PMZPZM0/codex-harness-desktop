@@ -891,7 +891,8 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px 4px 4px 8px;
+  /* 11-19：去掉独立展开箭头后，文件夹图标左缘与上方「新建任务 / 项目/任务」图标对齐（约 21px）。 */
+  padding: 4px 4px 4px 12px;
 }
 .project-item-toggle {
   display: flex;
@@ -900,7 +901,7 @@
   flex: 1;
   min-width: 0;
   height: 28px;
-  padding: 0 4px;
+  padding: 0 9px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -929,9 +930,6 @@
   border-radius: 999px;
   margin-left: auto;
 }
-.project-item-chevron { transition: transform 0.18s ease; }
-.project-item-chevron.open { transform: rotate(0deg); }
-.project-item.collapsed .project-item-chevron { transform: rotate(-90deg); }
 .project-item-menu-btn {
   display: inline-flex;
   align-items: center;

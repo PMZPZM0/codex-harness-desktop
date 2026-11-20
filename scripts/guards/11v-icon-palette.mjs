@@ -202,7 +202,10 @@ ok(/\.panel-tab > svg \{[\s\S]{0,160}?color:\s*var\(--ic,\s*currentColor\)/.test
 ok(/\.view-tab svg \{[\s\S]{0,200}?color:\s*var\(--ic,\s*currentColor\)/.test(codeOnly(queue)),
   "④c .view-tab 的图标读 var(--ic, currentColor)（文字不染色）");
 ok(/\.project-item-toggle svg \{[\s\S]{0,200}?color:\s*var\(--ic,\s*var\(--muted\)\)/.test(codeOnly(queue)),
-  "④c 项目行 svg 读 var(--ic, --muted) ⇒ 挂了的上色、展开箭头保持中性");
+  "④c 项目行 svg 读 var(--ic, --muted) ⇒ 文件夹按状态/中枢上色");
+ok(!/project-item-chevron/.test(codeOnly(sidebar)) && /expanded\s*\?\s*<FolderOpen/.test(sidebar)
+  && /<Folder size=\{13\}/.test(sidebar),
+  "④c 项目行不再有独立展开箭头：文件夹图标本身切换 open/closed（折叠/展开两张图）");
 
 /* ③ 图标自身挂色相的通用规则：必须逐个枚举 */
 const baseCode = codeOnly(base);
@@ -214,7 +217,7 @@ ok(!/\[class\*?=["']?ic-/.test(baseCode),
 /* ④ 负向：状态与破坏性图标不许染色 */
 ok(!/LogOut size=\{15\} className="ic-/.test(sidebar), "④c 负向：「退出登录」是破坏性动作，不染色");
 ok(!/project-item-chevron[^"]*className="ic-|className="ic-[a-z]+"[^>]*ChevronDown/.test(sidebar),
-  "④c 负向：项目行的展开箭头是**状态**指示，不染色（只有文件夹上色）");
+  "④c 负向：项目行不再有独立展开箭头（文件夹图标本身表示状态，只有它上色）");
 ok(!/project-item-menu-btn ic-/.test(sidebar), "④c 负向：项目行的「⋯ 项目操作」是工具按钮，不染色");
 
 /* ── ⑤ 真相源：色相只在 settingsNav 声明一次 ────────────────────────── */
