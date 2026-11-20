@@ -342,7 +342,7 @@
       +「欢迎界面的文案要跟普通会话的欢迎界面一样居中啊」。
       ⇒ 这里不另起炉灶，只在三处做区分：
         · 图标：普通会话是灰蓝 `</>` 水印 ⇒ 这里换**琥珀色皇冠**；
-        · 标题渐变：普通会话是品牌蓝 `--link` ⇒ 这里用**琥珀 `--ic-amber`**；
+        · 标题渐变：普通会话是品牌蓝 `--link` ⇒ 这里用**琥珀 → 橙 → 紫**（真色板，见下方 .boss-welcome-title）；
         · 内容：普通会话讲通用待办 ⇒ 这里讲**群编排**（拉群 → 干活 → 验收打回）。
    ⛔ **不做成大卡片**（用户令：「不要复用大卡片样式」）—— 靠留白与字号分层，不靠盒子。
    ⛔ 定位与 `.welcome-state` 同一套（absolute 相对 .timeline-wrap + 下方留 54vh 让位输入框），
@@ -361,28 +361,29 @@
   overflow: hidden;
 }
 .boss-welcome > * { pointer-events: auto; }
-/* 大图标：琥珀色皇冠（普通会话是灰蓝 `</>` 水印 ⇒ 一眼可分） */
+/* 大图标：琥珀色皇冠（普通会话是灰蓝 `</>` 水印 ⇒ 一眼可分）。
+   ⛔ 11-20 用户令「这会灰色不好看了，这里字体还是彩色吧」⇒ 本块统一改用**真色板**
+   （`--amber` / `--orange` / `--purple`），不再引 `--ic-*`：那套身份色板 11-18 起按
+   「图标中性」把六色全部改成了 `color-mix(text 76%, accent)`（≈深灰），拿它当大字色必然发灰。 */
 .boss-welcome-mark {
   display: flex; align-items: center; justify-content: center;
   width: 64px; height: 64px;
-  color: var(--ic-amber, var(--amber));
-  opacity: 0.55;
+  color: var(--amber);
+  opacity: 0.72;
   -webkit-user-select: none; user-select: none;
   pointer-events: none;
   margin: 0;
 }
-/* 大字标题：琥珀色渐变（普通会话是品牌蓝 `--link` 渐变） */
+/* 大字标题：琥珀 → 橙 → 紫 三段渐变（彩色；三个主题各自的真色板都够饱和）。
+   ⛔ 别换回 `--ic-amber`：那是灰化后的身份色，渐变尾段落到 `--text` 会让整句看起来是黑的。 */
 .boss-welcome-title {
   margin: 0;
   font-size: 30px; font-weight: 650; letter-spacing: 0.3px;
-  background: linear-gradient(
-    100deg,
-    var(--ic-amber, var(--amber)) 0%,
-    color-mix(in srgb, var(--ic-amber, var(--amber)) 45%, var(--text)) 55%,
-    var(--text) 100%
-  );
+  background: linear-gradient(100deg, var(--amber) 0%, var(--orange) 44%, var(--purple) 100%);
   background-clip: text; -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent; color: var(--text);
+  -webkit-text-fill-color: transparent;
+  /* 兜底：不支持 background-clip:text 时至少是琥珀色，而不是深灰。 */
+  color: var(--amber);
   text-align: center;
 }
 /* 小字副标题：一句说清这条会话干什么（与普通会话 .welcome-sub 同宽同字号 ⇒ 观感一致） */
@@ -411,16 +412,24 @@
   font-weight: 600;
   line-height: 1.55;
   letter-spacing: 0.3px;
-  color: var(--text);
+  /* 11-20 用户令：整句要彩色（原来 color: var(--text) ⇒ 通体深灰）。
+     与标题同一套三段渐变，但起点更「金」一点，两行叠着看不腻。 */
+  background: linear-gradient(100deg, var(--orange) 0%, var(--amber) 46%, var(--purple) 100%);
+  background-clip: text; -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--amber);
 }
-/* 后半句：琥珀 marker 底纹（纯 CSS 背景条，不引入渐变元素、不额外套盒子） */
+/* 后半句：琥珀 marker 底纹（纯 CSS 背景条，不引入渐变元素、不额外套盒子）。
+   ⛔⛔ 父级 `.boss-welcome-hero` 用了 background-clip:text + `-webkit-text-fill-color: transparent`，
+      那个 fill-color **会被子元素继承** ⇒ 这里必须显式还原成实色，否则这半句只剩底纹、字看不见。 */
 .boss-hero-strong {
   padding: 0 3px;
   border-radius: 4px;
-  color: color-mix(in srgb, var(--ic-amber, var(--amber)) 62%, var(--text));
+  color: var(--orange);
+  -webkit-text-fill-color: var(--orange);
   background-image: linear-gradient(
-    color-mix(in srgb, var(--ic-amber, var(--amber)) 34%, transparent),
-    color-mix(in srgb, var(--ic-amber, var(--amber)) 16%, transparent)
+    color-mix(in srgb, var(--amber) 34%, transparent),
+    color-mix(in srgb, var(--amber) 16%, transparent)
   );
   background-repeat: no-repeat;
   background-size: 100% 40%;
@@ -439,18 +448,20 @@
   display: inline-flex; align-items: center;
   max-width: min(560px, 86vw);
   padding: 6px 15px;
-  border: 1px solid color-mix(in srgb, var(--mood, var(--amber)) 40%, var(--line-soft));
+  border: 1px solid color-mix(in srgb, var(--mood, var(--amber)) 52%, var(--line-soft));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mood, var(--amber)) 8%, var(--panel));
+  background: color-mix(in srgb, var(--mood, var(--amber)) 12%, var(--panel));
   font-size: 13px; line-height: 1.5;
-  /* 62% 语气色 + 38% 正文色：既保住「一色一情绪」，又不至于淡成灰（实测 72% 偏浅） */
-  color: color-mix(in srgb, var(--mood, var(--amber)) 62%, var(--text));
+  /* 86% 语气色 + 14% 正文色：11-20 用户令「字体还是彩色吧」⇒ 压到 62% 时整条看着像灰字，
+     这里留一点点正文色只为在极亮 / 极暗底上不刺眼，色相仍一眼可辨。 */
+  color: color-mix(in srgb, var(--mood, var(--amber)) 86%, var(--text));
   animation: boss-mood-in 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 .boss-mood-text { min-width: 0; text-wrap: pretty; }
-/* 五类语气一色：元气=琥珀（BOSS 主色）· 哄老板=粉 · 搞笑=紫 · 生气=红 · 无聊=青 */
-.boss-mood-hype { --mood: var(--ic-amber, var(--amber)); }
-.boss-mood-coax { --mood: var(--ic-pink); }
+/* 五类语气一色（⛔ 全部取自真色板，别用灰化的 `--ic-*`）：
+   元气=琥珀（BOSS 主色）· 哄老板=粉（红混紫）· 搞笑=紫 · 生气=红 · 无聊=青 */
+.boss-mood-hype { --mood: var(--amber); }
+.boss-mood-coax { --mood: color-mix(in srgb, var(--red) 52%, var(--purple)); }
 .boss-mood-funny { --mood: var(--purple); }
 .boss-mood-angry { --mood: var(--red); }
 .boss-mood-bored { --mood: var(--cyan); }
