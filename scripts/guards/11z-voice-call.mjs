@@ -720,9 +720,10 @@ ok(/\.bc-anchor\s*\{[^}]*z-index:\s*58/.test(broadcastCss)
   && /\.bc-bubble\s*\{[^}]*z-index:\s*59/.test(broadcastCss)
   && /\.bc-panel\s*\{[^}]*z-index:\s*59/.test(broadcastCss),
   "播报图标/横幅/面板 = 58/59，低于所有弹窗（画布 90 / 模态 400 / 轻浮层 1000）");
-/* 11-19「仅在对话框上」：舞台左界取输入框左缘（聊天内容列），不再贴侧栏右缘。 */
-ok(/const left = composer \? Math\.round\(composer\.left\)/.test(read("src/features/event-broadcast/dock.ts")),
-  "悬浮播报只在对话框上：测量左界 = 输入框左缘（刻度尺/成员轨不算对话框）");
+/* ⛔ 11-19 晚用户实测：「拉过去，又过来了」——左界必须留在**侧栏右缘**（对话区左边框），
+   贴边吸附才够得着；⛔ 不许改成输入框左缘（那会把图标锁在内容列里、拖不过去）。 */
+ok(/const left = sidebar \? Math\.round\(sidebar\.right\) : 0;/.test(read("src/features/event-broadcast/dock.ts")),
+  "悬浮播报仍贴对话区左边框（左界 = 侧栏右缘），拖动可吸附；层级仍低于所有弹窗");
 ok(/body:has\(\.modal-backdrop\) \.bc-anchor,\s*body:has\(\.modal-backdrop\) \.bc-bubble,\s*body:has\(\.modal-backdrop\) \.bc-panel\s*\{\s*display:\s*none/.test(broadcastCss),
   "设置等模态打开时播报图标/横幅/面板整体隐藏（横幅与面板不是 anchor 的子节点，不能只藏图标）");
 /* 11-02 用户：「跟着播报出文字自适应多长，最长跟输入框一样长」。 */
