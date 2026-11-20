@@ -395,7 +395,18 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         //    这是可接受的取舍，且实现与数据形状解耦。
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
         bag.setCompactEventState("success");
-        bag.settleAfterCompaction(tid0);
+        /* ⛔⛔ 11-20 用户实测：「刚压缩就弹成功，下面的『等待模型回复』这行就没了」——
+           自动压缩是**内联**在用户回合里的（压缩项所在回合还有 userMessage 等真实内容），
+           压缩项 completed 只是「压缩做完了」，**回合还在等模型回复**。此时调 settle 会把
+           sending/activeTurnId 清掉 ⇒ 活动行消失、看上去整个回合停了。
+           ⇒ 只有「独立压缩回合」（整回合仅压缩项，如手动 /compact）才结算；
+             内联压缩的结算交给该回合自己的 turn/completed。 */
+        const ownerTurns = bag.threadRef.current?.turns ?? [];
+        const ownerTurnId = String(params.turnId ?? "");
+        const ownerTurn = ownerTurns.find((t) => String((t as { id?: unknown }).id ?? "") === ownerTurnId)
+          ?? ownerTurns.find((t) => ((t as { items?: unknown[] }).items ?? []).some((i) => String((i as { id?: unknown })?.id ?? "") === String(params.item?.id ?? "")));
+        const inlineCompaction = Boolean(ownerTurn && ((ownerTurn as { items?: unknown[] }).items ?? []).some((i) => !isCompactionItem(i)));
+        if (!inlineCompaction) bag.settleAfterCompaction(tid0);
         /* 10-17（「回合结束回落 50%」的根因修法）：压缩生效后**作废该会话的用量快照** ——
            盘上那份是压缩前的更大值，回合结束/重载时会被恢复回来，环就弹回 50%。
            作废后由下一条 thread/tokenUsage/updated 用压缩后的真实值重新落盘。 */
@@ -551,7 +562,17 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         //    引擎把压缩跑成一个回合时 turn/started 会点亮 running/sending/activeTurnId，
         //    但压缩的完成走 thread/compacted（不保证有 turn/completed）⇒ 没人熄灭，
         //    状态条与停止键永久亮着。settleAfterCompaction 内部有「真回合还在跑就不动」守卫。
-        bag.settleAfterCompaction(String(params.threadId ?? bag.threadRef.current?.id ?? ""));
+        // ⛔ 11-20 同款内联判定：当前活跃回合里还有真实内容（userMessage 等）⇒ 是内联自动压缩，
+        //    回合仍在等模型回复 —— 结算交给 turn/completed，别把「等待模型回复」行打掉。
+        {
+          const activeId = String(bag.activeTurnId ?? "");
+          const turnsNow = bag.threadRef.current?.turns ?? [];
+          const activeTurn = activeId
+            ? turnsNow.find((t) => String((t as { id?: unknown }).id ?? "") === activeId)
+            : undefined;
+          const inlineCompaction = Boolean(activeTurn && ((activeTurn as { items?: unknown[] }).items ?? []).some((i) => !isCompactionItem(i)));
+          if (!inlineCompaction) bag.settleAfterCompaction(String(params.threadId ?? bag.threadRef.current?.id ?? ""));
+        }
       } else if (event.method === "model/rerouted") {
         bag.showToast("模型已切换", `${params.fromModel} → ${params.toModel}`);
       } else if (["warning", "guardianWarning", "deprecationNotice", "configWarning"].includes(event.method ?? "")) {

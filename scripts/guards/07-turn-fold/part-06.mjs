@@ -685,6 +685,13 @@ export async function run() {
   (/bag\.setSending\(false\);[\s\S]{0,80}bag\.setActiveTurnId\(null\);/.test(part04Src) ? ok : fail)(
     "【163】settleAfterCompaction 必须同时清 sending 与 activeTurnId（漏一个状态条就还挂着）"
   );
+  // ⑤b 内联自动压缩不结算（11-20 用户实测「刚压缩就弹成功，下面的『等待模型回复』这行就没了」）：
+  //    压缩项所在回合还有真实内容 ⇒ 回合仍在等模型回复，结算交给 turn/completed；
+  //    只有「整回合仅压缩项」的独立压缩回合才调用 settle。
+  (/const inlineCompaction = Boolean\(ownerTurn[\s\S]{0,260}?!isCompactionItem\(i\)\)/.test(part05Src)
+    && /if \(!inlineCompaction\) bag\.settleAfterCompaction\(tid0\);/.test(part05Src) ? ok : fail)(
+    "【163】内联自动压缩不结算运行态（压缩完成但回合还在等回复时，不许打掉「等待模型回复」行）"
+  );
   // ⑥ 成功提示条件化（09-26 用户截图「还在转圈就报成功」）：item/completed 只代表一个压缩
   //    completed 到达即认为本次压缩结束：**先** prune 收敛线程里其它压缩项，再报成功、再结算。
   //    ⛔ 不许回到「扫线程 item 判断还有没有在跑」的写法（09-26 用户「现在根本压缩成功不了」）：
