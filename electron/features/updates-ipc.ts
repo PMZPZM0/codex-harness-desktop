@@ -25,7 +25,7 @@ import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { sendToWindow } from "./window-bus";
-import { showUpdateSplash, showMacUpdateReminder } from "../update-splash";
+import { showMacUpdateReminder } from "../update-splash";
 
 import {
   checkLatestUpdate,
@@ -316,17 +316,15 @@ export const updatesFeature = defineFeature<null>({
       /* 安装窗口：渲染层据此显示「正在安装更新，应用即将重启」全屏遮罩。 */
       writePendingInstall(targetVersion);
       sendToWindow("updates:download-state", { active: true, phase: "installing", percent: 1, version: targetVersion });
-      /* ⛔⛔ 11-20 用户实测「点重启 → 安装窗刚出来就闪退 → 再也装不上」：
-         `quitAndInstall` 内部是「spawn 安装器 + setImmediate(app.quit)」——几毫秒后主进程就退了。
-         原来把 `showUpdateSplash()` 写在它**后面** ⇒ 小窗还没来得及拉起，进程已经没了
-         （用户原话「你做的更新弹窗压根没有」）。⇒ 顺序必须反过来：
-         先拉起**独立进程**的安装小窗（PowerShell），再让 updater 去装并退出。 */
-      // ① 差分就绪：交给 updater 静默装 + 自启（它会自己 quit，⛔ 这里不许再 app.quit()）。
+      /* ⛔⛔ 11-20 用户两次报「安装的时候没有进度条提醒」的最终解法：
+         放弃「自己画小窗」（PowerShell 版冷启动 2–4 秒、装完才出来；独立 Electron 入口在打包后的
+         exe 上又未必接受脚本参数），改成**让安装器自己显示进度页** —— 非静默安装。
+         oneClick 安装器（`templates/nsis/oneClick.nsh`）只有 `MUI_PAGE_INSTFILES` 一个页面，
+         没有向导页、没有完成页 ⇒ 用户看到一个真实进度的窗口，装完自动关闭并拉起新版本，零交互。 */
       if (hasPendingDifferential()) {
         try {
-          showUpdateSplash(targetVersion);
-          installLog("differential：安装小窗已拉起，调用 quitAndInstall（应用即将退出）");
-          quitAndInstallDifferential();
+          installLog("differential：调用 quitAndInstall（非静默，显示安装器进度页），应用即将退出");
+          quitAndInstallDifferential(false);
           return { ok: true, via: "differential" };
         } catch (error) {
           /* ⛔⛔ 这里**不许**回退到 spawn 安装包：updater 可能已经把第一个安装器拉起来了，
@@ -341,15 +339,15 @@ export const updatesFeature = defineFeature<null>({
         }
       }
       try {
-        /* ② 完整包 / 回退路径：`--updated` + `/S` 两个参数缺一不可 ——
-         `/S` = 静默（⛔ 不带它就会弹交互式 NSIS 向导，就是用户看到的「安装提醒」）；
-         `--updated` = 告诉 electron-builder 的 installer.nsh「这是覆盖更新」，
-         它才会在装完后**自动拉起新版本**（electron-updater 自己 doInstall 时传的也是这两个）。 */
+        /* ② 完整包 / 回退路径：`--updated` 告诉 electron-builder 的 installer.nsh「这是覆盖更新」，
+         装完会**自动拉起新版本**。
+         ⛔⛔ 11-20 起**不再带 `/S`**：静默安装没有任何界面，用户的原话就是「安装的时候没有进度条提醒」；
+            oneClick 安装器只有 `MUI_PAGE_INSTFILES` 一个页面 ⇒ 非静默 = 一个真实进度条窗口，
+            没有向导页、没有需要点「下一步/完成」的地方（`nsis.oneClick = true`，守卫 12h 钉着）。
+            ⛔ 若将来把 oneClick 改回 assisted，这条必须跟着加回 `/S`，否则会弹安装目录向导。 */
         // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
-        spawn(lastVerifiedUpdatePath, ["--updated", "/S"], { detached: true, stdio: "ignore" }).unref();
-        installLog(`installer：已 spawn ${lastVerifiedUpdatePath} --updated /S`);
-        /* 安装器静默跑；这个小窗是用户唯一能看到的进度提醒（装完自动关）。 */
-        showUpdateSplash(targetVersion);
+        spawn(lastVerifiedUpdatePath, ["--updated"], { detached: true, stdio: "ignore" }).unref();
+        installLog(`installer：已 spawn ${lastVerifiedUpdatePath} --updated（非静默，显示进度页）`);
         // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
         //    `before-quit`，那里已经统一做 cleanupAll / 停看门狗 / 断 SSH / 销毁语音工作线程。
         //    （原先这里写了一个 `server.stop?.().catch()` —— `server` 上根本没有 stop 方法，

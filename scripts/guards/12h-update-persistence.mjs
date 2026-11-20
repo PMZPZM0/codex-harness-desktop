@@ -106,13 +106,15 @@ ok(/detached: true/.test(rs) && /\.unref\(\)/.test(rs),
 /* ⛔⛔ 11-15 用户实测「点重启更新，应用关了、安装提醒出来一下、版本没变」：
    差分包的 pending exe 直接 spawn 起来的是**交互向导 + UAC**（11-16 前 nsis.oneClick=false），
    而应用同时退出 ⇒ 向导被挡在后面/被当垃圾关掉 = 什么都没装。
-   ⇒ 差分就绪时必须走 updater 自己的 quitAndInstall(true,true)（/S 静默 + 装完自启）。 */
-ok(/hasPendingDifferential\(\)/.test(rs) && /quitAndInstallDifferential\(\)/.test(rs),
-  "差分包就绪时交给 electron-updater quitAndInstall 静默安装（⛔ 不许把 pending exe 当普通安装包 spawn）");
-ok(/quitAndInstall\(true, true\)|quitAndInstall\(silent, runAfter\)/.test(readFileSync(join(ROOT, "electron/updates.ts"), "utf8")),
-  "quitAndInstall 必须 (isSilent=true, isForceRunAfter=true)：静默装 + 装完自动拉起新版本");
-ok(/spawn\(lastVerifiedUpdatePath, \["--updated", "\/S"\]/.test(rs),
-  "完整包回退路径带 `--updated` + `/S`（缺 /S 会弹交互向导；缺 --updated 装完不会自动拉起新版本）");
+   ⇒ 差分就绪时必须走 updater 自己的 quitAndInstall。
+   ⛔ 11-20 改口径：`isSilent` 传 **false** —— 用户两次报「安装时没有进度条提醒」，
+      静默安装没有任何界面；oneClick 只有 INSTFILES 一页，非静默也不会弹向导。 */
+ok(/hasPendingDifferential\(\)/.test(rs) && /quitAndInstallDifferential\(false\)/.test(rs),
+  "差分包就绪时交给 electron-updater quitAndInstall **非静默**安装（⛔ 不许把 pending exe 当普通安装包 spawn）");
+ok(/quitAndInstall\(true, true\)|quitAndInstall\(isSilent, true\)/.test(readFileSync(join(ROOT, "electron/updates.ts"), "utf8")),
+  "quitAndInstall 必须 (isSilent, isForceRunAfter=true)：装完自动拉起新版本");
+ok(/spawn\(lastVerifiedUpdatePath, \["--updated"\]/.test(rs),
+  "完整包回退路径带 `--updated` 且**不带 /S**（非静默才有安装进度页；⛔ 缺 --updated 装完不会自动拉起）");
 ok(!/^\s*(await\s+)?server\??\.stop/m.test(rs),
   "⛔ 不在这里手写引擎收尾（before-quit 已统一做，重复执行反而出事；且 server 上无 stop 方法）");
 ok(/path_not_verified|no_verified_update/.test(ui.slice(0, ui.indexOf('handle("updates:restart-install"'))) ||
@@ -278,18 +280,17 @@ console.log(JSON.stringify(out));
   ok(/HKLM[\s\S]{0,120}InstallLocation/.test(installerNsh) && /UAC_IsAdmin/.test(installerNsh),
     "旧「所有用户」安装有迁移保护：管理员原地覆盖，非管理员提示先卸载（不装第二份）");
 
-  /* 11-16 安装提醒小窗：安装器静默跑，独立 WPF 小窗负责告知「正在安装/勿重复启动」。 */
+  /* 11-20 安装进度：不再自绘小窗，改由**安装器自己的进度页**展示。
+     ⛔ 两条安装路径都不许带 `/S`（静默 = 没有任何界面，用户已经两次报「安装时没有进度条提醒」）；
+     ⛔ 同时必须有 `nsis.oneClick = true`（oneClick 只有 MUI_PAGE_INSTFILES 一个页面，
+        不带 /S 也不会弹安装目录向导）—— 这一条在上面已经钉住。 */
   const splash = readFileSync(join(ROOT, "electron/update-splash.ts"), "utf8");
-  ok((ipc.match(/showUpdateSplash\(targetVersion\)/g) ?? []).length >= 2
-    && ipc.includes('spawn(lastVerifiedUpdatePath, ["--updated", "/S"]'),
-    "差分/完整包两条路在退出前都拉起小窗，安装器仍静默（不弹 NSIS 向导）");
-  ok(splash.includes("splash-main.js") && splash.includes("process.execPath")
-    && splash.includes("detached: true") && splash.includes("windowsHide: true"),
-    "小窗走独立 Electron 入口（⛔ 别退回 PowerShell + Add-Type：实测冷启动 2–4 秒，装完才出来，用户看不到）");
-  const splashMain = readFileSync(join(ROOT, "electron/splash-main.ts"), "utf8");
-  ok(splashMain.includes("正在安装更新") && splashMain.includes("请勿重复启动")
-    && splashMain.includes("安装似乎没有完成") && splashMain.includes("tasklist"),
-    "小窗文案齐全，且靠 tasklist 判断「新版本起来后自动关 / 超时改成未完成」");
+  ok(!/showUpdateSplash/.test(ipc) && !/\/S"/.test(ipc)
+    && /spawn\(lastVerifiedUpdatePath, \["--updated"\]/.test(ipc)
+    && /quitAndInstallDifferential\(false\)/.test(ipc),
+    "差分/完整包两条路都走非静默安装（安装器自己显示进度页；⛔ 别再加 /S，也别退回自绘小窗）");
+  ok(!/splash-main|PowerShell|Add-Type/i.test(splash) || /不再由我们自己画/.test(splash),
+    "自绘小窗的两种实现都撤了（PowerShell 2–4 秒冷启动 / 打包后入口不保证），只留 mac 通知");
   ok(ipc.includes("showMacUpdateReminder")
     && (ipc.match(/showMacUpdateReminder\(/g) ?? []).length >= 2
     && splash.includes("osascript") && splash.includes("display notification"),

@@ -411,11 +411,16 @@ export function hasPendingDifferential(): boolean {
   return Boolean(differentialUpdater);
 }
 
-/** 让 electron-updater 静默安装并自动重启；抛错由调用方回退到 spawn 安装包的老路子。 */
-export function quitAndInstallDifferential(): void {
+/** 让 electron-updater 安装并自动重启。
+ *  ⛔ 11-20 默认改成**非静默**（isSilent=false）：安装器会显示自己的进度页
+ *    （`app-builder-lib/templates/nsis/oneClick.nsh` 只有 `MUI_PAGE_INSTFILES`，
+ *    没有向导页/完成页 ⇒ 用户看到一个进度条窗口，装完自动关并拉起新版本）。
+ *    这正是用户两次报「安装的时候没有进度条提醒」要的东西，且**零依赖**：
+ *    不再需要我们自己的小窗进程（那条路要么慢、要么在打包后起不来）。 */
+export function quitAndInstallDifferential(isSilent = false): void {
   const updater = differentialUpdater;
   if (!updater) throw new Error("no_pending_differential");
-  updater.quitAndInstall(true, true);
+  updater.quitAndInstall(isSilent, true);
 }
 
 /** 10-25 差分更新：electron-updater + NSIS blockmap。
