@@ -547,7 +547,17 @@ export async function downloadUpdateDifferential(
   let lastError: unknown = new Error("differential_failed");
   for (const feedUrl of mirrorCandidates(releaseBase)) {
     try {
-      autoUpdater.setFeedURL({ provider: "generic", url: feedUrl });
+      /* ⛔⛔ 11-20 决定性根因（隔离实验实测）：差分在**下载阶段**就炸，回退整包 ——
+         `DifferentialDownloader` 默认用 multipart/byteranges（一次请求多个 range），
+         而国内镜像（gh-proxy / ghfast）只返回单段 `application/octet-stream`，于是抛
+         「Content-Type "multipart/byteranges" is expected, but got "application/octet-stream"」。
+         这个开关默认是开的：providerFactory 里
+         `isUseMultipleRangeRequest: options.useMultipleRangeRequest !== false && isUrlProbablySupportMultiRangeRequests(url)`，
+         而 `isUrlProbablySupportMultiRangeRequests` 只排除了 s3.amazonaws.com ⇒ 镜像被误判成支持。
+         ⇒ 显式传 `useMultipleRangeRequest: false`：改成逐段 Range 请求（段多、往返多一点，
+            但总下载量仍是变化的几十兆，远好于 668MB 整包）。
+         ⛔ 别删这一行：删掉后差分会在下载阶段失败，且**看起来像"差分没生效"**。 */
+      autoUpdater.setFeedURL({ provider: "generic", url: feedUrl, useMultipleRangeRequest: false });
       const check = await autoUpdater.checkForUpdates();
       const remoteVersion = String(check?.updateInfo?.version ?? "");
       if (remoteVersion && compareVersions(remoteVersion, version) !== 0) {

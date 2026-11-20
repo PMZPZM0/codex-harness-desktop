@@ -360,8 +360,25 @@ export const updatesFeature = defineFeature<null>({
             oneClick 安装器只有 `MUI_PAGE_INSTFILES` 一个页面 ⇒ 非静默 = 一个真实进度条窗口，
             没有向导页、没有需要点「下一步/完成」的地方（`nsis.oneClick = true`，守卫 12h 钉着）。
             ⛔ 若将来把 oneClick 改回 assisted，这条必须跟着加回 `/S`，否则会弹安装目录向导。 */
-        // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
-        spawn(lastVerifiedUpdatePath, ["--updated"], { detached: true, stdio: "ignore" }).unref();
+        /* ⛔⛔ 11-20 用户实测「下载完的那次自动安装，会把应用直接关掉，安装流程根本没出来；
+           只有手动点『立即重启』才真正装上」：
+           Node 的 spawn 失败是**异步 emit("error")**，`try/catch` 抓不到。原来 spawn 之后立刻
+           `app.quit()` —— 安装包不存在 / 被占用 / 不可执行时，应用已经关了、安装器压根没起来，
+           表现就是「自动安装把应用关掉，什么都没发生」。手动那次之所以成功，只是恰好那时文件可执行。
+           ⇒ spawn 后等 700ms 确认它真的活着（pid 在、没退出、没报错）再退出自己。
+           安装器的 preInit 会 taskkill 本进程，所以「我们被打死」也说明它起来了（正常路径）。 */
+        const child = spawn(lastVerifiedUpdatePath, ["--updated"], { detached: true, stdio: "ignore" });
+        let spawnError: Error | null = null;
+        child.once("error", (e) => { spawnError = e as Error; });
+        await new Promise((r) => setTimeout(r, 700));
+        if (spawnError || child.exitCode !== null) {
+          const why = spawnError ? (spawnError as Error).message : `立即退出 code=${child.exitCode}`;
+          installLog(`installer：没起来（${why}）`);
+          clearPendingInstall();
+          sendToWindow("updates:download-state", { active: false, phase: "installing", percent: 0, version: targetVersion });
+          return { ok: false, error: `installer_did_not_start: ${why}` };
+        }
+        child.unref();
         installLog(`installer：已 spawn ${lastVerifiedUpdatePath} --updated（非静默，显示进度页）`);
         // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
         //    `before-quit`，那里已经统一做 cleanupAll / 停看门狗 / 断 SSH / 销毁语音工作线程。

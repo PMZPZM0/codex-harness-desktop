@@ -40,20 +40,10 @@ export function usePart02c2(bag: Bag) {
   bag.updateReadyVersion = updateReadyVersion as typeof bag.updateReadyVersion;
   bag.updateRestarting = updateRestarting as typeof bag.updateRestarting;
 
-  /* ══════════════════════════════════════════════════════════════════════
-   * 11-15 用户令：「把差分更新做成自动化的，不需要点，自动安装，自动重启」。
-   * ⛔ 11-16 改默认：用户实测「更新的时候应用界面关了，启动还闪退」——
-   *   自动安装默认改为**关**（手动确认「重启安装」）；显式开过的用户保持开启。
-   * ══════════════════════════════════════════════════════════════════════ */
-  const [autoInstallUpdate, setAutoInstallUpdateState] = useState<boolean>(() => {
-    try { return localStorage.getItem("auto-install-update-v1") === "1"; } catch { return false; }
-  });
-  bag.autoInstallUpdate = autoInstallUpdate as typeof bag.autoInstallUpdate;
-  const setAutoInstallUpdate = (next: boolean) => {
-    setAutoInstallUpdateState(next);
-    try { localStorage.setItem("auto-install-update-v1", next ? "1" : "0"); } catch { /* 隐私模式忽略 */ }
-  };
-  bag.setAutoInstallUpdate = setAutoInstallUpdate as typeof bag.setAutoInstallUpdate;
+  /* 11-20 用户令：「把那个自动更新删了吧，就保留手动的」「手动重启，不要自动了」。
+     ⇒ 自动安装整套移除（开关 / 定时器 / 阻塞判据 / localStorage 键）：更新就绪后只弹提示条，
+        必须由用户点「重启安装」才装。⛔ 别再把定时自动安装加回来 —— 用户实测它会在人没注意时
+        把应用直接关掉，而安装流程根本没出来。 */
 
   /* 11-16：上次安装失败（版本没变）⇒ 本会话不再自动安装；toast 让用户手动重试。 */
   const [updateInstallFailed, setUpdateInstallFailed] = useState("");
@@ -63,8 +53,6 @@ export function usePart02c2(bag: Bag) {
     const onFailed = (event: Event) => {
       const version = String((event as CustomEvent<{ version?: string }>)?.detail?.version ?? "");
       setUpdateInstallFailed(version || "unknown");
-      /* 失败后把自动安装关掉（持久化）：否则下次开机仍会下载完就退出，看起来像闪退循环。 */
-      setAutoInstallUpdate(false);
       bag.showToast?.("上次更新未完成", `v${version || "新版本"} 没有装成功，已切换为手动安装；请点「重启安装」重试`, "");
     };
     window.addEventListener("harness:update-install-failed", onFailed);
@@ -81,23 +69,8 @@ export function usePart02c2(bag: Bag) {
   };
   bag.armUpdateReady = armUpdateReady as typeof bag.armUpdateReady;
 
-  /* 自动模式下的「稍后」只延后 30 分钟（11-15）：
-     ⛔ 手动模式那套「记下版本号、同版本不再弹」如果直接套到自动模式，用户误点一次
-     就**永远自动装不上**了 —— 与「不需要点」的诉求正好相反。 */
-  const autoSnoozeUntilRef = useRef(0);
-  const autoSnoozeTimerRef = useRef(0);
-
   /** 「取消 / 稍后」：手动模式 = 本版不再打扰；自动模式 = 延后 30 分钟再自动装。 */
   const dismissUpdateReady = () => {
-    if (bag.autoInstallUpdate) {
-      const version = updateReadyVersion;
-      const delay = 30 * 60_000;
-      autoSnoozeUntilRef.current = Date.now() + delay;
-      setUpdateReady(false);
-      if (autoSnoozeTimerRef.current) window.clearTimeout(autoSnoozeTimerRef.current);
-      autoSnoozeTimerRef.current = window.setTimeout(() => { armUpdateReady(version); }, delay);
-      return;
-    }
     dismissedVersionRef.current = updateReadyVersion;
     setUpdateReady(false);
   };
@@ -159,56 +132,6 @@ export function usePart02c2(bag: Bag) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ══════════════════════════════════════════════════════════════════════
-   * 自动安装 + 自动重启（11-15 用户令）
-   *
-   * ⛔⛔ 五条判据**全部**成立才动手，少一条都可能打断正在干活的人：
-   *   ① 更新包已就绪并校验过（updateReady）
-   *   ② 自动开关开着（默认开；关掉 ⇒ 回到手动「重启安装」）
-   *   ③ 没有回合在跑（runningThreadIdsRef 空 + activeTurnId 空）
-   *   ④ 没有开发工具安装/卸载在跑（那是主进程独占操作，重启会把它截断）
-   *   ⑤ 用户 90 秒没碰键鼠（跨应用：在别的窗口操作时本窗口收不到事件，自然计为空闲）
-   * 每 15 秒判一次；不满足就继续等，**绝不强杀**。
-   * ⛔ 空闲起点 lastInputAt 只在用户真操作时刷新（键鼠/滚动/可见性变化），
-   *   不许用「上一次检查的时间」冒充 —— 那会让「刚下载完」立刻被判成空闲。
-   * ══════════════════════════════════════════════════════════════════════ */
-  const lastInputAtRef = useRef<number>(Date.now());
-  useEffect(() => () => { if (autoSnoozeTimerRef.current) window.clearTimeout(autoSnoozeTimerRef.current); }, []);
-  useEffect(() => {
-    const mark = () => { lastInputAtRef.current = Date.now(); };
-    const events = ["keydown", "mousedown", "mousemove", "wheel", "touchstart", "pointerdown"] as const;
-    for (const name of events) window.addEventListener(name, mark, { passive: true });
-    document.addEventListener("visibilitychange", mark);
-    return () => {
-      for (const name of events) window.removeEventListener(name, mark);
-      document.removeEventListener("visibilitychange", mark);
-    };
-  }, []);
-  /** 现在能不能自动装？空串 = 可以；否则是**给人看的原因**（提示条与排障都用它）。 */
-  const autoInstallBlockedBy = (): string => {
-    if (!bag.autoInstallUpdate) return "自动安装已关闭";
-    if (!bag.updateReady) return "更新包还没下好";
-    if (bag.updateRestarting) return "正在重启";
-    if (updateInstallFailed) return "上次安装未完成，请手动重试";
-    if (bag.runningThreadIdsRef.current.size > 0 || bag.activeTurnId) return "有回合在跑";
-    if (bag.runtimeInstalling || bag.runtimeUninstalling) return "正在安装/卸载工具";
-    if (Date.now() < autoSnoozeUntilRef.current) return "你刚点了稍后";
-    if (Date.now() - lastInputAtRef.current < 90_000) return "刚刚还在操作";
-    return "";
-  };
-  bag.autoInstallBlockedBy = autoInstallBlockedBy as typeof bag.autoInstallBlockedBy;
-  useEffect(() => {
-    if (!bag.autoInstallUpdate || !updateReady || updateRestarting) return;
-    const tick = () => {
-      // ⛔ 复用同一份判据（autoInstallBlockedBy）：两处各写一遍迟早会漂。
-      if (autoInstallBlockedBy()) return;
-      void restartAndInstall();
-    };
-    const timer = window.setInterval(tick, 15_000);
-    return () => window.clearInterval(timer);
-    // ⛔ 依赖只放这三个状态：runningThreadIdsRef 是 ref，变化不触发渲染（靠 tick 现取）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bag.autoInstallUpdate, updateReady, updateRestarting]);
 
   const runUpdateCheck = async () => {
     bag.setUpdateChecking(true);
@@ -391,5 +314,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, updateReady, updateReadyVersion, updateRestarting, armUpdateReady, dismissUpdateReady, restartAndInstall, tryArmUpdateReady, autoInstallUpdate, setAutoInstallUpdate, autoInstallBlockedBy, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, updateReady, updateReadyVersion, updateRestarting, armUpdateReady, dismissUpdateReady, restartAndInstall, tryArmUpdateReady, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

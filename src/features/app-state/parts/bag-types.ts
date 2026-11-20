@@ -704,21 +704,6 @@ export interface Bag {
   dismissUpdateReady: () => void;
   restartAndInstall: () => Promise<void>;
   tryArmUpdateReady: () => Promise<void>;
-  /** 11-15 用户令「差分更新做成自动化」：自动安装并重启的开关（默认开，localStorage 落盘）。
-   *  ⛔ 关掉只回到「提示 + 手动重启」，不影响后台检查与静默下载。 */
-  autoInstallUpdate: boolean;
-  setAutoInstallUpdate: (next: boolean) => void;
-  /** 自动安装现在的阻塞原因（空串 = 条件齐备）。⛔ 判据只有这一份，调度与提示条都读它。 */
-  autoInstallBlockedBy: () => string;
-  /* 自动安装内部状态（【93】要求段内顶层声明全部登记）：setter 与三个 ref 只在 02c2 段内用，
-     登记它们是为了让「段内声明 ⇒ Bag 一定有」这条不变量继续成立，不是新的跨段通道。 */
-  setAutoInstallUpdateState: React.Dispatch<React.SetStateAction<boolean>>;
-  /** 最后一次真实键鼠/可见性变化时刻（自动重启的「90 秒无操作」判据）。 */
-  lastInputAtRef: React.RefObject<number>;
-  /** 自动模式下点「稍后」的延后截止时刻（只延后 30 分钟，不是永久压住）。 */
-  autoSnoozeUntilRef: React.RefObject<number>;
-  /** 「稍后」到期后重新提示就绪的定时器句柄（卸载时清掉）。 */
-  autoSnoozeTimerRef: React.RefObject<number>;
   openFeedbackPage: () => void;
   uiLang: string;
   setUiLang: React.Dispatch<React.SetStateAction<string>>;

@@ -222,28 +222,20 @@ console.log(JSON.stringify(out));
    ⇒ 钉死两件事：① 五条判据都在同一个判据函数里；② 调度必须经那个函数，禁止无条件重启。 */
 {
   const upd = readFileSync(join(ROOT, "src/features/app-state/parts/part02/03-thread-switch-update/02-update-ui-settings.tsx"), "utf8");
-  const gate = upd.slice(upd.indexOf("const autoInstallBlockedBy"), upd.indexOf("bag.autoInstallBlockedBy"));
-  ok(/localStorage\.getItem\("auto-install-update-v1"\) === "1"/.test(upd)
-    && /catch \{ return false; \}/.test(upd.slice(upd.indexOf("autoInstallUpdate"), upd.indexOf("autoInstallUpdate") + 600)),
-    "自动安装**默认关**（11-16 用户实测界面被自动关掉；只有显式写过 \"1\" 才自动装）");
-  ok(gate.length > 0
-    && /bag\.autoInstallUpdate/.test(gate) && /bag\.updateReady/.test(gate)
-    && /runningThreadIdsRef\.current\.size > 0/.test(gate) && /bag\.activeTurnId/.test(gate)
-    && /bag\.runtimeInstalling \|\| bag\.runtimeUninstalling/.test(gate)
-    && /90_000/.test(gate),
-    "自动重启的五条判据全在同一处：开关 / 包就绪 / 无回合在跑 / 无安装卸载 / 90 秒无操作");
-  const schedule = upd.slice(upd.indexOf("if (!bag.autoInstallUpdate || !updateReady || updateRestarting) return;"));
-  ok(/if \(autoInstallBlockedBy\(\)\) return;/.test(schedule)
-    && /restartAndInstall\(\)/.test(schedule),
-    "调度先过判据函数再重启（⛔ 不许无条件调 restartAndInstall —— 那会在用户干活时重启）");
-  ok(/setInterval\(tick, 15_000\)/.test(schedule),
-    "每 15 秒重判一次（条件可能在下载完成后才满足，不重判就永远不装）");
+  /* ⛔⛔ 11-20 用户令：「把那个自动更新删了吧，就保留手动的」「手动重启，不要自动了」。
+     自动安装整套（判据函数 / 15 秒定时器 / 设置开关 / localStorage 键）已删除 ⇒ 这里翻成
+     **负向断言**，防止有人把定时自动安装加回来：它会趁人没注意把应用直接关掉，
+     而安装流程根本没出来（用户实测）。⛔ 唯一的安装入口 = 用户点「重启安装」。 */
+  ok(!/autoInstallBlockedBy|autoInstallUpdate|autoSnooze|lastInputAtRef/.test(upd),
+    "⛔ 自动安装已整体删除（不许再出现开关 / 判据函数 / 定时器 / 空闲计时）");
+  ok(!/setInterval\(\s*tick\s*,\s*15_000\s*\)/.test(upd) && !/auto-install-update-v1/.test(upd),
+    "⛔ 不许再定时调度 restartAndInstall，也不许再写自动安装开关的 localStorage 键");
   const toast = readFileSync(join(ROOT, "src/features/app-view/AppView/UpdateReadyToast.tsx"), "utf8");
-  ok(/auto\?: boolean/.test(toast) && /将自动安装/.test(toast) && /不用你操作/.test(toast),
-    "提示条如实说明「将自动安装并重启、不用你操作」（不是继续让用户点）");
+  ok(!/auto\?: boolean/.test(toast) && !/将自动安装/.test(toast) && /重启安装/.test(toast),
+    "提示条只留手动入口：说明「点重启安装才会安装」，按钮是「重启安装」");
   const shell = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
-  ok(/aria-label="自动安装更新"/.test(shell) && /setAutoInstallUpdate\(true\)/.test(shell) && /setAutoInstallUpdate\(false\)/.test(shell),
-    "设置 →「检查更新」面板里有自动/手动开关（默认手动，可显式开启自动）");
+  ok(!/自动安装更新/.test(shell) && !/setAutoInstallUpdate/.test(shell),
+    "设置面板不再有「自动安装 自动/手动」开关（只剩手动一条路）");
 
   /* ── 11-16 更新进度条 / 安装遮罩 / 失败防循环 ─────────────────────────── */
   const ipc = readFileSync(join(ROOT, "electron/features/updates-ipc.ts"), "utf8");
@@ -266,9 +258,8 @@ console.log(JSON.stringify(out));
   ok(shell.includes("<UpdateFlowBanner />"), "主界面挂载 UpdateFlowBanner（不开设置页也能看到）");
   ok(updateCss.includes(".update-flow-banner") && updateCss.includes(".update-install-overlay"),
     "进度条与安装遮罩有样式（覆盖 hover 才显形的旧进度条规则）");
-  ok(upd.includes("harness:update-install-failed") && upd.includes("上次安装未完成")
-    && upd.includes("setAutoInstallUpdate(false)"),
-    "安装失败后暂停自动安装并明确告知（不再「启动→下载→退出」循环）");
+  ok(upd.includes("harness:update-install-failed") && upd.includes("上次更新未完成"),
+    "安装失败仍明确告知（提示点「重启安装」重试；自动安装已删除，不存在「暂停自动安装」这一步）");
 
   /* ── 11-16 方案 A：oneClick 每用户安装（去掉向导/UAC）+ 旧全机安装迁移保护 ── */
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));

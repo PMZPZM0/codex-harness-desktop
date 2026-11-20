@@ -22,18 +22,11 @@ import { Sparkles } from "lucide-react";
 export function UpdateReadyToast({
   version,
   restarting,
-  auto,
-  blockedBy,
   onCancel,
   onRestartInstall,
 }: {
   version: string;
   restarting: boolean;
-  /** 11-15：自动安装模式（默认开）。此时文案改成「空闲时自动安装并重启」，
-   *  按钮退化成加速入口 —— 用户不需要点任何东西。 */
-  auto?: boolean;
-  /** 自动模式下的阻塞原因（"有回合在跑" / "刚刚还在操作"…）；空串 = 条件齐备，随时会重启。 */
-  blockedBy?: string;
   onCancel: () => void;
   onRestartInstall: () => void;
 }) {
@@ -43,21 +36,15 @@ export function UpdateReadyToast({
       <Sparkles size={16} className="update-ready-icon" />
       <div className="update-ready-body">
         <div className="update-ready-title">
-          {auto ? "更新已就绪，将自动安装" : "更新已就绪"}{version ? ` · v${version}` : ""}
+          "更新就绪"{version ? ` · v${version}` : ""}
         </div>
         <div className="update-ready-desc">
-          {auto
-            ? `新版本已下载完成并校验通过。${restarting
-                ? "正在重启完成安装…"
-                : blockedBy
-                  ? `当前${blockedBy}，等空闲下来会自动安装并重启，不用你操作。`
-                  : "马上会自动安装并重启，不用你操作。"}`
-            : "新版本已下载完成并校验通过。重启即可完成安装，未安装的第三方工具会一并恢复。"}
+          新版本已下载完成并校验通过。点「重启安装」才会安装；未安装的第三方工具会一并恢复。
         </div>
         <div className="update-ready-actions">
-          <button className="update-ready-btn" onClick={onCancel} disabled={restarting}>{auto ? "稍后" : "取消"}</button>
+          <button className="update-ready-btn" onClick={onCancel} disabled={restarting}>取消</button>
           <button className="update-ready-btn primary" onClick={onRestartInstall} disabled={restarting}>
-            {restarting ? "正在重启…" : auto ? "立即重启" : "重启安装"}
+            {restarting ? "正在重启…" : "重启安装"}
           </button>
         </div>
       </div>

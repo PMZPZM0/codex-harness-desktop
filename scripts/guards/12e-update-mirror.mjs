@@ -102,8 +102,10 @@ if (!IS_PPCODE) {
   const release = read(".github/workflows/release.yml");
   ok(/"electron-updater"/.test(pkg) && /"provider": "generic"/.test(pkg) && /"artifactName": "Codex\.Harness\.Desktop-\$\{version\}-win-\$\{arch\}/.test(pkg),
     "打包配置含 electron-updater 的 publish 元数据 + 与 Release 一致的 Windows 资产名");
-  ok(/export async function downloadUpdateDifferential/.test(updates) && /autoUpdater\.setFeedURL\(\{ provider: "generic", url: feedUrl \}\)/.test(updates) && /autoUpdater\.downloadUpdate\(\)/.test(updates),
-    "差分下载走 electron-updater generic feed（按 Release tag + 镜像序）");
+  ok(/export async function downloadUpdateDifferential/.test(updates)
+    && /autoUpdater\.setFeedURL\(\{ provider: "generic", url: feedUrl, useMultipleRangeRequest: false \}\)/.test(updates)
+    && /autoUpdater\.downloadUpdate\(\)/.test(updates),
+    "差分下载走 generic feed，且**必须显式 useMultipleRangeRequest: false**（11-20 实测：国内镜像不支持 multipart/byteranges，开着它差分必在下载阶段失败回退整包）");
   ok(/const tryDifferential = async/.test(ipc) && /await tryDifferential\(/.test(ipc) && /downloadUpdate\(url, dest/.test(ipc),
     "下载入口差分优先；失败回退原有完整包下载");
   ok(/\.exe\.blockmap/.test(buildWin) && /latest\.yml/.test(buildWin) && /\.exe\.blockmap/.test(release) && /latest\.yml/.test(release),
