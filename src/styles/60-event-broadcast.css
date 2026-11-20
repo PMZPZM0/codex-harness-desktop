@@ -23,19 +23,18 @@ body:has(.modal-backdrop) .bc-anchor,
 body:has(.modal-backdrop) .bc-bubble,
 body:has(.modal-backdrop) .bc-panel { display: none; }
 /* ⛔⛔ 11-01 用户实测：「播放悬浮图标和播报弹窗还在视频/音乐播放组件上面」——
-   媒体预览（视频/音频）不是 .modal-backdrop，旧规则管不到：
-     · 全屏预览（z=400）：播报整组隐藏，别挡播放器；
-     · 迷你播放器（z=70）：不隐藏（用户还要边听边干活），但把播报整体降到它下面（68/69），
-       重叠时由迷你播放器盖住，没重叠时播报照常可见。 */
+   全屏媒体预览（z=400）不是 .modal-backdrop，旧规则管不到 ⇒ 播报整组隐藏，别挡播放器。 */
 body:has(.media-preview-backdrop:not(.is-mini)) .bc-anchor,
 body:has(.media-preview-backdrop:not(.is-mini)) .bc-bubble,
 body:has(.media-preview-backdrop:not(.is-mini)) .bc-panel { display: none; }
-body:has(.media-preview-backdrop.is-mini) .bc-anchor { z-index: 68; }
-body:has(.media-preview-backdrop.is-mini) .bc-bubble,
-body:has(.media-preview-backdrop.is-mini) .bc-panel { z-index: 69; }
+/* ⛔⛔ 11-19 用户令「播报悬浮图标仅在对话框上，在其他任何弹窗界面下面」——
+   此前 anchor 取 880：挂在壳内却在层级上压过设置内 backdrop（80~97）、画布（90）、
+   全局模态（400）……凡是没挂 backdrop 类的弹窗都被它盖住。现在归到「对话区浮件」档：
+   58/59 与语音播报条同层 —— 高于消息流（<30），**低于所有弹窗**（画布 90 / 模态 400 / 轻浮层 1000）。
+   ⛔ 不要再抬到 80+：抬一档就会重新压住设置页/画布；媒体迷你播放器（70）也在它之上，无需特判。 */
 .bc-anchor {
   position: fixed;
-  z-index: 880;
+  z-index: 58;
   /* 吸附/侧栏拖动/右栏开合 ⇒ 位置平滑过渡（"吸附动画"的主体） */
   transition: left 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
   will-change: left, top;
@@ -213,7 +212,7 @@ body:has(.media-preview-backdrop.is-mini) .bc-panel { z-index: 69; }
    入场方向跟着贴边方向走（贴右边从左滑入，贴左边从右滑入），像一条通知横着划出来。 */
 .bc-bubble {
   position: fixed;
-  z-index: 881;
+  z-index: 59;
   /* 11-02 用户：跟随播报文字自适应长度（上限由行内 maxWidth = 输入框宽度控）。 */
   width: max-content;
   max-width: min(560px, 80vw);
@@ -292,7 +291,7 @@ body:has(.media-preview-backdrop.is-mini) .bc-panel { z-index: 69; }
 /* ── 历史面板 ── */
 .bc-panel {
   position: fixed;
-  z-index: 881;
+  z-index: 59;
   display: flex;
   flex-direction: column;
   min-height: 160px;

@@ -12,8 +12,8 @@
  * 且悬浮窗自己用 ResizeObserver + MutationObserver 就能跟上，不需要任何上层配合。
  *
  * ── 边界口径 ──────────────────────────────────────────────────────────────
- *   left   = 左栏（`.sidebar`）的右缘；没有侧栏（欢迎页/弹窗）时退到 0
- *   right  = 右栏（`.context-panel`）的左缘；右栏收起时它就是视口右边
+ *   left   = 输入框（`.composer-wrap`）的左缘（= 聊天内容列）；没有输入框时退到侧栏右缘 → 0
+ *   right  = 输入框的右缘；没有输入框时退到右栏左缘 → 视口右边
  *   top    = 顶栏（`.topbar`）的下缘；没有顶栏时退到 0
  *   bottom = 输入框（`.composer-wrap`）的上缘；没有输入框时退到视口底
  * ⛔ 「对话框边框」= 这四条边围出来的聊天区边框 —— 吸附永远落在这四条边上，
@@ -57,7 +57,9 @@ export function measureStage(): StageRect {
   const aside = rectOf(".context-panel");
   const composer = rectOf(".composer-wrap");
   const topbar = rectOf(".topbar");
-  const left = sidebar ? Math.round(sidebar.right) : 0;
+  /* ⛔ 11-19 用户令「播报悬浮图标仅在对话框上」：左界取**输入框左缘**（聊天内容列），
+     不再取侧栏右缘 —— 侧栏右缘外的刻度尺/成员轨不算「对话框」，把手贴在那里会像浮在栏上。 */
+  const left = composer ? Math.round(composer.left) : sidebar ? Math.round(sidebar.right) : 0;
   /* ⛔ 右界 = **输入框的右缘**（不是视口右边）：右侧还有成员轨/办公室轨（约 92px），
      按视口算会把图标吸到轨道外沿、甚至贴到窗口边缘盖住滚动条。
      没有输入框（极早期/欢迎页）时依次退到右栏左缘 → 视口右边。 */

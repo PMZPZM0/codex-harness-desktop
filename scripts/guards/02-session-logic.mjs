@@ -1816,8 +1816,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-row-tags\.is-cyclable\s*\{[^}]*cursor:\s*pointer/.test(cssSrc285) ? ok : fail)(
       "【285】可轮换的标签给 pointer 光标"
     );
-    (/\.project-list \.project-item-body\s*\{[^}]*padding-left:\s*39px/.test(cssSrc285) && /\.thread-row > button:first-child > \.thread-row-title-line\s*\{[^}]*display:\s*grid/.test(cssSrc285) && /is-cyclable/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
-      "【285】会话名与项目名同列（39px）+ 标签在行内居中 + 点标签切换（11-05 用户令）"
+    (/\.project-list \.project-item-body\s*\{[^}]*padding-left:\s*22px/.test(cssSrc285) && /\.thread-row > button:first-child > \.thread-row-title-line\s*\{[^}]*display:\s*grid/.test(cssSrc285) && /is-cyclable/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
+      "【285】会话名与项目名同列（22px，11-20 与项目名对齐）+ 标签在行内居中 + 点标签切换（11-05 用户令）"
     );
     (/has-row-color/.test(rowsSrc285) && /--row-color/.test(rowsSrc285) ? ok : fail)(
       "【285】会话行底色接线（has-row-color 类 + --row-color 内联变量）"

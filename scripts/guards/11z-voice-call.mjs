@@ -711,10 +711,18 @@ ok(/max-height: 352px/.test(read("src/styles/60-event-broadcast.css")),
 /* 11-01 用户：「播放悬浮图标和播报弹窗还在视频/音乐播放组件上面」——媒体预览不是 modal-backdrop，
    全屏预览要隐藏播报；迷你播放器不隐藏但把播报降到它下面（重叠时播放器在上）。 */
 const broadcastCss = read("src/styles/60-event-broadcast.css");
-ok(/body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-anchor,\s*body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-bubble,\s*body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-panel\s*\{\s*display:\s*none/.test(broadcastCss)
-  && /body:has\(\.media-preview-backdrop\.is-mini\) \.bc-anchor\s*\{[^}]*z-index:\s*68/.test(broadcastCss)
-  && /body:has\(\.media-preview-backdrop\.is-mini\) \.bc-bubble,\s*body:has\(\.media-preview-backdrop\.is-mini\) \.bc-panel\s*\{[^}]*z-index:\s*69/.test(broadcastCss),
-  "播报图标/横幅/面板不压视频与音乐播放组件（全屏预览三件套都隐藏，迷你播放器时降到它下面）");
+ok(/body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-anchor,\s*body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-bubble,\s*body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-panel\s*\{\s*display:\s*none/.test(broadcastCss),
+  "播报图标/横幅/面板不压全屏视频与音乐播放组件（整组隐藏）");
+/* 11-19 用户令：「播报悬浮图标仅在对话框上，在其他任何弹窗界面下面」——
+   锚点/横幅/面板必须落在「对话区浮件」档（58/59）：低于画布 90 / 设置内 backdrop 80~97 /
+   全局模态 400 / 轻浮层 1000；⛔ 不许退回 880（那是压在所有弹窗之上）。 */
+ok(/\.bc-anchor\s*\{[^}]*z-index:\s*58/.test(broadcastCss)
+  && /\.bc-bubble\s*\{[^}]*z-index:\s*59/.test(broadcastCss)
+  && /\.bc-panel\s*\{[^}]*z-index:\s*59/.test(broadcastCss),
+  "播报图标/横幅/面板 = 58/59，低于所有弹窗（画布 90 / 模态 400 / 轻浮层 1000）");
+/* 11-19「仅在对话框上」：舞台左界取输入框左缘（聊天内容列），不再贴侧栏右缘。 */
+ok(/const left = composer \? Math\.round\(composer\.left\)/.test(read("src/features/event-broadcast/dock.ts")),
+  "悬浮播报只在对话框上：测量左界 = 输入框左缘（刻度尺/成员轨不算对话框）");
 ok(/body:has\(\.modal-backdrop\) \.bc-anchor,\s*body:has\(\.modal-backdrop\) \.bc-bubble,\s*body:has\(\.modal-backdrop\) \.bc-panel\s*\{\s*display:\s*none/.test(broadcastCss),
   "设置等模态打开时播报图标/横幅/面板整体隐藏（横幅与面板不是 anchor 的子节点，不能只藏图标）");
 /* 11-02 用户：「跟着播报出文字自适应多长，最长跟输入框一样长」。 */
