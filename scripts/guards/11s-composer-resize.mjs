@@ -101,6 +101,19 @@ ok(/\.composer-resize-grip \{[^}]*width: 56px/.test(css),
     "删空后的孤立节点只在非组字路径清掉（清空语句在组字 early-return 之后）");
   ok(!/const syncFromDom = \(el: HTMLDivElement\): boolean => \{[\s\S]{0,600}?innerHTML = ""/.test(composerSrc),
     "⛔ syncFromDom（compositionend 也走它）里不许清 DOM —— 上屏时序里 DOM 可能瞬间为空");
+  /* ⛔⛔ 11-20 用户实测（截图：占位提示和「粘贴文本」chip 同时显示，打一个字才恢复）：
+     占位提示是 \`[data-empty="true"]::before\`；而**命令式插 chip**（insertComposerAttachments
+     直接 range.insertNode）只调 bag.syncComposerFromDom 回写 value，原来不维护 data-empty
+     ⇒ DOM 已有 chip、data-empty 还停在 "true" ⇒ 提示与 chip 叠在一起。
+     ⇒ 两个写 DOM 的路径都必须按同一判据维护它：无文字 + 无图 + 无文件 = 空。 */
+  {
+    const memorySrc = codeOnly(read("src/features/app-state/parts/part03/02-composer-memory-models.tsx"));
+    ok(/function syncComposerFromDom\(\)[\s\S]{0,2000}?el\.dataset\.empty = [^;]*promptFilePaths/.test(memorySrc),
+      "插 chip 后的唯一回写点（syncComposerFromDom）也维护 data-empty（判据含文件占位符）");
+    ok(!/el\.dataset\.empty = value \? "false" : "true"/.test(composerSrc)
+      && /el\.dataset\.empty = [^;]*promptFilePaths\(value\)/.test(composerSrc),
+      "⛔ 重建路径不许只判 value 真值（空白串会被当成有内容 ⇒ 占位提示丢失）");
+  }
   const teamSrc = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
   const teamCss = read("src/styles/61-team-mode.css");
   ok(/data-composing/.test(teamSrc) && /onCompositionEnd=\{[\s\S]{0,200}?removeAttribute\("data-composing"\)/.test(teamSrc),

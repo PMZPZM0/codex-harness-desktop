@@ -16,6 +16,7 @@ import { useChannelBot, type ChannelDraft } from "../../../../hooks/useChannelBo
 import { useModelProviders, type UpstreamProtocol } from "../../../../hooks/useModelProviders";
 import { installFocusReturn } from "../../../../lib/focus-return";
 import { serializeComposerDom } from "../../../../lib/serialize-composer-dom";
+import { promptFilePaths } from "../../../../lib/composer-attachments.mjs";
 import { basename } from "../../../../lib/basename";
 import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../../features/session-queue";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
@@ -101,6 +102,12 @@ bag.makeComposerChip = makeComposerChip as typeof bag.makeComposerChip;
     const el = bag.composerInputRef.current;
     if (!el) return;
     const next = serializeComposerDom(el);
+    /* ⛔⛔ 11-20 用户实测（截图：占位提示与「粘贴文本」chip 同时显示，打一个字才恢复）：
+       本函数是命令式插 chip 后**唯一的回写点**（insertComposerAttachments 直接 range.insertNode），
+       原来只回写 value、不维护 `data-empty` ⇒ DOM 已有 chip 而 data-empty 仍为 "true"
+       ⇒ 占位提示（[data-empty="true"]::before）与 chip 叠在一起。
+       ⛔ 空态判据必须与 ComposerEditor 的 syncFromDom 一致：无文字 + 无图 + 无文件。 */
+    el.dataset.empty = !next.trim() && !promptImagePaths(next).length && !promptFilePaths(next).length ? "true" : "false";
     bag.composerDomValueRef.current = next;
     bag.setImages(promptImagePaths(next));
     bag.onPromptChange(next);

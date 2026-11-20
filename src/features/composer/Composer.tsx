@@ -77,7 +77,9 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
     const el = editorRef.current;
     if (!el || domValueRef.current === value) return;
     rebuildComposerDom(el, value, makeChip);
-    el.dataset.empty = value ? "false" : "true";
+    /* 与 syncFromDom 同一判据（无文字 + 无图 + 无文件）：⛔ 别只判 value 真值 ——
+       纯空白会被当成"有内容"，占位提示跟着丢。 */
+    el.dataset.empty = !value.trim() && !promptImagePaths(value).length && !promptFilePaths(value).length ? "true" : "false";
     domValueRef.current = value;
     // 重建后光标放回末尾（外部置值场景：斜杠命令追加、发送清空等）
     const selection = window.getSelection();
