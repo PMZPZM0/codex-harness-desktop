@@ -72,7 +72,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Gamepad2, GraduationCap, Music2, PackageOpen, Palette, Puzzle, Smartphone, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Gamepad2, GraduationCap, LayoutTemplate, Music2, PackageOpen, Palette, Puzzle, Smartphone, Trash2, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -84,6 +84,7 @@ import { LayaCard } from "./LayaCard";
 import { OpenfilmCard } from "../openfilm";
 import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
+import { FrontendDesignCard } from "./FrontendDesignCard";
 import { FileeCard } from "./FileeCard";
 import { ApkStartCard } from "./ApkStartCard";
 import { ArtCraftSuite } from "./ArtCraftSuite";
@@ -98,7 +99,7 @@ export type DevtoolsSettingsSectionProps = {
   onOpenExperts?: (expert: string, tool: string) => void; downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
+type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "frontend-design" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
 
@@ -117,6 +118,7 @@ const CARD_EXPERT: Record<string, string> = {
   "apkstart": "掌控",
   "husk": "掌控",
   "feishu-cli": "通译",
+  "frontend-design": "执矩",
   "filee": "通译",
   "skill-packs": "通译",
   "tools-ai": "通译",
@@ -222,6 +224,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     { key: "phone", icon: <Smartphone size={15} />, title: "手机控制", desc: "让 Codex 直接操作手机：看屏幕、点按、打字、读日志", stat: "Android（adb）· iPhone 需 mac" },
     { key: "laya", icon: <Brain size={15} />, title: "Laya 智能判断", desc: "思考等级「自动」档的本地决策端（Python）", stat: "本地 · 可选安装" },
     { key: "feishu-cli", icon: <Bot size={15} />, title: "飞书 CLI", desc: "官方命令行（@larksuite/cli）：让 Codex 代你操作飞书", stat: "按需安装 · 需登录一次" },
+    { key: "frontend-design", icon: <LayoutTemplate size={15} />, title: "前端与设计", desc: "组件库（Uiverse）· 前端画布（m3e-canvas）· AI 画布工作流", stat: "内置 · 可检查上游更新" },
     { key: "filee", icon: <Files size={15} />, title: "Filee 文件转换", desc: "244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档），不需要 Office", stat: "按需安装 · 完全离线 · 可卸载" },
     { key: "apkstart", icon: <Gamepad2 size={15} />, title: "ApkStart 安卓运行器", desc: "本机运行 Android 应用：装 APK、独立窗口运行，Codex 可截图/读日志/adb 测试", stat: "按需安装 · 仅 Windows · 首启下运行时" },
     { key: "artcraft", icon: <Palette size={15} />, title: "Craft 全家桶", desc: "19 个创作 App（17 官方 + 2 社区）：图像 / 矢量 / 视频 / 动效 / 音频 / 文档 / 表格 / PDF / CAD", stat: runtimeInstalling === "artcraft" ? "安装中…" : "按需安装 · 启动器约 11 MB · 应用按需装" },
@@ -396,6 +399,12 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       {openCard === "feishu-cli" && activeOtherCard && (
         <SettingsDialog title={activeOtherCard.title} icon={<Bot size={15} />} hint="安装 → 配置应用 → 登录（官方 device flow）" size="md" onClose={() => setOpenCard(null)}>
           <FeishuCliCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} />
+        </SettingsDialog>
+      )}
+      {openCard === "frontend-design" && activeOtherCard && (
+        <SettingsDialog title={activeOtherCard.title} icon={<LayoutTemplate size={15} />} hint="内置能力 · 组件库 / 前端画布 / AI 画布工作流（可检查上游更新）" size="md" onClose={() => setOpenCard(null)}>
+          {/* 前端与设计（11-20）：三块内置资源的 GitHub 上游检查 + 随应用更新说明。 */}
+          <FrontendDesignCard />
         </SettingsDialog>
       )}
       {openCard === "filee" && activeOtherCard && (

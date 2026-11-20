@@ -258,5 +258,17 @@ ok(/const node = bundledNode\(\) \|\| "node"/.test(rt),
 }
 
 
+/* 11-20 用户令：组件库 / 前端画布 / AI 画布工作流的**上游更新通道**放进开发工具（同飞书 CLI 布局）。 */
+{
+  const section = read("src/features/settings-devtools/DevtoolsSettingsSection.tsx");
+  const card = read("src/features/settings-devtools/FrontendDesignCard.tsx");
+  ok(/frontend-design/.test(section) && /FrontendDesignCard/.test(section) && /"frontend-design": "执矩"/.test(section),
+    "前端与设计卡片已注册到开发工具（key / 组件 / 负责专家「执矩」）");
+  ok(card.includes("api.github.com/repos/${repo}/commits") && card.includes("uiverse-io/galaxy") && card.includes("lnkiai/m3e-canvas"),
+    "组件库 / 前端画布检查**上游最新提交**（两个仓库都没有 Release/Tag，不能按版本号比）");
+  ok(/随应用更新/.test(card) && !/updateRuntime|runtime:update/.test(card),
+    "内置资源不造假更新按钮：只给「检查更新 + 随应用更新」说明（升级随应用版本发布）");
+}
+
 console.log(`\n【devtools-fallback】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
