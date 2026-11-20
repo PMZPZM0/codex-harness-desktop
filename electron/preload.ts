@@ -649,6 +649,8 @@ contextBridge.exposeInMainWorld("codex", {
   ponytailModeGet: () => __ipc("ponytail:mode:get", 0, []) as Promise<string>,
   ponytailModeSet: (mode: string) => __ipc("ponytail:mode:set", 1, [mode]) as Promise<{ mode: string }>,
   enhancePrompt: (text: string) => __ipc("prompt:enhance", 1, [{ text }]),
+  /* GitHub 热门榜简介翻译：先用当前模型批量翻，失败再走 MyMemory */
+  translateTexts: (input: { texts: string[] }) => __ipc("prompt:translate", 1, [input]),
   qqConnect: (appId: string, appSecret: string) => __ipc("qq:connect", 2, [appId, appSecret]),
   qqLogout: () => __ipc("qq:logout", 0, []) as Promise<{ ok: boolean }>,
   qqQrCancel: () => __ipc("qq:qr-cancel", 0, []) as Promise<{ ok: boolean }>,

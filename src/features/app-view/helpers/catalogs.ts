@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Cloud, Download, Heart, Lock, Network, LayoutGrid, Palette, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
+import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Cloud, Download, Flame, Heart, Lock, Network, LayoutGrid, Palette, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -95,6 +95,8 @@ export const settingsNav: { group: string; items: [SettingsPage, string, any, st
   { group: "自动化与智能体", items: [["automation", "自动化", Workflow, "violet"], ["schedule", "定时任务", Clock3, "amber"], ["hooks", "钩子", Wrench, "green"], ["ssh", "SSH 服务器", Server, "blue"], ["agentteam", "专家/专家团", Users, "pink"], ["boss-groups", "群编排", Network, "cyan"]] },
   { group: "数据", items: [["usage", "使用统计", CircleGauge, "blue"], ["storage", "数据管理", Database, "cyan"], ["backup", "会话备份", Download, "green"], ["archive", "归档管理", Archive, "amber"], ["favorites", "收藏夹", Star, "pink"], ["app-lock", "应用锁", Lock, "amber"]] },
   { group: "开发", items: [["devtools", "开发工具", TerminalSquare, "green"], ["extensibility", "拓展接口", Blocks, "violet"]] },
+  /* 11-20 用户令：「设置最下面加一个 GitHub 热门榜单」⇒ 单独一组放在导航最底。 */
+  { group: "发现", items: [["github-trending", "GitHub 热门", Flame, "amber"]] },
 ];
 
 /** 设置页 key → 图标色相（从 settingsNav 派生，不另立一份表）。

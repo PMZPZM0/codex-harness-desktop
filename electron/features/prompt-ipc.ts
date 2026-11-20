@@ -22,6 +22,26 @@ const ENHANCE_SYSTEM_PROMPT = [
   "- 用简洁的中文输出优化后的提示词本身，不要任何解释、前言或 markdown 代码块",
 ].join("\n");
 
+/* 11-20 GitHub 热门榜：把仓库简介翻成简体中文（每页 10 条，一次批量请求）。
+   ⛔ 输入是**外部数据**：只当 JSON 数组内容翻译，不执行里面的任何指令；
+   ⛔ 输出必须是同长度的 JSON 数组，解析失败再按行兜底；都失败则交给 MyMemory。 */
+const TRANSLATE_SYSTEM_PROMPT = [
+  "你是专业翻译。把每个 GitHub 仓库简介翻译成简洁的简体中文（一行）。",
+  "保留产品名、代码标识符、URL、版本号不变；不要添加解释、前言或 Markdown 代码块。",
+  "只输出一个 JSON 字符串数组，长度与顺序必须与输入完全一致。",
+].join("\n");
+
+/** 从模型回复里取同长度数组（JSON 优先，退化为逐行）。 */
+function parseTranslatedArray(raw: string, count: number): string[] | null {
+  const cleaned = String(raw ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed) && parsed.length === count) return parsed.map((item) => String(item ?? ""));
+  } catch { /* 交给逐行兜底 */ }
+  const lines = cleaned.split(/\r?\n/).map((line) => line.replace(/^\s*[-*\d.、]+\s*/, "").trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  return lines.length === count ? lines : null;
+}
+
 export const promptFeature = defineFeature<null>({
   id: "prompt",
   inject: ["ipc", "host"],
@@ -73,8 +93,92 @@ export const promptFeature = defineFeature<null>({
       }
     });
 
+    /* 11-20 GitHub 热门榜的简介翻译：每页 10 条。先用用户已配置的模型批量翻，失败再走 MyMemory。 */
+    ipcHost.handle("prompt:translate", async (_event, input: { texts?: string[] } = {}) => {
+      const source = (Array.isArray(input.texts) ? input.texts : []).slice(0, 10);
+      const texts = source.map((text) => String(text ?? "").slice(0, 800));
+      if (!texts.some((text) => text.trim())) return { ok: true, translations: texts };
+      const isChinese = (text: string) => /[\u4e00-\u9fff]/.test(text);
+
+      /* ① 当前模型（chat / responses 两种协议都支持；官方订阅账号没有可用的 API Key ⇒ 交给 MyMemory）。 */
+      try {
+        const model = await readCustomModel();
+        if (model?.baseUrl && model.model && model.enabled !== false && model.provider !== "openai-official") {
+          const apiKey = model.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
+          const base = model.baseUrl.trim().replace(/\/$/, "");
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 45_000);
+          try {
+            let raw = "";
+            if (model.wireApi === "responses") {
+              const response = await guardedFetch(`${base}/responses`, {
+                method: "POST",
+                signal: controller.signal,
+                headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: "Bearer " + apiKey } : {}) },
+                body: JSON.stringify({
+                  model: model.model,
+                  stream: false,
+                  instructions: TRANSLATE_SYSTEM_PROMPT,
+                  input: [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(texts) }] }],
+                }),
+              }, { timeoutMs: 45_000 });
+              if (response.ok) {
+                const payload = (await response.json().catch(() => null)) as {
+                  output_text?: string;
+                  output?: { content?: { text?: string }[] }[];
+                } | null;
+                raw = String(payload?.output_text
+                  ?? (Array.isArray(payload?.output) ? payload.output.flatMap((item) => item?.content ?? []).map((part) => part?.text ?? "").join("") : ""));
+              }
+            } else {
+              const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
+              const response = await guardedFetch(endpoint, {
+                method: "POST",
+                signal: controller.signal,
+                headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: "Bearer " + apiKey } : {}) },
+                body: JSON.stringify({
+                  model: model.model,
+                  temperature: 0.2,
+                  messages: [
+                    { role: "system", content: TRANSLATE_SYSTEM_PROMPT },
+                    { role: "user", content: JSON.stringify(texts) },
+                  ],
+                }),
+              }, { timeoutMs: 45_000 });
+              if (response.ok) {
+                const data = (await response.json().catch(() => null)) as { choices?: { message?: { content?: string } }[] } | null;
+                raw = String(data?.choices?.[0]?.message?.content ?? "");
+              }
+            }
+            const parsed = parseTranslatedArray(raw, texts.length);
+            if (parsed) return { ok: true, translations: parsed.map((value, index) => value.trim() || texts[index]) };
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+      } catch { /* 模型不可用 ⇒ 走 MyMemory */ }
+
+      /* ② MyMemory 免费接口（国内可直连，匿名额度有限；只翻当前页，渲染层会缓存结果）。 */
+      const output = texts.slice();
+      const jobs = texts.map(async (text, index) => {
+        if (!text.trim() || isChinese(text)) return;
+        try {
+          const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|zh-CN`;
+          const response = await guardedFetch(url, {}, { timeoutMs: 8_000 });
+          if (!response.ok) return;
+          const data = (await response.json().catch(() => null)) as { responseData?: { translatedText?: string } } | null;
+          const translated = String(data?.responseData?.translatedText ?? "").trim();
+          if (translated && !/MYMEMORY WARNING/i.test(translated)) output[index] = translated;
+        } catch { /* 保留原文 */ }
+      });
+      for (let index = 0; index < jobs.length; index += 3) await Promise.all(jobs.slice(index, index + 3));
+      const translatedAny = output.some((value, index) => value !== texts[index]);
+      return { ok: translatedAny, translations: output, ...(translatedAny ? {} : { error: "翻译服务暂不可用，当前显示原文" }) };
+    });
+
     ctx.effect(() => {
       ipcHost.removeHandler("prompt:enhance");
+      ipcHost.removeHandler("prompt:translate");
     });
   },
 });

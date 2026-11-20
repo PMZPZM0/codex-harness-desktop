@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 723,
+  "count": 724,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -3571,6 +3571,16 @@
       "invokeArgs": "{ text }",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "translateTexts",
+      "channel": "prompt:translate",
+      "paramsImpl": "input: { texts: string[] }",
+      "paramsDecl": "input: { texts: string[] }",
+      "returns": "Promise<{ ok: boolean; translations: string[]; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "GitHub 热门榜简介翻译：先用当前模型批量翻，失败再走 MyMemory"
     },
     {
       "name": "qqConnect",

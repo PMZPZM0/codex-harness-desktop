@@ -83,18 +83,6 @@ type MemoryLayersSnapshot = {
   paths: { user: string; projectDir: string; background: string; project: string; lessons: string; logDir: string };
   logs: { date: string; chars: number }[];
   budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number; over: boolean };
-  /** 记忆金字塔八层水位（L0–L7；needDistill = 已达 90% 蒸馏线） */
-  layers?: {
-    id: string;
-    name: string;
-    where: string;
-    budget: number;
-    used: number;
-    ratio: number | null;
-    needDistill: boolean;
-    writer: string;
-    sink: string;
-  }[];
   pendingDistill: { dates: string[]; chars: number };
   /** L2 纪律与记忆的分类计数（用户纠错 / 用户偏好 / 工作流-SOP / 任务经验） */
   lessonGroups?: { category: string; count: number; chars: number }[];
@@ -426,7 +414,7 @@ type MediaDeskSettingsPatch = Partial<MediaDeskSettings> & {
 };
 
 /* 输入框竖条 / 密码本 / 开发日记 / 扩展目录的类型统一定义在 src/lib/rail-ipc-types.d.ts（跨进程单一来源）。 */
-/** 写入记忆金字塔的层：user=L0 用户档案 · project=L1 项目记忆 · background=L3 项目背景 · lessons=L2 纪律 */
+  /** 写入记忆文件的分类：user=用户档案 · project=项目记忆 · background=项目背景 · lessons=纪律 */
 type MemoryLayerScope = "user" | "project" | "background" | "lessons";
 type FavoritesToMemoryResult = { ok: boolean; written: number; error?: string };
 
@@ -895,7 +883,7 @@ interface Window {
     testMemoryGateway(config: unknown): Promise<{ ok: boolean; latencyMs: number; health: any }>;
     /* 执行清理动作：⛔ 必须 confirm: true（UI 二次确认后才置位） */
     applyMemoryHygiene(input: { action: "purge-archive" | "prune-pool" | "tidy-lessons"; workspace?: string; confirm: true }): Promise<{ action: string; result: any }>;
-    planMemoryHygiene(workspace?: string): Promise<{ rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: "info" | "warn"; layer: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>;
+    planMemoryHygiene(workspace?: string): Promise<{ rules: { target: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: "info" | "warn"; target: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>;
     /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
     readMemoryContext(workspace?: string, includeWorkspace?: boolean, threadId?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
@@ -1061,6 +1049,8 @@ interface Window {
     ponytailModeGet(): Promise<string>;
     ponytailModeSet(mode: string): Promise<{ mode: string }>;
     enhancePrompt(text: string): Promise<{ ok: boolean; text?: string; error?: string }>;
+    /* GitHub 热门榜简介翻译：先用当前模型批量翻，失败再走 MyMemory */
+    translateTexts(input: { texts: string[] }): Promise<{ ok: boolean; translations: string[]; error?: string }>;
     qqConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
     qqLogout(): Promise<{ ok: boolean }>;
     qqQrCancel(): Promise<{ ok: boolean }>;

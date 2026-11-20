@@ -102,4 +102,6 @@
 @import "./styles/66-async-run-feedback" layer(components);
 /* 11-18：装饰图标中性化（放在 59-motion 之前 —— 守卫【motion】要求 59-motion 恒为最后一条）。 */
 @import "./styles/67-icon-neutral" layer(components);
+/* 11-20 设置 → 发现 → GitHub 热门榜单（日/周/月 × 10 页） */
+@import "./styles/68-github-trending" layer(components);
 @import "./styles/59-motion" layer(components);

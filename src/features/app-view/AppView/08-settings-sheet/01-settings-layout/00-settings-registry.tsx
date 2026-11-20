@@ -24,6 +24,7 @@ import { memoryContentPages } from "./pages/memory-content";
 import { automationAgentsPages } from "./pages/automation-agents";
 import { dataPages } from "./pages/data";
 import { devPages } from "./pages/dev";
+import { discoverPages } from "./pages/discover";
 import { teamPages } from "./pages/team";
 
 export type { SettingsPageEntry } from "./types";
@@ -38,6 +39,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     ...automationAgentsPages(app),
     ...dataPages(app),
     ...devPages(app),
+    ...discoverPages(app),
     ...teamPages(app),
   };
 }
