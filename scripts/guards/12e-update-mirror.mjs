@@ -100,7 +100,6 @@ if (IS_PPCODE) {
 if (!IS_PPCODE) {
   const pkg = read("package.json");
   const ipc = codeOnly(read("electron/features/updates-ipc.ts"));
-  const buildWin = read(".github/workflows/build-win.yml");
   const release = read(".github/workflows/release.yml");
   ok(/"electron-updater"/.test(pkg) && /"provider": "generic"/.test(pkg) && /"artifactName": "Codex\.Harness\.Desktop-\$\{version\}-win-\$\{arch\}/.test(pkg),
     "打包配置含 electron-updater 的 publish 元数据 + 与 Release 一致的 Windows 资产名");
@@ -113,8 +112,8 @@ if (!IS_PPCODE) {
     "⛔ 差分链已整体删除（不许再出现 electron-updater 下载器 / feed / tryDifferential）");
   ok(/export async function downloadUpdate\b/.test(updates) && /await downloadUpdate\(url/.test(ipc),
     "更新只剩一条路：镜像序下载完整安装包（downloadUpdate）");
-  ok(/\.exe\.blockmap/.test(buildWin) && /latest\.yml/.test(buildWin) && /\.exe\.blockmap/.test(release) && /latest\.yml/.test(release),
-    "发布流水线同时上传 exe / .exe.blockmap / latest.yml（缺任一则客户端只能整包）");
+  ok(/pick artifacts\/win-x64\s+'\*\.exe'/.test(release) && /pick_soft artifacts\/win-x64\s+'\*\.exe\.blockmap'/.test(release),
+    "发布侧只把 exe 当必需资产；blockmap / latest.yml 是软挑（客户端已不用 electron-updater，缺了不阻断）");
 }
 
 console.log(`\n【update-mirror】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

@@ -102,19 +102,17 @@ jobs:
           }
 
           pick artifacts/win-x64   '*.exe' "Codex.Harness.Desktop-${VERSION}-win-x64.exe"
-          # 10-25 NSIS 差分更新：blockmap 与 latest.yml 必须跟安装包一起发；
-          # 缺任何一个，客户端都会自动回退到完整包（不会坏，但没有增量效果）。
-          pick artifacts/win-x64   '*.exe.blockmap' "Codex.Harness.Desktop-${VERSION}-win-x64.exe.blockmap"
+          # 11-20：更新链只剩完整包（客户端不再用 electron-updater）⇒ blockmap 与 latest.yml
+          # 只是 electron-builder 的默认产物，顺手带上；⛔ **缺失不再阻断发布**（客户端不读它们）。
+          pick_soft artifacts/win-x64 '*.exe.blockmap' "Codex.Harness.Desktop-${VERSION}-win-x64.exe.blockmap"
           LATEST=$(find artifacts/win-x64 -type f -name 'latest.yml' -print -quit)
-          if [ -z "${LATEST}" ]; then
-            echo "::error::缺少 latest.yml（electron-builder 未生成差分更新元数据）"
-            exit 1
-          fi
-          cp "${LATEST}" dist-assets/latest.yml
-          if ! grep -q "path: Codex.Harness.Desktop-${VERSION}-win-x64.exe" dist-assets/latest.yml; then
-            echo "::error::latest.yml 的 path 与最终资产名不一致："
-            grep -n "path:" dist-assets/latest.yml || true
-            exit 1
+          if [ -n "${LATEST}" ]; then
+            cp "${LATEST}" dist-assets/latest.yml
+            if ! grep -q "path: Codex.Harness.Desktop-${VERSION}-win-x64.exe" dist-assets/latest.yml; then
+              echo "::warning::latest.yml 的 path 与最终资产名不一致（客户端已不读它，不阻断发布）"
+            fi
+          else
+            echo "::warning::没有 latest.yml（客户端已不读它，不阻断发布）"
           fi
           # mac 两件改成 pick_soft：mac job 默认被跳过（见 jobs.mac 的 if），
           # 硬 pick 会在 find 到 0 个时 ::error:: 退出，把已经好的 Windows 包一起挡在门外。
