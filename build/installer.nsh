@@ -12,10 +12,18 @@
 ;   ⚠️ 若应用是**以管理员权限**跑的，非提权安装器仍杀不动 → 右键「以管理员身份运行」安装器。
 !macro preInit
   DetailPrint "正在关闭已运行的 Codex Harness Desktop…"
+  ; 11-20 用户实测「点重启 → 安装窗刚出来就闪退 → 再也没装上」：
+  ;   一次 taskkill + 800ms 不够 —— 主进程被 /F 杀掉后，引擎子进程树（codex / 语音 worker /
+  ;   远程隧道）退出要几百毫秒，文件仍被占用，覆盖安装直接失败（安装器静默退出，用户只看到闪退）。
+  ;   ⇒ 连杀两次、中间留出树退出的时间，再等 1.2s 才进解包阶段。
   nsExec::ExecToStack 'taskkill /F /T /IM "Codex Harness Desktop.exe"'
   Pop $0
   Pop $1
-  Sleep 800
+  Sleep 400
+  nsExec::ExecToStack 'taskkill /F /T /IM "Codex Harness Desktop.exe"'
+  Pop $0
+  Pop $1
+  Sleep 1200
 !macroend
 
 !macro customInit
@@ -24,13 +32,24 @@
   ; 并存成两份（桌面两个图标、更新后打开的还是旧版）。
   ;   · 管理员运行 ⇒ 原地覆盖旧的全机目录；
   ;   · 非管理员 ⇒ 明确提示先卸载旧版（不静默装第二份）。
+  ;
+  ; ⛔⛔ 11-20 用户实测「点重启就闪退、再无法更新」的第二个阻塞点就在这里：
+  ;   更新器发起的覆盖安装是**静默**的（--updated /S），没人看得见 MessageBox；
+  ;   而这里 MessageBox 之后直接 Quit ⇒ 安装器自己退出、版本没变，用户只看到应用闪退，
+  ;   下次启动还会被判成「上次安装失败」。⇒ 静默模式下**不许拦路**，改为继续装到用户目录
+  ;   （宁可有旧版残留，也不能让更新整块失败）；交互式安装仍保留提示 + 退出。
   ReadRegStr $0 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
   ${If} $0 != ""
     ${If} ${UAC_IsAdmin}
       StrCpy $INSTDIR $0
     ${Else}
-      MessageBox MB_ICONEXCLAMATION|MB_OK "检测到旧版是按「所有用户」安装的：$0$\r$\n请先卸载旧版，或以管理员身份运行本次安装，避免出现两份安装。"
-      Quit
+      ${If} ${Silent}
+        ; ⛔ 静默更新（--updated /S）：跳过提示直接装到当前用户目录 —— 见上面那条 11-20 的说明。
+        DetailPrint "静默更新：检测到旧版为全机安装（$0），本次按当前用户安装"
+      ${Else}
+        MessageBox MB_ICONEXCLAMATION|MB_OK "检测到旧版是按「所有用户」安装的：$0$\r$\n请先卸载旧版，或以管理员身份运行本次安装，避免出现两份安装。"
+        Quit
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 

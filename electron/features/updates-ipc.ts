@@ -20,7 +20,7 @@
  */
 import { app, shell } from "electron";
 import path from "node:path";
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -79,6 +79,15 @@ export const updatesFeature = defineFeature<null>({
      * ⛔ 路径惰性取（本域早于 app.setPath("userData") 注册）。
      * ══════════════════════════════════════════════════════════════════════ */
     const pendingFile = () => path.join(app.getPath("userData"), "update-install-pending.json");
+    /** 安装链落盘日志（11-20 用户实测「点重启就闪退、再无法更新」）：
+     *  主进程一退，控制台什么都没留下，只能靠猜。这里把安装的每一步写进
+     *  `<userData>/update-install.log`，下次出问题直接看现场。
+     *  ⛔ 只写不读、失败静默 —— 日志绝不能反过来挡住安装。 */
+    const installLog = (line: string): void => {
+      try {
+        appendFileSync(path.join(app.getPath("userData"), "update-install.log"), `[${new Date().toISOString()}] ${line}\n`);
+      } catch { /* 写不了就跳过 */ }
+    };
     const readPendingInstall = (): { version: string; at: number } | null => {
       try {
         const raw = JSON.parse(readFileSync(pendingFile(), "utf8"));
@@ -106,6 +115,10 @@ export const updatesFeature = defineFeature<null>({
         clearPendingInstall();
         return null;
       }
+      /* ⛔⛔ 11-20 用户实测「安装闪退，再就无法更新了」：原来这里判定失败后**不清标记** ⇒
+         之后每次启动都报一次「上次安装失败」，更新状态机把自动安装永久挂起，看起来就是更新功能死了。
+         ⇒ 失败只报一次，立刻清掉；下一次点「检查更新」会重新走完整流程（下载 → 安装）。 */
+      clearPendingInstall();
       return { ...pending, failed: true };
     };
 
@@ -299,19 +312,32 @@ export const updatesFeature = defineFeature<null>({
       /* ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。 */
       await new Promise((r) => setTimeout(r, 120));
       const targetVersion = String(lastUpdateInfo?.version ?? "");
+      installLog(`restart-install 开始：target=${targetVersion} current=${app.getVersion()} differential=${hasPendingDifferential()} installer=${lastVerifiedUpdatePath}`);
       /* 安装窗口：渲染层据此显示「正在安装更新，应用即将重启」全屏遮罩。 */
       writePendingInstall(targetVersion);
       sendToWindow("updates:download-state", { active: true, phase: "installing", percent: 1, version: targetVersion });
+      /* ⛔⛔ 11-20 用户实测「点重启 → 安装窗刚出来就闪退 → 再也装不上」：
+         `quitAndInstall` 内部是「spawn 安装器 + setImmediate(app.quit)」——几毫秒后主进程就退了。
+         原来把 `showUpdateSplash()` 写在它**后面** ⇒ 小窗还没来得及拉起，进程已经没了
+         （用户原话「你做的更新弹窗压根没有」）。⇒ 顺序必须反过来：
+         先拉起**独立进程**的安装小窗（PowerShell），再让 updater 去装并退出。 */
       // ① 差分就绪：交给 updater 静默装 + 自启（它会自己 quit，⛔ 这里不许再 app.quit()）。
       if (hasPendingDifferential()) {
         try {
-          quitAndInstallDifferential();
-          /* 应用会立刻退出；小窗独立于本进程，负责安装期间的「正在安装/勿重复启动」提醒。 */
           showUpdateSplash(targetVersion);
+          installLog("differential：安装小窗已拉起，调用 quitAndInstall（应用即将退出）");
+          quitAndInstallDifferential();
           return { ok: true, via: "differential" };
         } catch (error) {
-          // updater 装不了（极少见：pending 被清 / 状态没就绪）→ 回退到拉起安装包，不静默吞。
-          console.warn("[updates] 差分静默安装失败，回退拉起安装包：", (error as Error)?.message ?? error);
+          /* ⛔⛔ 这里**不许**回退到 spawn 安装包：updater 可能已经把第一个安装器拉起来了，
+             再 spawn 第二个 ⇒ 两个 NSIS 实例抢同一个 $INSTDIR，前一个删文件、后一个写不进去，
+             症状正是「安装窗闪一下、版本没变」。失败就如实回报，让用户重试一次，⛔ 不制造双安装。 */
+          const msg = (error as Error)?.message ?? String(error);
+          console.warn("[updates] 差分静默安装没能启动（不回落 spawn）:", msg);
+          installLog(`differential：失败 ${msg}`);
+          clearPendingInstall();
+          sendToWindow("updates:download-state", { active: false, phase: "installing", percent: 0, version: targetVersion });
+          return { ok: false, error: `differential_install_failed: ${msg}` };
         }
       }
       try {
@@ -321,6 +347,7 @@ export const updatesFeature = defineFeature<null>({
          它才会在装完后**自动拉起新版本**（electron-updater 自己 doInstall 时传的也是这两个）。 */
         // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
         spawn(lastVerifiedUpdatePath, ["--updated", "/S"], { detached: true, stdio: "ignore" }).unref();
+        installLog(`installer：已 spawn ${lastVerifiedUpdatePath} --updated /S`);
         /* 安装器静默跑；这个小窗是用户唯一能看到的进度提醒（装完自动关）。 */
         showUpdateSplash(targetVersion);
         // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
@@ -331,6 +358,7 @@ export const updatesFeature = defineFeature<null>({
         return { ok: true, via: "installer" };
       } catch (err: any) {
         /* 安装没起来：清掉 pending 标记并收起遮罩，否则下次启动会误判「上次安装失败」。 */
+        installLog(`installer：spawn 失败 ${err?.message || String(err)}`);
         clearPendingInstall();
         sendToWindow("updates:download-state", { active: false, phase: "installing", percent: 0, version: targetVersion });
         return { ok: false, error: err?.message || String(err) };

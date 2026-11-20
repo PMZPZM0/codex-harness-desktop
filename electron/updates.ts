@@ -428,11 +428,14 @@ export async function downloadUpdateDifferential(
   const releaseBase = `https://github.com/${GITHUB_REPO}/releases/download/${String(info.tag ?? `v${version}`)}`;
   const { autoUpdater } = await import("electron-updater");
   autoUpdater.autoDownload = false;
-  /* ⛔ 11-19 审查发现：这里原本是 false，等于「下载完只等用户点重启安装」。
-     用户中途关掉应用 / 重启，`differentialUpdater` 这个内存句柄就没了，
-     下次点安装只能走 spawn 老路（不经过 updater 的安装器）⇒ 配对缓存永远写不回去 ⇒ 每版整包。
-     改为 true：即使不点按钮，退出时也由 updater 自己装完并写回 installer.exe + current.blockmap。 */
-  autoUpdater.autoInstallOnAppQuit = true;
+  /* ⛔⛔ 11-20 回滚 11-19 的改动：这里曾改成 true（想「不点按钮、退出时也装完」），代价实测太大 ——
+     true 会让 electron-updater 在**每一次 app quit**（含用户正常关应用）时自己调一次 quitAndInstall，
+     于是「关应用」也变成一次静默安装；一旦那次安装失败（文件占用 / 全机版残留），
+     用户就只看到「应用闪退、版本没变」，而且 update-install-pending.json 残留会让下次启动判成
+     「上次安装失败」，更新状态机把自动安装挂起 —— 用户原话「再就无法更新了」。
+     ⇒ 改回 false：只在用户显式点「立即重启」时装。配对缓存照样写回（quitAndInstall 走的就是 updater
+        自己的安装器，与 autoInstallOnAppQuit 无关）。 */
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowDowngrade = false;
   let lastError: unknown = new Error("differential_failed");
   for (const feedUrl of mirrorCandidates(releaseBase)) {
