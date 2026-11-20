@@ -1998,10 +1998,11 @@ html[data-ui-font="large"] .action-content pre {
 .entity-tag-save:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── 11-05 用户令：名称左、标签居中；多标签时点标签旁的小刷新图标切换 ───────────── */
-/* 会话名与项目名同列：项目头 = 8(head)+4(toggle)+12(chevron)+6+13(folder)+6；
-   会话行自带 10 左内距 ⇒ 39px。⛔ 15-queued-messages 的 `.project-item-body` 用 shorthand
-   写左内距 0，这里用更高特异度（.project-list ...）覆盖，别去改那份并行在途的文件。 */
-.project-list .project-item-body { padding-left: 39px; }
+/* 11-19 用户令（截图）：「下面的会话选项也靠过来对齐项目名字」。
+   项目名左缘实测 42px（head 12 + toggle 1 + folder 13 + gap 6 + 列表内边距）；
+   会话行内部还自带 20px（容器 + 按钮）⇒ 这里给 22px 才能让会话名同样落在 42px。
+   ⛔ 15-queued-messages 的 `.project-item-body` 用 shorthand 写左内距 0，这里用更高特异度覆盖。 */
+.project-list .project-item-body { padding-left: 22px; }
 
 /* 11-17 用户令：一键隐藏侧栏标签（工具条里的「标签」开关）；只藏显示，不改数据。 */
 .sidebar.hide-tags .thread-row-tags,
