@@ -1,7 +1,9 @@
 /**
  * MoeKoe Music 纯逻辑（10-20）：搜索/取流响应归一化、安装包选择、镜像 URL。
  * MoeKoe 的本地 API = KuGouMusicApi（默认 127.0.0.1:6521）；⛔ 本文件不 import electron，测试直接 import。
+ * ⛔ 11-21：镜像表来自 `src/lib/github-mirror.mjs`（纯 JS，不碰 electron）⇒ 这条约束仍然成立。
  */
+import { GH_MIRROR_PREFIXES } from "../src/lib/github-mirror.mjs";
 
 export type MoeKoeSong = {
   hash: string;
@@ -24,13 +26,16 @@ export type MoeKoeAsset = { name: string; url: string; size: number };
  * 官方下载链路（与 https://music.moekoe.cn/download.html 一致）：
  * 页面勾选「我是来自中国大陆（使用镜像加速下载）」时，链接就是
  * `https://gh-proxy.com/` + GitHub release 资产地址。
- * ⛔ 11-21 用户令「所有 GitHub 镜像统一用最快的通道」：`gh-proxy.org` 实测
- *   0.84~1.56MB/s（v0.0.76 资产 8MB Range）比 gh-proxy.com 的 0.37MB/s 快 3~4 倍，
- *   提到第一档；后面仍是官方用的 gh-proxy.com → ghfast 兜底 → 直连。
+ * ⛔ 11-21 用户令「所有 GitHub 镜像统一用最快的通道」：这里**不再自留一份表**，
+ *   直接用 `GH_MIRROR_PREFIXES`（`src/lib/github-mirror.mjs` 单一真相源），
+ *   只把顺序改成「镜像优先」（音乐安装包直连基本拉不动，官方页面本身也是镜像优先）。
  */
 export const MOEKOE_OFFICIAL_DOWNLOAD_PAGE = "https://music.moekoe.cn/download.html";
 export const MOEKOE_RELEASE_API = "https://api.github.com/repos/iAJue/MoeKoeMusic/releases/latest";
-export const MOEKOE_MIRRORS = ["https://gh-proxy.org/", "https://gh-proxy.com/", "https://ghfast.top/", ""] as const;
+export const MOEKOE_MIRRORS = [
+  ...GH_MIRROR_PREFIXES.filter((prefix) => prefix.length > 0),
+  "", // 直连垫底
+] as const;
 
 function text(value: unknown): string {
   return String(value ?? "").trim();

@@ -6,7 +6,6 @@
  */
 import { app, dialog, globalShortcut, shell, systemPreferences } from "electron";
 import { existsSync } from "node:fs";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { ALL_VOICE_REPOS, EMOTIVOICE_DIR, emotivoiceReady, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { modelsSizeOnDisk } from "../../voice/model-store";
@@ -20,6 +19,7 @@ import {
   type VoiceResourceKind,
 } from "../../voice/voice-settings";
 import { sendToWindow } from "../window-bus";
+import { purgeDirWithProgress } from "../../voice/model-purge";
 import type { registerVoiceIpc1 } from "./01-voice-hotkey-models";
 
 /**
@@ -121,7 +121,7 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
     //    否则 Windows 上 fs.rm 会 EBUSY（既有 models-uninstall 已踩过，用户看到的是
     //    「卸载失败但也没提示」）。停用/启用不走删除，但为一致性也在这里统一处理。
     const enabled = input?.enabled !== false;
-    if (!enabled) svc().disposeIdleWorkers();
+    if (!enabled) await svc().disposeIdleWorkers();
     const settings = setVoiceResourceEnabled(app.getPath("userData"), kind, enabled);
     // 唤醒是常驻监听：KWS 的启停必须立刻生效，否则「停了还在后台听着」（隐私问题，不只是体验）。
     if (kind === "kws" && svc().wakeListening()) {
@@ -147,10 +147,16 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
     if (dir !== root && !dir.startsWith(root + path.sep)) {
       return { ok: false, error: "目标路径不在语音模型目录内，已取消删除" };
     }
-    // ★ 必须先销毁工作线程：它们持有已加载的 onnx 文件句柄，Windows 上会让 fs.rm 报 EBUSY
-    svc().disposeIdleWorkers();
+    // ★ 必须先释放工作线程（要 await）：它们持有已加载的 onnx 文件句柄，Windows 上会让删除报 EBUSY
+    await svc().releaseModelFiles();
     try {
-      await fs.rm(dir, { recursive: true, force: true });
+      const result = await purgeDirWithProgress(dir, (progress) =>
+        sendToWindow("voice:event", { type: "delete", target: kind, ...progress }),
+      );
+      if (!result.ok) {
+        const preview = result.failed.slice(0, 2).map((item) => `${path.basename(item.path)}（${item.reason}）`).join("；");
+        return { ok: false, remaining: result.failed.length, error: `${result.failed.length} 个文件没删掉：${preview} —— 重启应用后再试` };
+      }
     } catch (e: any) {
       return { ok: false, error: `删除失败：${e?.message ?? e}` };
     }
@@ -187,12 +193,27 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
     if (!modelsRoot() || target !== path.resolve(expected) || target === path.resolve(userData)) {
       return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
     }
-    // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉。
-    // ★ 必须先销毁「挂断后保活」的工作线程：它们持有已加载的 onnx 文件句柄，
-    //   Windows 上会让 fs.rm 报 EBUSY（表现为「卸载失败但也没提示」）。
-    svc().disposeIdleWorkers();
-    await fs.rm(modelsRoot(), { recursive: true, force: true });
+    /* 卸载 = 逐个删掉 voice-models 下的文件（含 .part）；下次再点下载会重新拉。
+       ⛔⛔ 11-21 修三件事（用户实测「卸载不了，显示卸载失败」「卸载没有进度」）：
+         ① `svc().releaseModelFiles()` **必须 await** —— 工作线程持有 onnx 句柄，不释放就 EBUSY；
+         ② 不再用 `fs.rm(recursive)`：它一遇 EBUSY 整次抛错，前面删掉的也白删、还看不出是哪个文件；
+         ③ 逐文件删 + 字节进度推给界面（474MB 闷头删十几秒，界面一动不动同样算 bug）。 */
+    await svc().releaseModelFiles();
+    const emitDelete = (progress: { percent: number; message: string }) =>
+      sendToWindow("voice:event", { type: "delete", target: "all", ...progress });
+    const result = await purgeDirWithProgress(modelsRoot(), emitDelete);
     await svc().refreshModelsReady();
+    if (!result.ok) {
+      const preview = result.failed.slice(0, 3).map((item) => `${path.basename(item.path)}（${item.reason}）`).join("；");
+      const more = result.failed.length > 3 ? ` 等 ${result.failed.length} 个` : "";
+      sendToWindow("voice:event", { type: "delete", target: "all", percent: 100, message: "部分文件未删除" });
+      return {
+        ok: false,
+        remaining: result.failed.length,
+        error: `${result.failed.length} 个文件没删掉：${preview}${more} —— 多为语音进程仍占用，重启应用后再点一次卸载`,
+      };
+    }
+    sendToWindow("voice:event", { type: "delete", target: "all", percent: 100, message: "已删除完成" });
     return { ok: true };
   });
 

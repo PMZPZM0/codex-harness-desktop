@@ -22,6 +22,7 @@ import net from "node:net";
 import { externalEngineById, VOICE_EXTERNAL_ENGINES } from "../../src/lib/voice-external-engines.mjs";
 import type { VoiceExternalEngine } from "../../src/lib/voice-external-engines.mjs";
 import { toolsRoot } from "../toolchain";
+import { mirrorCandidates } from "../gh-mirror";
 import { listBundledVoices, readBuiltinVoice, readBundledVoice } from "./builtin-voices";
 
 type InstalledInfo = { dir: string; adapter: string; installedAt: number; version?: string };
@@ -296,6 +297,67 @@ function extractArchive(archive: string, dest: string, signal: AbortSignal, onPr
   });
 }
 
+/* ── 国内镜像（11-21 用户实测「CosyVoice 装到 15% 就卡死」）────────────────────────
+ * ⛔⛔ 卡死真因不是慢，是**两条都错**：
+ *   ① `--index-url https://download.pytorch.org/whl/cu121` 是 pytorch 官方源，国内基本
+ *      拉不动（2–3GB 的 torch+cu121）。而依赖走的是阿里云 pypi —— 只有 torch 一半没走镜像，
+ *      用户看到的就是「一直在 15%」。
+ *   ② uv 装 torch 十几分钟不吐进度，界面百分比不动 ⇒ 无论快慢都像死了。
+ * 阿里云的 pytorch-wheels 是**平铺目录**（不是 PEP503 索引，没有 /torch/ 子路径）
+ * ⇒ 只能用 `--find-links`，用 `--index-url` 会 404。实测 cu121 下有
+ * `torch-2.3.1+cu121-cp310-cp310-win_amd64.whl`；PEP 440 规定 `==2.3.1` 匹配该 local 版本。
+ */
+const PYPI_MIRROR = "https://mirrors.aliyun.com/pypi/simple/";
+const TORCH_MIRROR_BASE = "https://mirrors.aliyun.com/pytorch-wheels";
+
+/** 把 `cu121` / `--torch-backend=cu121` 统一成目录名。 */
+function torchTagOf(backend: string): string {
+  return String(backend ?? "").replace(/^--torch-backend=/, "").replace(/[^a-z0-9]/gi, "") || "cu121";
+}
+
+/** 秒 → 「3 分 20 秒」。 */
+function fmtElapsed(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  return sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
+}
+
+/**
+ * 长任务心跳：每 5 秒把「已用时间 + 最近一行输出」推给界面。
+ * ⛔ 只对**耗时以分钟计且没有自然进度**的步骤用（装 torch / 装依赖 / 建环境），
+ *    有字节进度的下载别套这层（那会把真实百分比刷没）。
+ */
+async function withHeartbeat(label: string, onBeat: (message: string) => void, task: (note: (line: string) => void) => Promise<void>): Promise<void> {
+  const started = Date.now();
+  let last = "";
+  const timer = setInterval(() => {
+    onBeat(`${label}（已用 ${fmtElapsed(Date.now() - started)}）${last ? `：${last}` : "…"}`);
+  }, 5000);
+  (timer as unknown as { unref?: () => void }).unref?.();
+  try {
+    await task((line) => { if (line) last = line.replace(/\s+/g, " ").slice(0, 70); });
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+/**
+ * 装 PyTorch：**先走阿里云镜像，失败才回官方 CUDA 源**。
+ * 依赖（numpy/typing-extensions 等）仍走阿里云 pypi，别让它们掉回官方源。
+ */
+async function installTorch(uv: string, py: string, backend: string, specs: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
+  const tag = torchTagOf(backend);
+  const base = ["pip", "install", "--python", py, "--default-index", PYPI_MIRROR];
+  try {
+    await runCommand(uv, [...base, "--find-links", `${TORCH_MIRROR_BASE}/${tag}/`, ...specs], cwd, signal, onLine);
+    return;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    /* 镜像没有这个 CUDA 档 / 该轮子时才回官方源，别一上来就让国内网络去啃 pytorch.org。 */
+    onLine?.(`镜像源未命中 ${tag}，回退官方 CUDA 源（会明显变慢）`);
+  }
+  await runCommand(uv, [...base, `--torch-backend=${tag}`, ...specs], cwd, signal, onLine);
+}
+
 /** 跑一个命令并等它结束（安装步骤用；stdout/stderr 只留尾部）。 */
 function runCommand(command: string, args: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -357,7 +419,7 @@ async function installGptArchive(entry: VoiceExternalEngine, install: any, signa
   mkdirSync(appDir, { recursive: true });
   const archive = join(dir, `package.${install.format}`);
   emit({ id: entry.id, kind: "download", percent: 0, message: "下载 GPT-SoVITS 便携包（8.2GB）…" });
-  await download(install.url, archive, Number(install.bytes ?? 0), (ratio) => {
+  await downloadWithMirrors(install.url, archive, Number(install.bytes ?? 0), (ratio) => {
     emit({ id: entry.id, kind: "download", percent: ratio * 0.9, message: `下载 GPT-SoVITS 便携包 ${(ratio * 100).toFixed(0)}%` });
   }, signal);
   emit({ id: entry.id, kind: "download", percent: 0.9, message: "解压中（约 1–3 分钟）…" });
@@ -401,7 +463,7 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
   mkdirSync(appDir, { recursive: true });
   const zip = join(dir, "source.zip");
   emit({ id: entry.id, kind: "download", percent: 0, message: "下载 CosyVoice 源码…" });
-  await download(String(install.zipUrl), zip, 0, (ratio) => emit({ id: entry.id, kind: "download", percent: ratio * 0.05, message: "下载源码…" }), signal);
+  await downloadWithMirrors(String(install.zipUrl), zip, 0, (ratio) => emit({ id: entry.id, kind: "download", percent: ratio * 0.05, message: "下载源码…" }), signal);
   await extractArchive(zip, srcDir, signal, () => { /* 源码小，不报细进度 */ });
   const extractedRoot = findDirWith(srcDir, "requirements.txt", 3);
   if (!extractedRoot) throw new Error("源码包里没有 requirements.txt");
@@ -416,7 +478,7 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
   if (!existsSync(matchaDir) || !readdirSync(matchaDir).length) {
     const mzip = join(dir, "matcha.zip");
     emit({ id: entry.id, kind: "download", percent: 0.06, message: "下载 Matcha-TTS 子模块…" });
-    await download("https://codeload.github.com/shivammehta25/Matcha-TTS/zip/refs/heads/main", mzip, 0, () => { /* 忽略细进度 */ }, signal);
+    await downloadWithMirrors("https://codeload.github.com/shivammehta25/Matcha-TTS/zip/refs/heads/main", mzip, 0, () => { /* 忽略细进度 */ }, signal);
     await extractArchive(mzip, join(root, "third_party"), signal, () => { /* 忽略 */ });
     const extracted = findDirWith(join(root, "third_party"), "setup.py", 2);
     if (extracted && extracted !== matchaDir) {
@@ -428,9 +490,19 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
   const venv = join(root, ".venv");
   const py = join(venv, "Scripts", "python.exe");
   emit({ id: entry.id, kind: "download", percent: 0.1, message: "创建 Python 3.10 环境…" });
-  if (!existsSync(py)) await runCommand(uv, ["venv", "--python", "3.10", venv], root, signal);
-  emit({ id: entry.id, kind: "download", percent: 0.15, message: "安装 PyTorch（CUDA 12.1，约 2–3GB）…" });
-  await runCommand(uv, ["pip", "install", "--python", py, "torch==2.3.1", "torchaudio==2.3.1", "--index-url", "https://download.pytorch.org/whl/cu121"], root, signal);
+  if (!existsSync(py)) {
+    await withHeartbeat(
+      "创建 Python 3.10 环境",
+      (message) => emit({ id: entry.id, kind: "download", percent: 0.1, message }),
+      (note) => runCommand(uv, ["venv", "--python", "3.10", venv], root, signal, note),
+    );
+  }
+  emit({ id: entry.id, kind: "download", percent: 0.15, message: "安装 PyTorch（CUDA 12.1，约 2–3GB，走阿里云镜像）…" });
+  await withHeartbeat(
+    "安装 PyTorch（CUDA 12.1，约 2–3GB）",
+    (message) => emit({ id: entry.id, kind: "download", percent: 0.15, message }),
+    (note) => installTorch(uv, py, "cu121", ["torch==2.3.1", "torchaudio==2.3.1"], root, signal, note),
+  );
   emit({ id: entry.id, kind: "download", percent: 0.35, message: "安装 CosyVoice 依赖（约 5–10 分钟）…" });
   /* ⛔ 上游 requirements 里两个 --extra-index-url 会让 uv 只认第一个索引；Windows 的
      onnxruntime==1.18.0 不在那个 CUDA 源里，整份依赖直接解不出来。
@@ -441,12 +513,22 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
     .join("\n");
   const localRequirements = join(root, "harness_requirements.txt");
   writeFileSync(localRequirements, requirements, "utf8");
-  await runCommand(uv, ["pip", "install", "--python", py, "-r", localRequirements, "--index-url", "https://mirrors.aliyun.com/pypi/simple/"], root, signal);
+  await withHeartbeat(
+    "安装 CosyVoice 依赖（约 5–10 分钟）",
+    (message) => emit({ id: entry.id, kind: "download", percent: 0.35, message }),
+    (note) => runCommand(uv, ["pip", "install", "--python", py, "-r", localRequirements, "--index-url", PYPI_MIRROR], root, signal, note),
+  );
   /* ⛔ frontend.py 硬 import whisper（TTS 其实不用），但 whisper 是 sdist、构建要 pkg_resources。
      setuptools 69 仍带 pkg_resources；装好后用 --no-build-isolation 现场构建一次。 */
   emit({ id: entry.id, kind: "download", percent: 0.52, message: "补装 whisper 运行时…" });
-  await runCommand(uv, ["pip", "install", "--python", py, "setuptools==69.5.1", "--index-url", "https://mirrors.aliyun.com/pypi/simple/"], root, signal);
-  await runCommand(uv, ["pip", "install", "--python", py, "--no-build-isolation", "openai-whisper==20231117", "--index-url", "https://mirrors.aliyun.com/pypi/simple/"], root, signal);
+  await withHeartbeat(
+    "补装 whisper 运行时",
+    (message) => emit({ id: entry.id, kind: "download", percent: 0.52, message }),
+    async (note) => {
+      await runCommand(uv, ["pip", "install", "--python", py, "setuptools==69.5.1", "--index-url", PYPI_MIRROR], root, signal, note);
+      await runCommand(uv, ["pip", "install", "--python", py, "--no-build-isolation", "openai-whisper==20231117", "--index-url", PYPI_MIRROR], root, signal, note);
+    },
+  );
   const modelDir = join(root, "pretrained_models", "Fun-CosyVoice3-0.5B");
   const files: string[] = Array.isArray(install.modelFiles) ? install.modelFiles : [];
   for (let i = 0; i < files.length; i++) {
@@ -513,6 +595,25 @@ async function collectModelFiles(root: string, install: any): Promise<{ url: str
   return out;
 }
 
+/** 下载一个可能来自 GitHub 的文件：**先按镜像序逐个试**，非 GitHub 地址原样走一次。
+ *  ⛔ 这里不能直接 `download(url)`：CosyVoice 源码与 Matcha-TTS 子模块都是 codeload.github.com，
+ *     国内直连经常几分钟拉不动（11-21 用户实测卡死）。镜像序来自 `mirrorCandidates`（单一真相源）。 */
+async function downloadWithMirrors(url: string, dest: string, expectedBytes: number, onProgress: (ratio: number) => void, signal: AbortSignal): Promise<void> {
+  const candidates = mirrorCandidates(url);
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    if (signal.aborted) throw new Error("已取消");
+    try {
+      await download(candidate, dest, expectedBytes, onProgress, signal);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (signal.aborted) throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`下载失败：${url}`);
+}
+
 /** 逐个下载模型文件（按字节算总进度；未知大小时退化为按文件数）。 */
 async function downloadModelFiles(entry: VoiceExternalEngine, install: any, root: string, signal: AbortSignal, from: number, span: number): Promise<void> {
   const files = await collectModelFiles(root, install);
@@ -535,7 +636,9 @@ async function downloadModelFiles(entry: VoiceExternalEngine, install: any, root
 
 /** 通用 Python 引擎安装：源码/包 → venv → CUDA torch → 依赖 → 模型 → 适配器。
  *  ⛔ 源码收敛到短路径 `app/`（Windows 260 字符上限，CosyVoice 实测过）。
- *  ⛔ 一律用 `--torch-backend=cuXXX` 让 uv 从 PyTorch 官方源解析，避免装成 CPU 版。 */
+ *  ⛔ torch 走 `installTorch`（阿里云 pytorch-wheels 镜像优先），⛔ 不再直接 `--index-url`
+ *     指 pytorch.org —— 11-21 用户实测「CosyVoice 卡在 15%」正是卡在那一步。
+ *     后续依赖解析仍带 `--torch-backend=cuXXX`，保证源码构建时不会把 CPU 版 torch 解进来。 */
 async function installPythonEngine(entry: VoiceExternalEngine, install: any, signal: AbortSignal): Promise<void> {
   const dir = engineDir(entry.id);
   const appDir = join(dir, "app");
@@ -544,7 +647,7 @@ async function installPythonEngine(entry: VoiceExternalEngine, install: any, sig
   if (install.zipUrl) {
     const zip = join(dir, "source.zip");
     emit({ id: entry.id, kind: "download", percent: 0, message: `下载 ${entry.name} 源码…` });
-    await download(String(install.zipUrl), zip, 0, (ratio) => emit({ id: entry.id, kind: "download", percent: ratio * 0.04, message: `下载源码 ${Math.round(ratio * 100)}%` }), signal);
+    await downloadWithMirrors(String(install.zipUrl), zip, 0, (ratio) => emit({ id: entry.id, kind: "download", percent: ratio * 0.04, message: `下载源码 ${Math.round(ratio * 100)}%` }), signal);
     await extractArchive(zip, srcDir, signal, () => { /* 源码小，不报细进度 */ });
     const extracted = findDirWith(srcDir, "pyproject.toml", 3);
     if (!extracted) throw new Error("源码包里没有找到 pyproject.toml（结构可能变了）");
@@ -558,16 +661,24 @@ async function installPythonEngine(entry: VoiceExternalEngine, install: any, sig
   const py = join(venv, "Scripts", "python.exe");
   emit({ id: entry.id, kind: "download", percent: 0.06, message: `创建 Python ${String(install.python ?? "3.10")} 环境…` });
   if (!existsSync(py)) {
-    await runCommand(uv, ["venv", "--python", String(install.python ?? "3.10"), venv], appDir, signal);
+    await withHeartbeat(
+      `创建 Python ${String(install.python ?? "3.10")} 环境`,
+      (message) => emit({ id: entry.id, kind: "download", percent: 0.06, message }),
+      (note) => runCommand(uv, ["venv", "--python", String(install.python ?? "3.10"), venv], appDir, signal, note),
+    );
     if (!existsSync(py)) throw new Error("Python 环境创建失败（uv 没下载到目标版本）");
   }
   const backend = `--torch-backend=${String(install.torchBackend ?? "cu128")}`;
-  emit({ id: entry.id, kind: "download", percent: 0.1, message: "安装 PyTorch（CUDA，约 2–4GB）…" });
+  emit({ id: entry.id, kind: "download", percent: 0.1, message: "安装 PyTorch（CUDA，约 2–4GB，走阿里云镜像）…" });
   /* ⛔ 版本必须按引擎来：Chatterbox 0.1.7 锁 torch==2.6.0，写死 2.8 会直接解不出依赖。 */
   const torchSpec = typeof install.torch === "string" && install.torch.trim()
     ? install.torch.trim().split(/\s+/)
     : ["torch==2.8.0", "torchaudio==2.8.0"];
-  await uvPip(uv, py, [backend, ...torchSpec], appDir, signal);
+  await withHeartbeat(
+    `安装 PyTorch（${torchTagOf(backend)}，约 2–4GB）`,
+    (message) => emit({ id: entry.id, kind: "download", percent: 0.1, message }),
+    (note) => installTorch(uv, py, backend, torchSpec, appDir, signal, note),
+  );
   /* ⛔ uv 的 venv 默认不带 setuptools：perth（Chatterbox 水印）与 whisper 构建都要 pkg_resources。 */
   await uvPip(uv, py, ["setuptools==69.5.1"], appDir, signal);
   if (install.editable) {
@@ -576,14 +687,18 @@ async function installPythonEngine(entry: VoiceExternalEngine, install: any, sig
     await uvPip(uv, py, ["--no-build-isolation", "openai-whisper==20231117"], appDir, signal);
     await uvPip(uv, py, ["hatchling", "editables", "wheel"], appDir, signal);
     emit({ id: entry.id, kind: "download", percent: 0.3, message: "安装引擎依赖（约 5–15 分钟）…" });
-    await uvPip(uv, py, [backend, "-e", ".", "--no-build-isolation"], appDir, signal, (line) => {
-      if (line) emit({ id: entry.id, kind: "download", percent: 0.3, message: `安装依赖：${line.slice(0, 90)}` });
-    });
+    await withHeartbeat(
+      "安装引擎依赖（约 5–15 分钟）",
+      (message) => emit({ id: entry.id, kind: "download", percent: 0.3, message }),
+      (note) => uvPip(uv, py, [backend, "-e", ".", "--no-build-isolation"], appDir, signal, (line) => note(line)),
+    );
   } else {
     emit({ id: entry.id, kind: "download", percent: 0.3, message: "安装引擎依赖（约 3–10 分钟）…" });
-    await uvPip(uv, py, [backend, ...(Array.isArray(install.pip) ? install.pip : [])], appDir, signal, (line) => {
-      if (line) emit({ id: entry.id, kind: "download", percent: 0.3, message: `安装依赖：${line.slice(0, 90)}` });
-    });
+    await withHeartbeat(
+      "安装引擎依赖（约 3–10 分钟）",
+      (message) => emit({ id: entry.id, kind: "download", percent: 0.3, message }),
+      (note) => uvPip(uv, py, [backend, ...(Array.isArray(install.pip) ? install.pip : [])], appDir, signal, (line) => note(line)),
+    );
   }
   emit({ id: entry.id, kind: "download", percent: 0.62, message: "下载模型权重…" });
   await downloadModelFiles(entry, install, appDir, signal, 0.62, 0.35);

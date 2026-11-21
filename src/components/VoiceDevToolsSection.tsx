@@ -103,8 +103,12 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
   });
   /** 正在切换启用状态的资源（按钮转圈 + 防连点） */
   const [toggling, setToggling] = useState<ResourceKind | null>(null);
-  /** 正在删除的资源 */
-  const [deleting, setDeleting] = useState<ResourceKind | null>(null);
+  /**
+   * 正在删除的资源（含「全部清空」）。
+   * ⛔ 11-21：从 `ResourceKind | null` 改成带进度的对象 —— 用户实测「卸载反馈进度也没有」：
+   *    卸载 474MB 时界面一动不动十几秒，只能以为卡死。percent 由主进程逐文件推上来。
+   */
+  const [deleting, setDeleting] = useState<{ kind: ResourceKind | "all"; percent: number; message: string } | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
   /** 读取失败/超时标记（10-31）：⛔ 不许无限停在「读取中…」——失败要给「重试」出口。 */
   const [statusFailed, setStatusFailed] = useState(false);
@@ -147,6 +151,17 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
         }
         if (event.target) return;
         setDownloading((d) => ({ percent: Number(event.percent ?? -1), message: String(event.message ?? ""), mode: d?.mode ?? "download" }));
+      }
+      if (event?.type === "delete") {
+        /* 主进程逐文件删时推上来的进度（11-21）：`target` 是资源类型，"all" = 整目录卸载。
+           ⛔ 只更新已经被点下的那个删除动作，别让别的卡的删除进度串到这张卡上。 */
+        const target = String(event.target ?? "");
+        setDeleting((current) => {
+          if (!current) return current;
+          if (target !== "all" && target !== current.kind) return current;
+          return { ...current, percent: Number(event.percent ?? -1), message: String(event.message ?? current.message) };
+        });
+        return;
       }
       if (event?.type === "downloadDone") {
         if (event.target === "zipvoice") {
@@ -200,9 +215,18 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
     //    卸载删的是**整个 voice-models 目录**（含音色克隆模型 156MB），
     //    但**不碰 <userData>/voice-profiles** ⇒ 用户导入/录制的音色（参考音频）安全。
     setConfirmUninstall(false);
+    /* ⛔ 11-21 用户实测两条：①「卸载不了，显示卸载失败」②「卸载反馈进度也没有」。
+       ① 的根因在主进程（工作线程没释放就删 = EBUSY；旧代码还把 r.error 丢了，只显示「卸载失败」）；
+       ② 这里补上进度占位，具体百分比由主进程 `voice:event` 的 delete 事件推进。 */
+    setDeleting({ kind: "all", percent: -1, message: "正在准备卸载…" });
     window.codex.voiceModelsUninstall()
-      .then((r: any) => { if (r.ok) onNotice("语音模型已卸载（音色参考音频已保留）"); else onNotice("卸载失败"); refresh(); })
-      .catch((e: any) => onNotice(`卸载失败：${e?.message ?? e}`));
+      .then((r: any) => {
+        if (r?.ok) onNotice("语音模型已卸载（音色参考音频已保留）");
+        else onNotice(`卸载失败：${r?.error ?? "未知原因"}`);
+        refresh();
+      })
+      .catch((e: any) => onNotice(`卸载失败：${e?.message ?? e}`))
+      .finally(() => setDeleting(null));
   }, [onNotice, refresh]);
 
   const ready = status ? status.ready === status.total && status.total > 0 : false;
@@ -242,7 +266,7 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
   /** 删除：物理删除，走项目惯例的二次确认（第一次点只展开确认条）。 */
   const doDelete = useCallback(async (kind: ResourceKind, label: string) => {
     setConfirmDelete(null);
-    setDeleting(kind);
+    setDeleting({ kind, percent: -1, message: "正在准备删除…" });
     try {
       const r: any = await window.codex.voiceResourceDelete({ kind });
       if (!r?.ok) onNotice(r?.error ?? "删除失败");
@@ -339,8 +363,13 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
           点删除后界面毫无变化。这里补一条与下载同款的进度条（删除无法精确计量 ⇒ 走不定态动画）。 */}
       {deleting && (
         <div className="voice-devtools-progress">
-          <div className="voice-devtools-progress-bar"><span className="is-indeterminate" /></div>
-          <small>正在删除本地文件…（大包可能要十几秒）</small>
+          <div className="voice-devtools-progress-bar">
+            <span className={deleting.percent >= 0 ? undefined : "is-indeterminate"} style={deleting.percent >= 0 ? { width: `${deleting.percent}%` } : undefined} />
+          </div>
+          <small>
+            {deleting.message}
+            {deleting.percent >= 0 ? `（${deleting.percent}%）` : ""}
+          </small>
         </div>
       )}
 
@@ -383,11 +412,11 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
                 {toggling === "base" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}停用
               </button>
             )}
-            <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("base", "语音基础模型")}>
+            <button className="secondary-setting voice-uninstall" disabled={Boolean(deleting)} onClick={() => requestDelete("base", "语音基础模型")}>
               <Trash2 size={13} />删除
             </button>
             {/* 全部清空（含音色克隆模型）——与「删除」区分：那个只删本卡片这一个资源；确认走弹窗 */}
-            <button className="secondary-setting voice-uninstall" onClick={() => setConfirmUninstall(true)}>
+            <button className="secondary-setting voice-uninstall" disabled={Boolean(deleting)} onClick={() => setConfirmUninstall(true)}>
               <X size={13} />全部清空
             </button>
           </>

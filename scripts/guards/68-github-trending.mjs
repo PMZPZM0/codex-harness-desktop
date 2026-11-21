@@ -41,11 +41,11 @@ ok(/\"github-trending\",\s*\"GitHub 热门\"/.test(nav),
 ok((/github-trending/.test(registry) || /github-trending/.test(discover))
   && (/GithubTrendingPage/.test(registry) || /GithubTrendingPage/.test(discover)),
   "设置注册表有 github-trending 的真实渲染分支（不是只有导航项）");
-ok(/gh-proxy\.com\/https:\/\/\$\{api\}/.test(page) && /per_page=100/.test(page)
+ok(/const candidates = mirrorCandidates\(api\)/.test(page) && /github-mirror\.mjs/.test(page) && /per_page=100/.test(page)
   && /PAGE_SIZE\s*=\s*10/.test(page) && /PAGE_COUNT\s*=\s*10/.test(page)
   && /daily:\s*\{[^}]*days:\s*1/.test(page) && /weekly:\s*\{[^}]*days:\s*7/.test(page)
   && /monthly:\s*\{[^}]*days:\s*30/.test(page),
-  "数据走 gh-proxy 国内镜像（直连兜底），每页 10 条 / 共 10 页 / 日周月三档");
+  "数据走镜像快速通道（候选序取自 src/lib/github-mirror.mjs，⛔ 不许再硬编码 gh-proxy.com），每页 10 条 / 共 10 页 / 日周月三档");
 ok(/translateTexts/.test(page) && /github-trending-zh-v1/.test(page) && /writeTransCache/.test(page),
   "简介翻译走主进程通道并落本地缓存（同一仓库不重复翻译）");
 ok(/prompt:translate/.test(prompt) && /api\.mymemory\.translated\.net/.test(prompt) && /parseTranslatedArray/.test(prompt),

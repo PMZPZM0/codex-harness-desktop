@@ -1463,7 +1463,8 @@ app.on("before-quit", () => {
   // SSH 会话持有 ssh2 连接，不主动断开会让退出流程挂住
   sshSessions.closeAll();
   // 挂断后保活的语音工作线程：退出时彻底销毁（否则 90s 内进程里还挂着两份 ONNX 模型）
-  voiceService.disposeIdleWorkers();
+  // ⛔ 11-21 起返回 Promise（终止是异步的）；退出时不等 —— 等会拖慢退出，进程退了自己会收尸。
+  void voiceService.disposeIdleWorkers();
 });
 
 app.on("activate", () => {

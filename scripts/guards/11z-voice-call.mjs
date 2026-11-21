@@ -400,12 +400,13 @@ ok(/if \(received > 0 && response\.ok && response\.status !== 206\) received = 0
   "「服务器成功但不支持续传」才丢弃残件（⛔ 判据少 response.ok 会让 403 分支恒不可达）");
 /* ⛔⛔ 11-21 复测（v0.0.76 资产 8MB Range）：**gh-proxy.org 0.84~1.56MB/s 且 206 可用**
    ≫ gh-proxy.com 0.37MB/s（忽略 Range）＞ hk.gh-proxy.com **500 不可用**。
-   11-15 那张 [hk, gh-proxy.com] 的表两项都已不是最优（hk 直接 500）⇒ 换成 org 优先、com 兜底；
-   ghfast 仍必须不在表里（对 Range 403）。 */
-ok(/const GITHUB_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.org\/", "https:\/\/gh-proxy\.com\/"\]/.test(storeCode),
-  "GitHub 镜像表 = gh-proxy.org 优先、gh-proxy.com 兜底（11-21 实测最快的两档；hk 已 500、ghfast 对 Range 403）");
+   11-21 起音色模型**不再自己维护镜像表**：直接用 `GH_MIRROR_PREFIXES`（src/lib/github-mirror.mjs
+   单一真相源），否则改镜像要改三处、漏一处就还是慢。 */
+ok(/const GITHUB_MIRROR_PREFIXES = GH_MIRROR_PREFIXES\.filter\(/.test(storeCode)
+  && /import \{ GH_MIRROR_PREFIXES \} from "\.\.\/gh-mirror"/.test(storeCode),
+  "音色模型镜像表 = 复用 GH_MIRROR_PREFIXES 单一真相源（⛔ 不许再拷一份前缀数组进来）");
 ok(!/ghfast\.top/.test(storeCode),
-  "⛔ ghfast 已从音色模型链路移除（Range 403，留着只是多一次失败）");
+  "⛔ 音色模型链路不自己列 ghfast（Range 403，留着只是多一次失败）");
 ok(/headersTimeoutMs = options\?\.headersTimeoutMs \?\? 20000/.test(storeCode),
   "响应头超时 20s（12s 会误杀抖动网络的正常连接 —— 用户实测「12s 超时」）");
 ok(/minSpeedBytesPerSec \?\? 500 \* 1024/.test(storeCode),
@@ -1521,5 +1522,30 @@ ok(/request\(op: string, payload: Record<string, unknown> = \{\}, timeoutMs = 12
   && /\}, 20_000\);/.test(read("electron/voice/voice-service.ts"))
   && /25_000/.test(read("src/features/voice-announce/use-voice-announce.ts")),
   "播报合成有硬超时（worker 120s / 单句 20s / 渲染层 25s），卡死即判坏重建、不无限挂队列");
+
+/* ── 语音模型卸载（11-21 用户实测「卸载不了，显示卸载失败」「卸载反馈进度也没有」）────────
+   ⛔ 三条都必须钉住，缺一条就复发：
+   ① 删之前**必须 await** 释放工作线程（terminate 是异步的，发完就删 = onnx 句柄还在 = EBUSY）；
+   ② 不能用 `fs.rm(recursive)`：一遇 EBUSY 整次抛错，前面删掉的也白删、还不知道是哪个文件；
+   ③ 失败必须把**真实原因**回给界面（旧代码丢了 r.error，只显示「卸载失败」四个字，用户无从下手）。 */
+{
+  const ipc = read("electron/features/voice-ipc/03-voice-misc.ts");
+  const purge = read("electron/voice/model-purge.ts");
+  const service = read("electron/voice/voice-service.ts");
+  const panel = read("src/components/VoiceDevToolsSection.tsx");
+  ok(/await svc\(\)\.releaseModelFiles\(\)/.test(ipc)
+    && /async releaseModelFiles\(\): Promise<void>/.test(service)
+    && /await this\.stop\(\)/.test(service),
+    "卸载/删除前 await 释放模型线程（含活跃会话：只清 idle 槽不够，stop() 还会把线程寄存回 idle）");
+  ok(/purgeDirWithProgress\(modelsRoot\(\)/.test(ipc) && !/await fs\.rm\(modelsRoot\(\)/.test(ipc)
+    && /RETRYABLE/.test(purge) && /fs\.unlink\(target\)/.test(purge),
+    "卸载走逐文件删除 + 可重试错误退避（⛔ 不用 fs.rm(recursive)：EBUSY 一次就整次失败）");
+  ok(/error: `\$\{result\.failed\.length\} 个文件没删掉/.test(ipc)
+    && /type: "delete", target: "all"/.test(ipc),
+    "卸载失败回真实原因（哪个文件、什么错误码）+ 逐文件进度事件");
+  ok(/type === "delete"/.test(panel) && /卸载失败：\$\{r\?\.error/.test(panel)
+    && /deleting\.percent >= 0/.test(panel),
+    "界面渲染删除进度百分比，失败时显示主进程给的原因（⛔ 不许只说「卸载失败」）");
+}
 
 process.exit(fails ? 1 : 0);

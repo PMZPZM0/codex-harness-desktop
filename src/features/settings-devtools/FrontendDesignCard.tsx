@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Library, LoaderCircle, MousePointerClick, RefreshCw, TriangleAlert, Wand2 } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { mirrorCandidates } from "../../lib/github-mirror.mjs";
 
 type Phase = "idle" | "checking" | "done" | "error";
 type CheckState = { phase: Phase; text: string };
@@ -36,20 +37,32 @@ const M3E = {
 
 type LatestCommit = { sha: string; date: string };
 
-/** 查上游默认分支的最新提交（两个仓库都没有 Release，只能看 commit）。 */
+/** 查上游默认分支的最新提交（两个仓库都没有 Release，只能看 commit）。
+ *  ⛔ `api.github.com` 在国内直连常 403/超时 ⇒ 候选序走 `github-mirror.mjs`（与主进程同一份），
+ *    镜像带 `Access-Control-Allow-Origin: *`，渲染层可直接 fetch（11-21 实测）。 */
 async function latestCommit(repo: string): Promise<LatestCommit> {
-  const response = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
-    headers: { accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) {
-    throw new Error(response.status === 403 ? "GitHub 接口限流，稍后再试（或点项目主页查看）" : `GitHub 返回 HTTP ${response.status}`);
+  const candidates = mirrorCandidates(`https://api.github.com/repos/${repo}/commits?per_page=1`);
+  let lastError = "";
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        headers: { accept: "application/vnd.github+json" },
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) {
+        lastError = response.status === 403 ? "GitHub 接口限流，稍后再试（或点项目主页查看）" : `GitHub 返回 HTTP ${response.status}`;
+        continue;
+      }
+      /* ⛔ 不写 any（守卫按文件统计 any 数）：GitHub commits 列表只需要 sha 与提交时间。 */
+      const list = (await response.json()) as Array<{ sha?: unknown; commit?: { committer?: { date?: unknown } } }>;
+      const first = Array.isArray(list) ? list[0] : null;
+      if (!first?.sha) { lastError = "没有拿到最新提交"; continue; }
+      return { sha: String(first.sha), date: String(first.commit?.committer?.date ?? "") };
+    } catch (error) {
+      lastError = String((error as { message?: unknown })?.message ?? error);
+    }
   }
-  /* ⛔ 不写 any（守卫按文件统计 any 数）：GitHub commits 列表只需要 sha 与提交时间。 */
-  const list = (await response.json()) as Array<{ sha?: unknown; commit?: { committer?: { date?: unknown } } }>;
-  const first = Array.isArray(list) ? list[0] : null;
-  if (!first?.sha) throw new Error("没有拿到最新提交");
-  return { sha: String(first.sha), date: String(first.commit?.committer?.date ?? "") };
+  throw new Error(lastError || "拉取上游提交失败");
 }
 
 const short = (value: string) => value.slice(0, 7);

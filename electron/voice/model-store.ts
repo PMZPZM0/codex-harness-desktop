@@ -17,6 +17,7 @@ import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
 import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady, EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, EMOTIVOICE_URLS, emotivoiceReady } from "./model-manifest";
+import { GH_MIRROR_PREFIXES } from "../gh-mirror";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -622,9 +623,10 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
  */
 /* ⛔⛔ 11-21 复测（v0.0.76 资产 8MB Range）：**gh-proxy.org 0.84~1.56MB/s 且 206 分段可用**
    ≫ gh-proxy.com 0.37MB/s（且忽略 Range）＞ hk.gh-proxy.com **500 不可用**。
-   旧表 [hk, gh-proxy.com] 两个都不是最快的、hk 还直接 500 ⇒ 换成 org 优先、com 兜底。
-   直连仍由 downloadUrlToFile 自动排在最前（candidates = [url, ...mirrors]）。 */
-const GITHUB_MIRROR_PREFIXES = ["https://gh-proxy.org/", "https://gh-proxy.com/"];
+   11-21 起**不再自己维护一份表**：直接用 `GH_MIRROR_PREFIXES`（`src/lib/github-mirror.mjs` 单一真相源）。
+   以前这里是第三份拷贝，改镜像要改三处、漏一处就还是慢（守卫【254】/【11z】双钉）。
+   直连仍由 downloadUrlToFile 自动排在最前（candidates = [url, ...mirrors]）⇒ 过滤掉空串。 */
+const GITHUB_MIRROR_PREFIXES = GH_MIRROR_PREFIXES.filter((prefix) => prefix.length > 0);
 
 /**
  * 单次下载（可续传）。网络中断**保留**已下部分（存在 `.part` 上）供下次续传；只有 SHA256 不符才删除。

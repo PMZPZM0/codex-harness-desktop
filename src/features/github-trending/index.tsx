@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Flame, LoaderCircle, RefreshCw, Star, TriangleAlert } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { mirrorCandidates } from "../../lib/github-mirror.mjs";
 
 type Since = "daily" | "weekly" | "monthly";
 
@@ -96,8 +97,10 @@ export function GithubTrendingPage() {
       const days = SINCE_META[since].days;
       const date = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
       const query = `created:>=${date} stars:>5`;
-      const api = `api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=100`;
-      const candidates = [`https://gh-proxy.com/https://${api}`, `https://${api}`];
+      const api = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=100`;
+      /* ⛔ 镜像序只认 `src/lib/github-mirror.mjs`（与主进程同一份）：以前这里硬编码 gh-proxy.com，
+         实测它 0.37MB/s 且忽略 Range，而更快的 gh-proxy.org 主进程早就在用 —— 页面却还是慢的。 */
+      const candidates = mirrorCandidates(api);
       let lastError = "";
       for (const url of candidates) {
         try {

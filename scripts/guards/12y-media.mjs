@@ -170,8 +170,10 @@ ok(
   "MoeKoe 卡片有 API 文档跳转/复制，常驻指令也带文档地址（Codex 可自己查）",
 );
 ok(
-  moekoeCore.includes("gh-proxy.com") && moekoeCore.includes("ghfast.top") && moekoe.includes("MOEKOE_MIRRORS") && moekoe.includes("confirm !== true"),
-  "国内镜像安装通道（官方同款 gh-proxy 优先 + ghfast 兜底）+ 未确认不安装的硬闸",
+  /* 11-21：镜像表不再自留一份，改为复用 GH_MIRROR_PREFIXES（src/lib/github-mirror.mjs 单一真相源）
+     —— 判据随之改成「引用共享表 + 走 MOEKOE_MIRRORS」，而不是钉死某两个前缀字面量。 */
+  moekoeCore.includes("import { GH_MIRROR_PREFIXES } from \"../src/lib/github-mirror.mjs\"") && moekoeCore.includes("MOEKOE_MIRRORS = ") && moekoe.includes("MOEKOE_MIRRORS") && moekoe.includes("confirm !== true"),
+  "国内镜像安装通道（复用全应用镜像真相源 GH_MIRROR_PREFIXES，镜像优先、直连垫底）+ 未确认不安装的硬闸",
 );
 ok(
   moekoeCore.includes("https://api.github.com/repos/iAJue/MoeKoeMusic/releases/latest") && moekoeCore.includes("music.moekoe.cn/download.html") && moekoe.includes("MOEKOE_RELEASE_API"),

@@ -399,16 +399,40 @@ export class VoiceService {
     else this.idleTts = { client, key, timer };
   }
 
-  /** 立刻销毁寄存的线程（卸载模型 / 应用退出前调用：别让占着模型文件的线程挡住删除）。 */
-  disposeIdleWorkers(): void {
+  /** 立刻销毁寄存的线程（卸载模型 / 应用退出前调用：别让占着模型文件的线程挡住删除）。
+   *  ⛔ 11-21 起**返回 Promise**：`terminate()` 是异步的，旧实现 `void ...terminate()` 发完就返回，
+   *    调用方紧接着 `fs.rm` 时子进程还持有 onnx 句柄 ⇒ Windows 上 EBUSY，用户看到「卸载失败」。 */
+  async disposeIdleWorkers(): Promise<void> {
     const slots = [this.idleAsr, this.idleTts];
     this.idleAsr = null;
     this.idleTts = null;
+    const pending: Promise<unknown>[] = [];
     for (const idle of slots) {
       if (!idle) continue;
       clearTimeout(idle.timer);
-      void idle.client.terminate().catch(() => undefined);
+      pending.push(idle.client.terminate().catch(() => undefined));
     }
+    await Promise.all(pending);
+  }
+
+  /**
+   * 释放所有占着模型文件的线程（卸载模型前必须调，且**必须 await**）。
+   *
+   * ⛔ 只调 `disposeIdleWorkers` 不够：正在通话时 asr/tts 是**活跃**的、不在 idle 槽里，
+   *    `stop()` 又会把正常挂断的线程**寄存**回 idle（保活优化）⇒ 删文件照样 EBUSY。
+   *    所以顺序是：先 stop（结束会话）→ 再把 idle 槽与残留活跃线程一起 terminate。
+   */
+  async releaseModelFiles(): Promise<void> {
+    try {
+      if (this.active || this.asr || this.tts) await this.stop();
+    } catch {
+      /* 停不下来也要继续删：下面会强行 terminate */
+    }
+    await this.disposeIdleWorkers();
+    const leftovers = [this.asr, this.tts].filter((client): client is VoiceWorkerClient => Boolean(client));
+    this.asr = null;
+    this.tts = null;
+    await Promise.allSettled(leftovers.map((client) => client.terminate()));
   }
 
   /**
