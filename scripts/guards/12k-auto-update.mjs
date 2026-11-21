@@ -58,6 +58,8 @@ const settings = read("electron/app-settings.ts");
 const manifest = read("electron/ipc-channels.manifest.json");
 const preload = read("electron/preload.ts");
 const registry = read("electron/ipc-registry.ts");
+/* ⛔ 名字别混：registry 是 IPC 台账，下面这个才是「组件清单」台账（update-registry）。 */
+const componentLedger = read("electron/update-registry.ts");
 const composition = read("electron/composition.json");
 const page = read("src/features/settings-automation/AutomationSettingsSection.tsx");
 const ledger = read("docs/FEATURE-LEDGER.md");
@@ -77,8 +79,10 @@ const keysBlock = board.match(/const toolKeys[\s\S]*?\};/)?.[0] ?? "";
 ok(/nuphus: "autoUpdateDesktop"/.test(keysBlock) && !/playwright-cli/.test(keysBlock)
   && /"computer-use": "autoUpdateComputerUse"/.test(keysBlock),
   "桌面 / Mac 电脑操作各自映射到自己的开关字段（Playwright 已移除）");
-ok(/id: "ego-lite"/.test(board) && /runEgoUpgrade/.test(board) && /if \(row\.id === "ego-lite"\)/.test(board),
-  "控制台组件清单含 Ego Lite 行，手动更新走官方 ego-browser upgrade");
+ok(/id:\s*"ego-lite"/.test(componentLedger) && /case "external":/.test(backendsCode) && /runEgoUpgrade/.test(backendsCode),
+  "Ego Lite 登记在组件台账（kind=external），手动更新走官方 ego-browser upgrade");
+ok(!/if \(row\.id === "ego-lite"\)/.test(boardCode),
+  "⛔ 编排层不再特判 ego-lite（11-21 收编：清单与执行都只认 update-registry）");
 
 console.log("【② 手动链 = 自动链（单一真相源）】");
 ok(/export async function checkRuntimeUpdateRow/.test(runtimeIpc) && /export async function performRuntimeUpdate/.test(runtimeIpc),

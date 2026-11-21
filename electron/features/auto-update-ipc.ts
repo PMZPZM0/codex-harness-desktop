@@ -42,7 +42,6 @@ import { Notification, app } from "electron";
 import { AUTO_UPDATE_ROW_OWNER, readAppSettings, readAutoUpdateRowSwitch, readAutoUpdateSwitch, saveAppSettings, writeAutoUpdateRowSwitch, type AutoUpdateSettingKey } from "../app-settings";
 import { checkEngineUpdateInfo } from "./engine-ipc";
 import { updateableToolIds, updateableToolMeta } from "./runtime-ipc";
-import { egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "../toolchain";
 import { componentSpec, visibleSpecs, type ComponentSpec, type DownloadSourceSetting } from "../update-registry";
 import { scanRows, updateComponent, type ComponentRow, type UpdateOutcome } from "../update-backends";
 import { sendToWindow } from "./window-bus";
@@ -177,22 +176,10 @@ export const autoUpdateFeature = defineFeature<null>({
     /**
      * 更新一行 —— 无论手动还是后台，都走 `updateComponent`（各后端已在里面接好既有安装链）。
      * ⛔ 别在这里按 kind 再写一遍判据：那是本项目反复栽过的坑（手动说最新、后台却在装）。
+     * ⛔ 11-21 起 Ego Lite 也不再是特例：它在 update-registry 里登记为 kind=external，
+     *    更新动作由 update-backends 的 external 分支执行（清单与执行都只认台账）。
      */
     async function updateRow(row: ComponentRow, source: DownloadSourceSetting, settings: Awaited<ReturnType<typeof readAppSettings>>): Promise<UpdateOutcome> {
-      if (row.id === "ego-lite") {
-        const before = egoBrowserVersion();
-        if (!egoBrowserPath()) return { id: row.id, label: row.label, action: "skipped", before: "", after: "", message: "未安装 Ego Lite" };
-        const result = await runEgoUpgrade();
-        const after = egoBrowserVersion();
-        return {
-          id: row.id,
-          label: row.label,
-          action: result.ok ? (before && after && before !== after ? "updated" : "unchanged") : "failed",
-          before,
-          after,
-          message: result.output || (result.ok ? "已是最新版本" : "升级失败"),
-        };
-      }
       const spec = componentSpec(row.specId);
       if (!spec) return { id: row.id, label: row.label, action: "skipped", before: "", after: "", message: "未登记在组件清单里" };
       return updateComponent(spec, row.id, makeCtx(source, settings));
@@ -219,8 +206,9 @@ export const autoUpdateFeature = defineFeature<null>({
           if (row.specId === "market-plugin" || row.specId === "official-plugin") continue;
           // ⛔ 开关判定在**检查之前**（不是"查到了不装"）：关掉 ⇒ 连版本/内容都不比
           if (!readAutoUpdateRowSwitch(settings, row.id)) continue;
-          // Ego Lite 没有可查询的远端版本号；开关开着就交给官方 updater 自己判断。
-          if (row.id !== "ego-lite" && !row.hasUpdate) continue;
+          // 外部应用（Ego Lite）没有可查询的远端版本号：开关开着就交给官方 updater 自己判断。
+          // ⛔ 判据按 kind 取（不写 id 字面量）—— 台账里再加一个 external 组件时这里自动适用。
+          if (componentSpec(row.specId)?.kind !== "external" && !row.hasUpdate) continue;
           try {
             const outcome = await updateRow(row, source, settings);
             if (outcome.action === "updated") {
@@ -264,35 +252,15 @@ export const autoUpdateFeature = defineFeature<null>({
 
     async function scanAll(ctx: ReturnType<typeof makeCtx>): Promise<ComponentRow[]> {
       // ⛔ 每类各自限时（并行跑）：一个挂住的镜像站不许把整张清单拖成永久 loading。
+      // ⛔ 11-21：这里**不许再补一行特例**（Ego Lite 原先就是手工拼出来的一行，台账里查不到）。
+      //    要加组件就改 electron/update-registry.ts —— 清单只认那一个真相源（守卫 12l ①）。
       const results = await Promise.all(visibleSpecs().map((spec) =>
         withDeadline(
           scanRows(spec, ctx).catch((error) => placeholderRows(spec, ctx, (error as Error)?.message ?? String(error))),
           SCAN_DEADLINE_MS,
           () => placeholderRows(spec, ctx, "检测超时：镜像站响应慢或网络不通，点右上角刷新可重试"),
         )));
-      // Ego Lite 是外部应用（不在组件注册表里）：单独补一行，控制台才能同时给出「更新」按钮
-      // 和自动更新开关。它没有远端版本查询接口，hasUpdate 恒 false，手动/自动都交给官方 updater。
-      const egoInstalled = Boolean(egoBrowserPath());
-      return [
-        ...results.flat(),
-        {
-          id: "ego-lite",
-          specId: "ego-lite",
-          label: "Ego Lite 浏览器自动化",
-          group: "工具",
-          pkg: "ego-browser",
-          mirror: false,
-          reason: "Ego 官方更新器（暂无国内镜像）",
-          enabled: ctx.enabledOf("ego-lite"),
-          installed: egoInstalled,
-          current: egoInstalled ? egoBrowserVersion() : "",
-          latest: "",
-          hasUpdate: false,
-          detectable: true,
-          unsupported: "",
-          error: "",
-        },
-      ];
+      return results.flat();
     }
 
     ipcHost.handle("autoUpdate:status", async () => {
@@ -378,10 +346,6 @@ export const autoUpdateFeature = defineFeature<null>({
       const key = String(id ?? "").trim();
       const userData = app.getPath("userData");
       const settings = await readAppSettings(userData);
-      if (key === "ego-lite") {
-        const next = await saveAppSettings(userData, { autoUpdateOverrides: writeAutoUpdateRowSwitch(settings, key, enabled) });
-        return { id: key, enabled: readAutoUpdateRowSwitch(next, key) };
-      }
       const owner: AutoUpdateSettingKey | undefined = AUTO_UPDATE_ROW_OWNER[key] ?? AUTO_UPDATE_ROW_OWNER[key.split("/")[0]];
       if (owner) {
         // ⛔ 只写这一个字段（patch 单键）⇒ 各开关物理独立，互不影响

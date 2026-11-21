@@ -39,6 +39,9 @@ export type UpdateChannel =
   | "github"
   /** 国内平台自己的 API（CoCoLoop / SkillHub / Gitee 镜像）—— 本来就在国内，无需再镜像 */
   | "domestic"
+  /** 外部应用：没有可查询的远端版本号，只能交给它自己的官方更新器（如 Ego Lite 的 `ego-browser upgrade`）。
+   *  ⛔ 别把这类塞进 "none" —— "none" 的语义是"根本不能更新"，会把更新按钮藏掉。 */
+  | "external"
   /** 没有独立的发布渠道 */
   | "none";
 
@@ -56,6 +59,8 @@ export type UpdateKind =
   | "market-plugin"
   | "official-plugin"
   | "soul"
+  /** 外部应用：调它自己的官方更新器（本表只登记，不提供版本判据） */
+  | "external"
   | "unsupported";
 
 export type ComponentSpec = {
@@ -176,6 +181,45 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
     channel: "pip",
     mirror: true,
     reason: "PyPI 包，清华 PyPI 镜像",
+    dynamic: false,
+  },
+  {
+    /* 11-21 用户令「内置的都要能更新」：agent-desktop 是**默认桌面后端**，之前只在
+       「设置 → 电脑操作」卡片里有更新按钮，控制台的组件清单里根本没有它 ——
+       同一条 npm 在线更新链，两处口径不一致（卡片说有新版、控制台看不见）。 */
+    id: "agent-desktop",
+    kind: "npm-tool",
+    label: "Agent Desktop（无障碍树桌面后端）",
+    group: "工具",
+    pkg: "agent-desktop",
+    channel: "npm",
+    mirror: true,
+    reason: "npm 包，走 npmmirror；未安装时显示「未安装」（不会白装，见 updateComponent 的 npm-tool 分支）",
+    dynamic: false,
+  },
+  {
+    id: "feishu-cli",
+    kind: "npm-tool",
+    label: "飞书 CLI（@larksuite/cli）",
+    group: "工具",
+    pkg: "@larksuite/cli",
+    channel: "npm",
+    mirror: true,
+    reason: "npm 包，走 npmmirror",
+    dynamic: false,
+  },
+  {
+    /* ⛔ 11-21 收编：原先它是编排层（auto-update-ipc.scanAll）里**硬编码补出来的一行**，
+       台账里查不到 —— 违反「清单只认 update-registry」（守卫 12l ①）。
+       现在登记成 external：没有可查询的远端版本，更新 = 跑它自己的官方 updater。 */
+    id: "ego-lite",
+    kind: "external",
+    label: "Ego Lite 浏览器自动化",
+    group: "工具",
+    pkg: "ego-browser",
+    channel: "external",
+    mirror: false,
+    reason: "外部应用，只有 Ego 官方更新器（`ego-browser upgrade`）能判断版本；官方没有国内镜像，升级可能要下载数百 MB，所以默认**不**自动升级",
     dynamic: false,
   },
 
@@ -371,6 +415,9 @@ export function mirrorOrder(channel: UpdateChannel, source: DownloadSourceSettin
     }
     case "domestic":
       // 上游本来就在国内（CoCoLoop / SkillHub / Gitee），再加镜像反而多一跳不可控节点。
+      return [];
+    case "external":
+      // 外部应用由它自己的更新器决定从哪儿下（Ego 官方 CDN），本表不提供候选源。
       return [];
     default:
       return [];

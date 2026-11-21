@@ -292,6 +292,22 @@ ok(/async function latestInstallVersion/.test(rtCode)
 ok(rtCode.includes('fetchRegistryLatest("@larksuite/cli", downloadSource)'),
   "飞书 CLI 安装先查 npm 具体最新版再拼包名（⛔ 不再写死 1.0.98）");
 
+console.log("【⑭ 内置/随包组件全部进台账（11-21 用户令「内置的都要能更新」）】");
+/* 回归场景：Agent Desktop 是默认桌面后端，却只在自己卡片里有更新按钮；Ego Lite 更糟 ——
+   它连台账里都没有，是编排层 scanAll 末尾**手工拼出来的一行**。
+   ⇒ 判据：① 三个内置/随包组件必须登记在 registry；② 编排层不许再补特例行；
+          ③ external 分支只在 update-backends 里实现（执行也只认台账）。 */
+ok(/id:\s*"agent-desktop"/.test(registryCode) && /id:\s*"ego-lite"/.test(registryCode) && /id:\s*"feishu-cli"/.test(registryCode),
+  "agent-desktop / ego-lite / feishu-cli 都登记在 COMPONENT_SPECS（过控制台清单就都能看到）");
+ok(/channel:\s*"external"/.test(registryCode) && /kind:\s*"external"/.test(registryCode),
+  "外部应用有独立通道 external（⛔ 不塞进 none：none = 根本不能更新，会把按钮藏掉）");
+ok(!/specId:\s*"ego-lite"/.test(boardCode) && !/label:\s*"Ego Lite 浏览器自动化"/.test(boardCode),
+  "⛔ 编排层不再手工补 Ego Lite 行（清单只认 update-registry）");
+ok(/case "external":/.test(backendsCode) && /runEgoUpgrade\(\)/.test(backendsCode),
+  "external 的检测与更新都在 update-backends（执行层单一实现）");
+ok(!/row\.id === "ego-lite"/.test(boardCode) && /componentSpec\(row\.specId\)\?\.kind !== "external"/.test(boardCode),
+  "后台循环按 kind=external 判断「无版本号也要跑」，不再写 id 字面量");
+
 console.log("");
 console.log(fails === 0 ? `12l 组件更新守卫：全部通过（${checks}/${checks}）` : `12l 组件更新守卫：${fails} 项未通过（共 ${checks} 项）`);
 process.exit(fails === 0 ? 0 : 1);

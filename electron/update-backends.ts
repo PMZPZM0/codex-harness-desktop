@@ -35,7 +35,7 @@ import { PONYTAIL_VERSION, listInstalledPonytailVersions } from "./ponytail-plug
 import { compareVersions } from "./version-utils";
 import { mirrorOrder, withPrefix, type ComponentSpec, type DownloadSourceSetting } from "./update-registry";
 import { dirFingerprint, withRollback } from "./update-safety";
-import { bundledPython } from "./toolchain";
+import { bundledPython, egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "./toolchain";
 import { PIP_COMMON_ARGS } from "./features/pip-sources";
 import { userSkillsDir } from "./main";
 import { guardedFetch } from "./net-guard";
@@ -378,6 +378,20 @@ export async function scanRows(spec: ComponentSpec, ctx: UpdateContext): Promise
           error: "人格包无版本号；「更新」会重新拉取同一人格的最新文案",
         })];
       }
+      case "external": {
+        /* 外部应用（当前只有 Ego Lite）：**没有可查询的远端版本号** —— 官方更新器自己判断。
+           ⇒ hasUpdate 恒 false、detectable 恒 true（按钮照常可点）；后台循环对它另走
+              「开关开着就交给 updater」那条（runCycle 里的 id 判据），不靠 hasUpdate。 */
+        const installed = Boolean(egoBrowserPath());
+        return [row(spec.id, spec.label, {
+          installed,
+          current: installed ? egoBrowserVersion() : "",
+          latest: "",
+          hasUpdate: false,
+          detectable: true,
+          error: installed ? "" : "未安装：到「开发工具 → Ego Lite」按平台安装",
+        })];
+      }
       default:
         return [row(spec.id, spec.label, { unsupported: "未接入更新后端", detectable: false })];
     }
@@ -529,6 +543,20 @@ export async function updateComponent(spec: ComponentSpec, rowId: string, ctx: U
         if (!current?.soulSlug) return outcome("skipped", "当前没有应用人格包");
         await applySkillHubSoul(current.soulSlug, ctx.codexHome);
         return outcome("updated", `已重新拉取人格「${current.soulSlug}」的最新文案`, current.soulSlug, current.soulSlug);
+      }
+      case "external": {
+        /* 外部应用：跑它自己的官方更新器（⛔ 别在这里另写一套下载/替换 —— 那等于接管别人的安装目录）。
+           版本号变化才报 updated；官方更新器返回成功但版本没变 ⇒ unchanged（幂等口径一致）。 */
+        if (spec.id !== "ego-lite") return outcome("skipped", "该外部应用还没有接入更新器");
+        const before = egoBrowserVersion();
+        if (!egoBrowserPath()) return outcome("skipped", "未安装 Ego Lite");
+        ctx.progress(rowId, "正在运行 Ego 官方更新器（可能要下载数百 MB）…", 20);
+        const result = await runEgoUpgrade();
+        if (!result.ok) throw new Error(result.output || "Ego Lite 升级失败");
+        const after = egoBrowserVersion();
+        return before && after && before !== after
+          ? outcome("updated", `${before} → ${after}`, before, after)
+          : outcome("unchanged", result.output || "已是最新版本", before, after);
       }
       default:
         return outcome("skipped", "未接入更新后端");
