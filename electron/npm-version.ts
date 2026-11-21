@@ -16,7 +16,7 @@
  * ⛔ 本模块不发网络请求：probe 由调用方注入（runtime-ipc 用 fetch + AbortController、
  *    engine-updater 用 fetchText + 代理），传输差异留在各自域里。
  */
-import { compareVersions } from "./updates";
+import { compareVersions } from "./version-utils";
 
 export type NpmVersionHit = { version: string; registry: string };
 export type NpmLatestResult = NpmVersionHit & {

@@ -664,36 +664,10 @@ export interface Bag {
   setAccountMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
   accountMenuSub: "theme" | "lang" | "zoom" | "update" | null;
   setAccountMenuSub: React.Dispatch<React.SetStateAction<"theme" | "lang" | "zoom" | "update" | null>>;
-  updateInfo: { hasUpdate: boolean; version?: string | undefined; filename?: string | undefined; size?: number | undefined; sha256?: string | undefined; changelog?: string | undefined; mandatory?: boolean | undefined; downloadUrl?: string | undefined; reason?: string | undefined; } | null;
-  setUpdateInfo: React.Dispatch<React.SetStateAction<{ hasUpdate: boolean; version?: string | undefined; filename?: string | undefined; size?: number | undefined; sha256?: string | undefined; changelog?: string | undefined; mandatory?: boolean | undefined; downloadUrl?: string | undefined; reason?: string | undefined; } | null>>;
-  updateCurrentVersion: string;
-  setUpdateCurrentVersion: React.Dispatch<React.SetStateAction<string>>;
-  updateChecking: boolean;
-  setUpdateChecking: React.Dispatch<React.SetStateAction<boolean>>;
-  updateError: string;
-  setUpdateError: React.Dispatch<React.SetStateAction<string>>;
-  updateDownloading: boolean;
-  setUpdateDownloading: React.Dispatch<React.SetStateAction<boolean>>;
-  updateProgress: number;
-  setUpdateProgress: React.Dispatch<React.SetStateAction<number>>;
   accountMenuRef: React.RefObject<HTMLDivElement | null>;
-  runUpdateCheck: () => Promise<void>;
-  runUpdateDownload: () => Promise<void>;
   /** 10-12：更新包已就绪（后台静默下载完成 / 手动检查发现已下好）⇒ 左下角弹窗。 */
-  updateReady: boolean;
-  setUpdateReady: React.Dispatch<React.SetStateAction<boolean>>;
-  updateReadyVersion: string;
-  setUpdateReadyVersion: React.Dispatch<React.SetStateAction<string>>;
-  updateRestarting: boolean;
-  setUpdateRestarting: React.Dispatch<React.SetStateAction<boolean>>;
   /** 11-16：上次「重启安装」后版本没变（安装失败）⇒ 暂停自动安装，避免开机-退出循环。 */
-  updateInstallFailed: string;
-  setUpdateInstallFailed: React.Dispatch<React.SetStateAction<string>>;
   /** 用户「取消」时记下压住的是**哪个版本**（换版本仍会重新弹）。 */
-  dismissedVersionRef: React.RefObject<string>;
-  armUpdateReady: (version?: string|undefined) => void;
-  dismissUpdateReady: () => void;
-  restartAndInstall: () => Promise<void>;
 
   openFeedbackPage: () => void;
   uiLang: string;

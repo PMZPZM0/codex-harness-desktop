@@ -664,28 +664,18 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("运行态判据按 status?.type 判定（不会再因对象/字符串比较而恒假）")
     : fail("又有地方按字符串比较 engine thread.status —— 在跑会话会被判成已停止");
 
-  // ⑥ 更新链必须有完整性校验，且安装路径不得由渲染层决定（否则 = 任意 exe 落盘并执行）
-  const updSrc = readFileSync(join(ROOT, "electron", "updates.ts"), "utf8");
+  // ⑥ 更新链必须有完整性校验，且安装路径不得由渲染层决定（11-21 重写后全在 update-service.ts）
+  const updSvc = readFileSync(join(ROOT, "electron", "update-service.ts"), "utf8");
+  const dlSrc = readFileSync(join(ROOT, "electron", "mirror-download.ts"), "utf8");
   const engineUpdSrc = readFileSync(join(ROOT, "electron", "engine-updater.ts"), "utf8");
-  /sha256OfFile\(/.test(updSrc) && /expectedSha256/.test(updSrc)
-    ? ok("应用更新包下载后比对 sha256（不匹配即删除并报错）")
-    : fail("updates.ts 又不校验 sha256 了 —— 发布站被换掉就会静默装上攻击者的包");
-  /更新包地址必须是 https/.test(updSrc)
-    ? ok("应用更新包只允许 https（挡住明文替换）")
-    : fail("updates.ts 又允许 http 明文下载安装包");
-  // ⛔ 09-16 实测：GitHub 的 browser_download_url 是 **302** 到 release-assets.githubusercontent.com，
-  //    而 downloadUpdate 过去是裸 request + `status >= 300 reject`，不跟随重定向 ⇒ 用户点「下载并安装」
-  //    直接报 HTTP 302。这个坑直到 v0.0.18 才暴露（09-15 才切 GitHub 单源，而当时仓库 0 个 release，
-  //    检查更新拿不到东西，从没走到下载这步）。守卫锚定「确实存在跟随重定向的分支」。
-  //    反证（本地 HTTPS mock，不依赖外网）：摘掉该分支 → 下载报 HTTP 302，见 tmp 验收脚本。
-  (/res\.headers\.location/.test(updSrc) && /MAX_REDIRECTS/.test(updSrc) && /new URL\(res\.headers\.location, url\)/.test(updSrc) ? ok : fail)("updates.ts 下载跟随重定向（GitHub 资产是 302 → release-assets.githubusercontent.com）");
-  // ⛔ 第二条必须锚定「重定向分支**内部**确实调用了 hop（即下一跳会重新过协议校验）」——
-  //    第一版只查 `const hop = async (url: string, depth: number)` 与 https 抛错两段文本存在，
-  //    把整个重定向分支摘掉后这两段仍在，守卫照样绿（反证时发现的假绿）。
-  (/hop\(next, depth \+ 1, hasAlternative\)\.then\(resolve, reject\);/.test(updSrc) && /const hop = async \(url: string, depth: number, hasAlternative = false\)/.test(updSrc) && /if \(parsed\.protocol !== "https:"\) throw/.test(updSrc) ? ok : fail)("updates.ts 重定向逐跳校验 https，并把 hasAlternative 传下去（下一跳重新校验；⛔ 参数丢了「太慢换源」在城市网关场景就会失效）");
-  /lastVerifiedUpdatePath/.test(mainSrc) && /path_not_verified/.test(mainSrc)
-    ? ok("updates:install 只接受刚校验通过的那个文件（渲染层给不了任意路径）")
-    : fail("updates:install 又能被渲染层指定任意安装路径了");
+  (/sha512OfFile\(/.test(updSvc) && /!== feed\.sha512/.test(updSvc)
+    ? ok : fail)("应用更新包下载后比对 sha512（不匹配即删除并报错；⛔ 拿不到摘要也不能当成功）");
+  (/export async function installUpdatePackage\(\): Promise/.test(updSvc)
+    ? ok : fail)("安装不接受任何参数：路径只从主进程落盘的状态取（渲染层给不了任意 exe）");
+  (/redirect: "follow"/.test(dlSrc) && /rankMirrors\(/.test(dlSrc)
+    ? ok : fail)("下载跟随 302 重定向（GitHub 资产跳 release-assets）并按实测吞吐换源");
+  (/feed-url|RELEASE_FEED_URL/.test(updSvc) && !/api\.github\.com/.test(updSvc)
+    ? ok : fail)("检查更新只读 Release 的 latest.yml（⛔ 不走 GitHub API：60 次/小时限流会让「检查更新」直接 403）");
   !/rejectUnauthorized: false/.test(engineUpdSrc)
     ? ok("引擎更新默认校验 TLS 证书（自签名场景需显式 CODEX_HARNESS_INSECURE_TLS=1）")
     : fail("engine-updater.ts 又无条件关闭 TLS 校验 —— 下载物会被当场执行（--version 探针）");
@@ -774,13 +764,10 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (!/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
     "shell:reveal 不判可信根（10-29 用户令：任意位置的文件都能定位）"
   );
-  /* ⛔ 10-03 P2：锚点必须认两种注册形态 —— 域迁到容器后写的是 ipcHost.handle，用 indexOf('ipcMain.handle("...') 会得到 -1 ⇒ 切片为空 ⇒ 这条安全断言假红（不变量本身没破）。 */
-  const updRevealFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("updates:reveal"/);
-  const updRevealTo = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("updates:install"/);
-  const updReveal = updRevealFrom >= 0 && updRevealTo > updRevealFrom ? mainForSec.slice(updRevealFrom, updRevealTo) : "";
-  (/lastVerifiedUpdatePath/.test(updReveal) && /path_not_verified/.test(updReveal)
-    ? ok("updates:reveal 只允许定位刚下载并通过校验的安装包（与 updates:install 同口径）")
-    : fail("updates:reveal 又能被渲染层指定任意路径 showItemInFolder 了"));
+  /* 11-21：updates:reveal 与 updates:install 两个旧通道已随旧更新链删除 —— 现在没有
+     「按渲染层给的路径打开/定位安装包」这条路，所以这里改为**负向断言**：通道不许复活。 */
+  (!/updates:reveal/.test(mainSrc) && !/updates:install\b/.test(mainSrc)
+    ? ok : fail)("旧通道 updates:reveal / updates:install 已删除（⛔ 不许复活：它们接受渲染层路径）");
   // terminal:restart 的 cwd 必须验证存在且是目录
   // ⛔ 10-03 两处修正：① 形态（域改插件后写 ipcHost.handle）；② **切片终点不再用"下一个 handler"**
   //    —— 原写法以 `git:diff` 为终点，靠的是两者在**同一个文件里相邻**；按前缀拆成 terminal-ipc /
@@ -1399,20 +1386,21 @@ const appSrc4 = readAppUi();
      判据：① 源码不再用字符串不等判更新；② 有 compareVersions / parseVersion；
      ③ stable 通道下尊重 prerelease；④ **跑编译产物里的真函数**做行为断言（不是看文本）。 */
   {
-    const updSrc = readFileSync(join(ROOT, "electron", "updates.ts"), "utf8");
-    (!/version\s*===\s*currentVersion/.test(updSrc) ? ok : fail)(
-      "【144】不再用「字符串不等」判定有更新（更旧的 tag 也会被误报成更新）"
+    const updSrc = readFileSync(join(ROOT, "electron", "version-utils.ts"), "utf8");
+    const svcSrc144 = readFileSync(join(ROOT, "electron", "update-service.ts"), "utf8");
+    (!/version\s*===\s*currentVersion/.test(svcSrc144) && /compareVersions\(feed\.version, current\)/.test(svcSrc144) ? ok : fail)(
+      "【144】用 compareVersions 判新旧（⛔ 字符串不等会把更旧的 tag 也报成更新）"
     );
     (/export function compareVersions\(/.test(updSrc) && /export function parseVersion\(/.test(updSrc) ? ok : fail)(
-      "【144】updates.ts 导出 compareVersions / parseVersion（语义化版本比较）"
+      "【144】version-utils.ts 导出 compareVersions / parseVersion（语义化版本比较）"
     );
-    (/release\?\.prerelease|release\.prerelease/.test(updSrc) && /UPDATE_CHANNEL === "stable"/.test(updSrc) ? ok : fail)(
-      "【144】stable 通道尊重 GitHub prerelease 标志（预发布版不推给 stable 用户）"
+    (/RELEASE_FEED_URL/.test(svcSrc144) && !/api\.github\.com/.test(svcSrc144) ? ok : fail)(
+      "【144】只读 Release 的 latest.yml（⛔ 不走 GitHub API：60 次/小时限流会让检查更新直接 403）"
     );
     // 行为断言：import dist-electron 产物，跑真函数
-    const distUpd = join(ROOT, "dist-electron", "updates.js");
+    const distUpd = join(ROOT, "dist-electron", "version-utils.js");
     if (!existsSync(distUpd)) {
-      fail("【144】dist-electron/updates.js 不存在（先构建再跑预检）—— 行为断言无法执行");
+      fail("【144】dist-electron/version-utils.js 不存在（先构建再跑预检）—— 行为断言无法执行");
     } else {
       try {
         const mod = await import(pathToFileURL(distUpd).href);
@@ -1431,7 +1419,7 @@ const appSrc4 = readAppUi();
           `【144】compareVersions 行为正确（${cases.length} 组用例：更旧不报更新 / 预发布小于正式版 / 相等为 0）${wrong.length ? "，失败：" + wrong.map(([a, b, w]) => `${a} vs ${b} 期望${w}`).join("；") : ""}`
         );
       } catch (e) {
-        fail(`【144】dist-electron/updates.js 行为断言执行失败：${e && e.message ? e.message : String(e)}`);
+        fail(`【144】dist-electron/version-utils.js 行为断言执行失败：${e && e.message ? e.message : String(e)}`);
       }
     }
   }

@@ -112,8 +112,8 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
 
 /* ── 4. 版本比较单一真相源 ───────────────────────────────────────────── */
 {
-  ok(/import \{ compareVersions \} from "\.\.\/updates"/.test(ipc) && /compareVersions\(latest\.version, current\)/.test(ipc),
-    "版本比较走 electron/updates.ts 的 compareVersions（⛔ 不手写第二份）");
+  ok(/import \{ compareVersions \} from "\.\.\/version-utils"/.test(ipc) && /compareVersions\(latest\.version, current\)/.test(ipc),
+    "版本比较走 electron/version-utils.ts 的 compareVersions（⛔ 不手写第二份）");
   ok(!/function compareVersions|function parseVersion/.test(ipc + tools), "⛔ 本域不重复实现版本比较");
 }
 
@@ -224,8 +224,8 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "只从上游官方 Release 取包（openfilm/openfilm 的 releases/latest）");
   ok(/mirrorCandidates\(RELEASE_API\)/.test(desktop),
     "API 与资产都走 gh-mirror 的候选序（⛔ 不在这里另写一份镜像表）");
-  ok(/downloadUpdate\(asset\.url, target/.test(desktop) && /asset\.digest\.replace\(\/\^sha256:\/i, ""\)/.test(desktop),
-    "下载复用 updates.downloadUpdate 并强制校验 asset.digest 的 sha256（第三方反代能改包体 ⇒ 必须比对）");
+  ok(/downloadThroughMirrors\(\{/.test(desktop) && /result\.sha256\.toLowerCase\(\) !== sha256\.toLowerCase\(\)/.test(desktop),
+    "下载复用全仓唯一的镜像下载器，并强制校验 asset.digest 的 sha256（第三方反代能改包体 ⇒ 必须比对）");
   ok(/OpenFilm-Setup-\.\*\.exe/.test(desktop) || /\^OpenFilm-Setup-.*\\\.exe\$/.test(desktop),
     "Windows 取 OpenFilm-Setup-*.exe（上游只发 x64）");
   ok(!/arm64.*\.exe|Setup-arm64/i.test(desktop),

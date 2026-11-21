@@ -32,7 +32,7 @@ import { checkOfficialPluginUpdates, codexOfficialMarketDir, findOfficialMarketP
 import { installSkillHubSkillset } from "./skillhub-packages";
 import { applySkillHubSoul, currentSkillHubSoul } from "./skillhub-souls";
 import { PONYTAIL_VERSION, listInstalledPonytailVersions } from "./ponytail-plugin";
-import { compareVersions } from "./updates";
+import { compareVersions } from "./version-utils";
 import { mirrorOrder, withPrefix, type ComponentSpec, type DownloadSourceSetting } from "./update-registry";
 import { dirFingerprint, withRollback } from "./update-safety";
 import { bundledPython } from "./toolchain";

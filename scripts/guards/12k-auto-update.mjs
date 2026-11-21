@@ -236,14 +236,13 @@ ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有
 /* ⑪ 旧安装包必须清理（10-17 用户令：「更新重启完成后把旧的安装包去了，否则越积越大」）。
    ⛔ 安装包按**版本命名**、每更新一次一个新文件；不清理就永久累积（实测下载目录全仓无任何清理）。
    ⛔ 清理点必须是**启动时**（安装包拉起后本进程马上退出，那一刻删不掉）。 */
-{
-  const upd = read("electron/updates.ts");
-  const updIpc = read("electron/features/updates-ipc.ts");
-  ok(/export function pruneOldInstallers/.test(upd), "有旧安装包清理函数");
-  ok(/files\.slice\(1\)/.test(upd), "清理保留**最新一个**（手动重装兜底），不团灭");
-  ok(/\.\(exe\|msi\|dmg\|pkg\|zip\|appimage\|deb\|rpm\)/.test(upd), "只认安装包扩展名（⛔ 不误删用户其它文件）");
-  ok(/pruneOldInstallers\(defaultDownloadDir/.test(updIpc), "在 updates 域 setup 里**启动即清**（重启后才是安全清理点）");
-}
+  const svc = read("electron/update-service.ts");
+  ok(/function pruneOldPackages\(/.test(svc), "有旧安装包清理函数（11-21 重写后在 update-service.ts）");
+  ok(/keepVersion/.test(svc), "清理保留**当前这一版**（手动重装 / 回退兜底），不团灭");
+  ok(/path\.join\(app\.getPath\("userData"\), "update"\)/.test(svc),
+    "只清本应用自己的 userData/update 目录（⛔ 不扫用户下载目录、不按扩展名误删）");
+  ok(/restoreUpdateState[\s\S]{0,800}pruneOldPackages\(saved\?\.version\)/.test(svc),
+    "在启动恢复里就清（安装包拉起时本进程已退出，只能等新版本跑起来再清）");
 
 /* ⑫ **只保留最新版本，旧的自动清理**（10-17 用户定的通用规则，不只是安装包）。
    ⛔ 引擎的旧版本（`vendor/*.bak-1`，~437MB）也是"旧版本"——它在**本次更新内**是回滚备份，

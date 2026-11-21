@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 723,
+  "count": 721,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -91,6 +91,86 @@
       "invokeArgs": "threadId",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "apkstartAdb",
+      "channel": "apkstart:adb",
+      "paramsImpl": "input: { args?: string[]; timeoutMs?: number }",
+      "paramsDecl": "input: { args?: string[]; timeoutMs?: number }",
+      "returns": "Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 透传 adb 命令（shell input / pm grant / am start / dumpsys 等）：参数数组不进 shell，自动补 -s <当前模拟器>；输出截断"
+    },
+    {
+      "name": "apkstartInstall",
+      "channel": "apkstart:install",
+      "paramsImpl": "input: { apk?: string; launch?: boolean; waitMs?: number }",
+      "paramsDecl": "input: { apk?: string; launch?: boolean; waitMs?: number }",
+      "returns": "Promise<{ ok: boolean; pending: boolean; packageName: string; label: string; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 安装 APK：spawn ApkStart.exe --silent <apk>（参数数组不进 shell）；完成判据 = ApkStart 的 apps.json 出现新条目/被改写，等不到就 pending（首启要先下约 1GB 运行时），不假装成功"
+    },
+    {
+      "name": "apkstartLaunch",
+      "channel": "apkstart:launch",
+      "paramsImpl": "input: { package?: string }",
+      "paramsDecl": "input: { package?: string }",
+      "returns": "Promise<{ ok: boolean; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 启动已装应用：spawn ApkStart.exe --launch <包名>（上游 CLI 自带 silent）；包名先过格式校验，且必须在 ApkStart 应用清单里"
+    },
+    {
+      "name": "apkstartLogcat",
+      "channel": "apkstart:logcat",
+      "paramsImpl": "input: { lines?: number; filter?: string; packageName?: string }",
+      "paramsDecl": "input: { lines?: number; filter?: string; packageName?: string }",
+      "returns": "Promise<{ ok: boolean; text: string; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 读最近 logcat（默认 300 行，可按关键字/包名过滤；带包名时保留 FATAL EXCEPTION / ANR 行）"
+    },
+    {
+      "name": "apkstartOpen",
+      "channel": "apkstart:open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 打开 ApkStart 主界面（看安装进度/手动操作；detached spawn，宿主退出后它继续跑）"
+    },
+    {
+      "name": "apkstartPurge",
+      "channel": "apkstart:purge",
+      "paramsImpl": "confirm: boolean",
+      "paramsDecl": "confirm: boolean",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "confirm",
+      "cast": null,
+      "note": "11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错）"
+    },
+    {
+      "name": "apkstartScreenshot",
+      "channel": "apkstart:screenshot",
+      "paramsImpl": "input: { path?: string }",
+      "paramsDecl": "input: { path?: string }",
+      "returns": "Promise<{ ok: boolean; path: string; bytes: number; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 设备截屏：adb exec-out screencap -p → PNG 落盘（默认 userData/apkstart/screenshots），返回本地路径给模型查看"
+    },
+    {
+      "name": "apkstartStatus",
+      "channel": "apkstart:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; exePath: string; version: string; running: boolean; runtimeReady: boolean; runtimeRoot: string; adbPath: string; device: { serial: string; state: string; model: string; api: string; release: string } | null; apps: { package?: string; label?: string; versionName?: string; installedAt?: number; lastLaunchAt?: number }[]; dataDir: string; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT）状态：安装/版本/主界面是否在跑/运行时是否备齐/当前模拟器设备/它自己的应用清单（apps.json）；3s 缓存（卡片轮询不反复打 adb）"
     },
     {
       "name": "appLockCancel",
@@ -260,6 +340,66 @@
       "invokeArgs": "patch",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "artcraftOpen",
+      "channel": "artcraft:open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 打开 ArtCraft Launcher（19 个创作 App 的安装/更新/打开由它自己完成；宿主不代装）"
+    },
+    {
+      "name": "artcraftPickRoot",
+      "channel": "artcraft:pick-root",
+      "paramsImpl": "input?: { clear?: boolean }",
+      "paramsDecl": "input?: { clear?: boolean }",
+      "returns": "Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测）"
+    },
+    {
+      "name": "artcraftRun",
+      "channel": "artcraft:run",
+      "paramsImpl": "input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }",
+      "paramsDecl": "input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }",
+      "returns": "Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入）"
+    },
+    {
+      "name": "artcraftStatus",
+      "channel": "artcraft:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; launcherPath: string; platform: string; sizeBytes: number; installedApps: Array<{ id: string; name: string; dir: string; exePath: string; cliPath: string; version: string }>; mcpServers: string[]; attribution: { license: string; home: string; apps: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 已装 App 列表（Launcher 安装目录扫描 + exe 版本）/ 已写入的独立 MCP 名单 / 许可"
+    },
+    {
+      "name": "artcraftSync",
+      "channel": "artcraft:sync",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ servers: string[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 重新扫描已装 App 并重写 config.toml（每个 App 一条独立 [mcp_servers.<id>]）；引擎需重启才加载"
+    },
+    {
+      "name": "listArtifactArchives",
+      "channel": "artifact:list",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": "11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它"
     },
     {
       "name": "runAutoUpdateComponent",
@@ -699,6 +839,16 @@
       "note": null
     },
     {
+      "name": "browserClearData",
+      "channel": "browser:clear-data",
+      "paramsImpl": "kind?: string",
+      "paramsDecl": "kind?: string",
+      "returns": "Promise<{ ok: boolean; partition: string; cleared: string }>",
+      "invokeArgs": "kind",
+      "cast": null,
+      "note": "清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清"
+    },
+    {
       "name": "egoCleanup",
       "channel": "browser:ego-cleanup",
       "paramsImpl": "threadId?: string",
@@ -847,6 +997,116 @@
       "note": null
     },
     {
+      "name": "cancelCliAgentInstall",
+      "channel": "cliagents:cancel",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; cancelled: boolean }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-06 取消安装/更新：kill 子进程（真停，不是只改 UI）"
+    },
+    {
+      "name": "checkCliAgentUpdates",
+      "channel": "cliagents:check-updates",
+      "paramsImpl": "ids?: string[]",
+      "paramsDecl": "ids?: string[]",
+      "returns": "Promise<{ items: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> }>",
+      "invokeArgs": "ids",
+      "cast": null,
+      "note": "11-06：查最新版本（npm view / pip index），结果缓存 10 分钟"
+    },
+    {
+      "name": "detectCliAgent",
+      "channel": "cliagents:detect",
+      "paramsImpl": "input?: { id?: string; bin?: string }",
+      "paramsDecl": "input?: { id?: string; bin?: string }",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "只在用户点「检测」时调：有子进程（where/which + --version）"
+    },
+    {
+      "name": "installCliAgent",
+      "channel": "cliagents:install",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string; detail?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH"
+    },
+    {
+      "name": "listCliAgents",
+      "channel": "cliagents:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ items: CliAgentEntry[]; categories: { key: string; label: string; hint: string }[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-29 CLI 智能体板块：分类表跟着列表下发（渲染层不复制第二份分类字面量）"
+    },
+    {
+      "name": "removeCliAgent",
+      "channel": "cliagents:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveCliAgent",
+      "channel": "cliagents:save",
+      "paramsImpl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }",
+      "paramsDecl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "新增/更新；内置项不可删只能关停"
+    },
+    {
+      "name": "applyCliSync",
+      "channel": "cliagents:sync-apply",
+      "paramsImpl": "input?: { scope?: string; targetId?: string }",
+      "paramsDecl": "input?: { scope?: string; targetId?: string }",
+      "returns": "Promise<{ ok: boolean; id?: string; name?: string; detail?: string; results?: Array<{ id?: string; name: string; ok: boolean; state?: \"synced\" | \"current\" | \"auto\" | \"manual\" | \"failed\"; detail: string }> }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；scope=all 逐 CLI 回执（synced/current/auto/manual/failed）"
+    },
+    {
+      "name": "inspectCliSyncTargets",
+      "channel": "cliagents:sync-inspect",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: \"claude\" | \"keyed\" | \"config\" | \"env\" | \"own\"; action: string; status: string; docs?: string }> }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key）"
+    },
+    {
+      "name": "uninstallCliAgent",
+      "channel": "cliagents:uninstall",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string; detail?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "配套卸载：只动应用自己的工具目录，系统里用户自装的另一份不越界"
+    },
+    {
+      "name": "updateCliAgent",
+      "channel": "cliagents:update",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string; detail?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-06 一键更新：npm i -g pkg@latest / pip install -U；真跑 + 复核 PATH"
+    },
+    {
       "name": "readClipboardImage",
       "channel": "clipboard:image",
       "paramsImpl": "",
@@ -885,116 +1145,6 @@
       "invokeArgs": "filePath",
       "cast": null,
       "note": null
-    },
-    {
-      "name": "listCliAgents",
-      "channel": "cliagents:list",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ items: CliAgentEntry[]; categories: { key: string; label: string; hint: string }[] }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "10-29 CLI 智能体板块：分类表跟着列表下发（渲染层不复制第二份分类字面量）"
-    },
-    {
-      "name": "detectCliAgent",
-      "channel": "cliagents:detect",
-      "paramsImpl": "input?: { id?: string; bin?: string }",
-      "paramsDecl": "input?: { id?: string; bin?: string }",
-      "returns": "Promise<{ installed: boolean; path: string; version: string; error: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "只在用户点「检测」时调：有子进程（where/which + --version）"
-    },
-    {
-      "name": "saveCliAgent",
-      "channel": "cliagents:save",
-      "paramsImpl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }",
-      "paramsDecl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }",
-      "returns": "Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "新增/更新；内置项不可删只能关停"
-    },
-    {
-      "name": "removeCliAgent",
-      "channel": "cliagents:remove",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "installCliAgent",
-      "channel": "cliagents:install",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string; detail?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH"
-    },
-    {
-      "name": "uninstallCliAgent",
-      "channel": "cliagents:uninstall",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string; detail?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "配套卸载：只动应用自己的工具目录，系统里用户自装的另一份不越界"
-    },
-    {
-      "name": "checkCliAgentUpdates",
-      "channel": "cliagents:check-updates",
-      "paramsImpl": "ids?: string[]",
-      "paramsDecl": "ids?: string[]",
-      "returns": "Promise<{ items: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> }>",
-      "invokeArgs": "ids",
-      "cast": null,
-      "note": "11-06：查最新版本（npm view / pip index），结果缓存 10 分钟"
-    },
-    {
-      "name": "updateCliAgent",
-      "channel": "cliagents:update",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string; detail?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-06 一键更新：npm i -g pkg@latest / pip install -U；真跑 + 复核 PATH"
-    },
-    {
-      "name": "cancelCliAgentInstall",
-      "channel": "cliagents:cancel",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; cancelled: boolean }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-06 取消安装/更新：kill 子进程（真停，不是只改 UI）"
-    },
-    {
-      "name": "inspectCliSyncTargets",
-      "channel": "cliagents:sync-inspect",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: \"claude\" | \"keyed\" | \"config\" | \"env\" | \"own\"; action: string; status: string; docs?: string }> }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key）"
-    },
-    {
-      "name": "applyCliSync",
-      "channel": "cliagents:sync-apply",
-      "paramsImpl": "input?: { scope?: string; targetId?: string }",
-      "paramsDecl": "input?: { scope?: string; targetId?: string }",
-      "returns": "Promise<{ ok: boolean; id?: string; name?: string; detail?: string; results?: Array<{ id?: string; name: string; ok: boolean; state?: \"synced\" | \"current\" | \"auto\" | \"manual\" | \"failed\"; detail: string }> }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；scope=all 逐 CLI 回执（synced/current/auto/manual/failed）"
     },
     {
       "name": "respondCloseConfirm",
@@ -1177,6 +1327,26 @@
       "note": "云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩）"
     },
     {
+      "name": "cloudSyncDelete",
+      "channel": "cloud:sync/delete",
+      "paramsImpl": "input?: { ids?: string[] }",
+      "paramsDecl": "input?: { ids?: string[] }",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动）"
+    },
+    {
+      "name": "cloudSyncIndex",
+      "channel": "cloud:sync/index",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除"
+    },
+    {
       "name": "cloudSyncList",
       "channel": "cloud:sync/list",
       "paramsImpl": "",
@@ -1225,26 +1395,6 @@
       "invokeArgs": "",
       "cast": null,
       "note": "11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage"
-    },
-    {
-      "name": "cloudSyncIndex",
-      "channel": "cloud:sync/index",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除"
-    },
-    {
-      "name": "cloudSyncDelete",
-      "channel": "cloud:sync/delete",
-      "paramsImpl": "input?: { ids?: string[] }",
-      "paramsDecl": "input?: { ids?: string[] }",
-      "returns": "Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动）"
     },
     {
       "name": "listOfficialMarketCategories",
@@ -1587,6 +1737,116 @@
       "note": null
     },
     {
+      "name": "dataaccessFavoritesAppend",
+      "channel": "dataaccess:favorites-append",
+      "paramsImpl": "input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }",
+      "paramsDecl": "input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }",
+      "returns": "Promise<{ ok: boolean; id: string; title: string; total: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有）"
+    },
+    {
+      "name": "dataaccessFavoritesList",
+      "channel": "dataaccess:favorites-list",
+      "paramsImpl": "input: { threadId: string; query?: string; limit?: number }",
+      "paramsDecl": "input: { threadId: string; query?: string; limit?: number }",
+      "returns": "Promise<{ total: number; matched: number; items: { id: string; title: string; kind: string; content: string; tags: string[]; createdAt: string }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：读收藏夹（需 favorites/read）"
+    },
+    {
+      "name": "dataaccessGrant",
+      "channel": "dataaccess:grant",
+      "paramsImpl": "input: { threadId: string; module: string; level: string; on: boolean }",
+      "paramsDecl": "input: { threadId: string; module: string; level: string; on: boolean }",
+      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "设一个三元组（会话+模块+读/写）；只在内存，退出即失效"
+    },
+    {
+      "name": "dataaccessJournalAppend",
+      "channel": "dataaccess:journal-append",
+      "paramsImpl": "input: { threadId: string; date?: string; title?: string; body: string }",
+      "paramsDecl": "input: { threadId: string; date?: string; title?: string; body: string }",
+      "returns": "Promise<{ ok: boolean; date: string; days: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史）"
+    },
+    {
+      "name": "dataaccessJournalRead",
+      "channel": "dataaccess:journal-read",
+      "paramsImpl": "input: { threadId: string; date?: string }",
+      "paramsDecl": "input: { threadId: string; date?: string }",
+      "returns": "Promise<{ date: string; content: string; truncated: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：读某天日记全文（需 journal/read）"
+    },
+    {
+      "name": "dataaccessJournalSearch",
+      "channel": "dataaccess:journal-search",
+      "paramsImpl": "input: { threadId: string; query: string }",
+      "paramsDecl": "input: { threadId: string; query: string }",
+      "returns": "Promise<{ hits: { date: string; lines: string[] }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：全文检索日记（需 journal/read）"
+    },
+    {
+      "name": "dataaccessRevokeAll",
+      "channel": "dataaccess:revoke-all",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "撤销某会话的全部授权"
+    },
+    {
+      "name": "dataaccessState",
+      "channel": "dataaccess:state",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "读某会话的授权（默认全关）"
+    },
+    {
+      "name": "dataaccessVaultCopy",
+      "channel": "dataaccess:vault-copy",
+      "paramsImpl": "input: { threadId: string; id: string }",
+      "paramsDecl": "input: { threadId: string; id: string }",
+      "returns": "Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文）"
+    },
+    {
+      "name": "dataaccessVaultFind",
+      "channel": "dataaccess:vault-find",
+      "paramsImpl": "input: { threadId: string; query?: string }",
+      "paramsDecl": "input: { threadId: string; query?: string }",
+      "returns": "Promise<{ total: number; items: { id: string; title: string; username: string; url: string; hasSecret: boolean }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文）"
+    },
+    {
+      "name": "dataaccessVaultSave",
+      "channel": "dataaccess:vault-save",
+      "paramsImpl": "input: { threadId: string; item: Record<string, unknown> }",
+      "paramsDecl": "input: { threadId: string; item: Record<string, unknown> }",
+      "returns": "Promise<{ ok: boolean; total: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：写入密码本（需 vault/write + 渲染层一次性确认）"
+    },
+    {
       "name": "prepareDataDir",
       "channel": "dataDir:prepare",
       "paramsImpl": "dir: string",
@@ -1635,6 +1895,36 @@
       "invokeArgs": "input",
       "cast": "Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>",
       "note": "10-04 启停声明式插件（插槽即时生效，无需重启）"
+    },
+    {
+      "name": "designMdExport",
+      "channel": "design-md:export",
+      "paramsImpl": "input: { slug?: string; dir?: string }",
+      "paramsDecl": "input: { slug?: string; dir?: string }",
+      "returns": "Promise<{ ok: boolean; path?: string; category?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径）"
+    },
+    {
+      "name": "designMdGet",
+      "channel": "design-md:get",
+      "paramsImpl": "slug: string",
+      "paramsDecl": "slug: string",
+      "returns": "Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>",
+      "invokeArgs": "slug",
+      "cast": null,
+      "note": "11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null"
+    },
+    {
+      "name": "designMdList",
+      "channel": "design-md:list",
+      "paramsImpl": "input: { category?: string; query?: string; limit?: number }",
+      "paramsDecl": "input: { category?: string; query?: string; limit?: number }",
+      "returns": "Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string; zh: string }> }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用"
     },
     {
       "name": "chooseDirectory",
@@ -1865,6 +2155,16 @@
       "note": "装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片"
     },
     {
+      "name": "installLocalSkillset",
+      "channel": "expert-market:install-local",
+      "paramsImpl": "input?: { dir?: string; zip?: string }",
+      "paramsDecl": "input?: { dir?: string; zip?: string }",
+      "returns": "Promise<{ ok: boolean; slug?: string; installed?: string[]; skipped?: Array<{ name: string; reason: string }>; restartError?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
       "name": "listExpertMarketPackages",
       "channel": "expert-market:list",
       "paramsImpl": "input: { page?: number; pageSize?: number; query?: string } = {}",
@@ -1873,6 +2173,26 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包）"
+    },
+    {
+      "name": "extensionsCatalog",
+      "channel": "extensions:catalog",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json）"
+    },
+    {
+      "name": "extensionsMenuSet",
+      "channel": "extensions:menu-set",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { entries: MenuEntrySpec[] }",
+      "returns": "Promise<{ ok: boolean; menu: MenuEntrySpec[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限）"
     },
     {
       "name": "openExternal",
@@ -1945,6 +2265,66 @@
       "note": null
     },
     {
+      "name": "feishuCliCancel",
+      "channel": "feishu-cli:cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "取消本次授权：杀掉挂在后台的 config init / device-code 轮询进程"
+    },
+    {
+      "name": "feishuCliLoginStart",
+      "channel": "feishu-cli:login-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成"
+    },
+    {
+      "name": "feishuCliLogout",
+      "channel": "feishu-cli:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "feishuCliRun",
+      "channel": "feishu-cli:run",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { args: string[]; cwd?: string }",
+      "returns": "Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell）"
+    },
+    {
+      "name": "feishuCliSetupStart",
+      "channel": "feishu-cli:setup-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接"
+    },
+    {
+      "name": "feishuCliStatus",
+      "channel": "feishu-cli:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录"
+    },
+    {
       "name": "feishuConnect",
       "channel": "feishu:connect",
       "paramsImpl": "appId: string, appSecret: string",
@@ -1991,6 +2371,26 @@
       "returns": "Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "fileeConvert",
+      "channel": "filee:convert",
+      "paramsImpl": "input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }",
+      "paramsDecl": "input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }",
+      "returns": "Promise<{ ok: boolean; code: number; report: { preset?: string; target?: string; converted?: number; skipped?: number; failed?: number; files?: { source?: string; state?: string; outputs?: string[]; error?: string }[] } | null; error: string; raw: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容"
+    },
+    {
+      "name": "fileeStatus",
+      "channel": "filee:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; detail: string; attribution: { license: string; home: string; site: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）/ 开源声明（仓库与官网地址单一真相源在主进程，前端零字面量 —— 10-31 补审查修正）"
     },
     {
       "name": "fileExists",
@@ -2054,6 +2454,396 @@
       "note": "10-18 实修：unstaged=git diff / staged=--cached / head=分支起点 merge-base diff（含已提交+未提交，找不到基准才退回 HEAD 并说明）/ last 由渲染层展示；Git 缺失/非仓库/无 HEAD 都回中文原因"
     },
     {
+      "name": "harnessTeamAddNote",
+      "channel": "harness-team:add-note",
+      "paramsImpl": "groupId: string, note: Record<string, unknown>",
+      "paramsDecl": "groupId: string, note: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>",
+      "invokeArgs": "groupId, note",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamAddPartner",
+      "channel": "harness-team:add-partner",
+      "paramsImpl": "groupId: string, partner: Record<string, unknown>, addedBy: string",
+      "paramsDecl": "groupId: string, partner: Record<string, unknown>, addedBy: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>",
+      "invokeArgs": "groupId, partner, addedBy",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamAppendMessage",
+      "channel": "harness-team:append-message",
+      "paramsImpl": "groupId: string, entry: Record<string, unknown>",
+      "paramsDecl": "groupId: string, entry: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; entry?: any; rows: any[]; error?: string }>",
+      "invokeArgs": "groupId, entry",
+      "cast": null,
+      "note": "团队模式 P0b（群消息日志）"
+    },
+    {
+      "name": "harnessTeamClearMessages",
+      "channel": "harness-team:clear-messages",
+      "paramsImpl": "groupId: string",
+      "paramsDecl": "groupId: string",
+      "returns": "Promise<{ ok: boolean; cleared: number; error?: string }>",
+      "invokeArgs": "groupId",
+      "cast": null,
+      "note": "团队模式：清空群聊天记录（只清投影日志，子会话不动）"
+    },
+    {
+      "name": "harnessTeamCreate",
+      "channel": "harness-team:create",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamDelete",
+      "channel": "harness-team:delete",
+      "paramsImpl": "groupId: string",
+      "paramsDecl": "groupId: string",
+      "returns": "Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>",
+      "invokeArgs": "groupId",
+      "cast": null,
+      "note": "团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed）"
+    },
+    {
+      "name": "harnessTeamDispatch",
+      "channel": "harness-team:dispatch",
+      "paramsImpl": "groupId: string, input: Record<string, unknown>",
+      "paramsDecl": "groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }",
+      "returns": "Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>",
+      "invokeArgs": "groupId, input",
+      "cast": null,
+      "note": "团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行）"
+    },
+    {
+      "name": "harnessTeamGroupProgress",
+      "channel": "harness-team:group-progress",
+      "paramsImpl": "groupId: string",
+      "paramsDecl": "groupId: string",
+      "returns": "Promise<{ ok: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>; error?: string }>",
+      "invokeArgs": "groupId",
+      "cast": null,
+      "note": "团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度"
+    },
+    {
+      "name": "harnessTeamLedger",
+      "channel": "harness-team:ledger",
+      "paramsImpl": "groupId: string, days: number",
+      "paramsDecl": "groupId: string, days: number",
+      "returns": "Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>",
+      "invokeArgs": "groupId, days",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamList",
+      "channel": "harness-team:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamLogUsage",
+      "channel": "harness-team:log-usage",
+      "paramsImpl": "entry: Record<string, unknown>",
+      "paramsDecl": "entry: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; count?: number; error?: string }>",
+      "invokeArgs": "entry",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamMessages",
+      "channel": "harness-team:messages",
+      "paramsImpl": "groupId: string",
+      "paramsDecl": "groupId: string",
+      "returns": "Promise<{ ok: boolean; rows: any[]; error?: string }>",
+      "invokeArgs": "groupId",
+      "cast": null,
+      "note": "团队模式 P0b（群消息日志）"
+    },
+    {
+      "name": "harnessTeamMute",
+      "channel": "harness-team:mute",
+      "paramsImpl": "groupId: string, partnerId: string, muted: boolean",
+      "paramsDecl": "groupId: string, partnerId: string, muted: boolean",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[] }>",
+      "invokeArgs": "groupId, partnerId, muted",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamProject",
+      "channel": "harness-team:project",
+      "paramsImpl": "sources: unknown",
+      "paramsDecl": "sources: unknown",
+      "returns": "Promise<{ rows: any[] }>",
+      "invokeArgs": "sources",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamQueueStart",
+      "channel": "harness-team:queue-start",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; mode?: \"steer\" | \"start\"; error?: string; reason?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "团队模式：排队消息「立即」——能插队就 steer 进正在跑的回合，插不了按新回合启动"
+    },
+    {
+      "name": "harnessTeamRemoveNote",
+      "channel": "harness-team:remove-note",
+      "paramsImpl": "groupId: string, noteId: string",
+      "paramsDecl": "groupId: string, noteId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>",
+      "invokeArgs": "groupId, noteId",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamRemovePartner",
+      "channel": "harness-team:remove-partner",
+      "paramsImpl": "groupId: string, partnerId: string, byId: string",
+      "paramsDecl": "groupId: string, partnerId: string, byId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>",
+      "invokeArgs": "groupId, partnerId, byId",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamRename",
+      "channel": "harness-team:rename",
+      "paramsImpl": "groupId: string, name: string",
+      "paramsDecl": "groupId: string, name: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, name",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamRenameMember",
+      "channel": "harness-team:rename-member",
+      "paramsImpl": "groupId: string, memberId: string, name: string",
+      "paramsDecl": "groupId: string, memberId: string, name: string",
+      "returns": "Promise<{ ok: boolean; changed?: boolean; error?: string; reason?: string; group?: any; issues?: string[] }>",
+      "invokeArgs": "groupId, memberId, name",
+      "cast": null,
+      "note": "群成员改名（联动伙伴会话标题与群内识别）"
+    },
+    {
+      "name": "harnessTeamRunSchedule",
+      "channel": "harness-team:run-schedule",
+      "paramsImpl": "groupId: string, scheduleId: string",
+      "paramsDecl": "groupId: string, scheduleId: string",
+      "returns": "Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>",
+      "invokeArgs": "groupId, scheduleId",
+      "cast": null,
+      "note": "团队模式：立刻运行一条定时任务"
+    },
+    {
+      "name": "harnessTeamRunning",
+      "channel": "harness-team:running",
+      "paramsImpl": "groupId: string",
+      "paramsDecl": "groupId: string",
+      "returns": "Promise<{ ok: boolean; runs: any[]; error?: string }>",
+      "invokeArgs": "groupId",
+      "cast": null,
+      "note": "团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出）"
+    },
+    {
+      "name": "harnessTeamSetAdmin",
+      "channel": "harness-team:set-admin",
+      "paramsImpl": "groupId: string, memberId: string",
+      "paramsDecl": "groupId: string, memberId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, memberId",
+      "cast": null,
+      "note": "团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底）"
+    },
+    {
+      "name": "harnessTeamSetAvatar",
+      "channel": "harness-team:set-avatar",
+      "paramsImpl": "groupId: string, memberId: string, avatar: string",
+      "paramsDecl": "groupId: string, memberId: string, avatar: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, memberId, avatar",
+      "cast": null,
+      "note": "团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心）"
+    },
+    {
+      "name": "harnessTeamSetDialogFlow",
+      "channel": "harness-team:set-dialog-flow",
+      "paramsImpl": "groupId: string, mode: string",
+      "paramsDecl": "groupId: string, mode: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "groupId, mode",
+      "cast": null,
+      "note": "团队模式：群对话流（simple 运行中过程折叠 / detail 运行中铺开过程）"
+    },
+    {
+      "name": "harnessTeamSetFiles",
+      "channel": "harness-team:set-files",
+      "paramsImpl": "groupId: string, files: unknown",
+      "paramsDecl": "groupId: string, files: unknown",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, files",
+      "cast": null,
+      "note": "团队模式：群记忆 / 群文件"
+    },
+    {
+      "name": "harnessTeamSetGuard",
+      "channel": "harness-team:set-guard",
+      "paramsImpl": "groupId: string, guard: Record<string, unknown>",
+      "paramsDecl": "groupId: string, guard: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[] }>",
+      "invokeArgs": "groupId, guard",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamSetManager",
+      "channel": "harness-team:set-manager",
+      "paramsImpl": "groupId: string, memberId: string, managerId: string",
+      "paramsDecl": "groupId: string, memberId: string, managerId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>",
+      "invokeArgs": "groupId, memberId, managerId",
+      "cast": null,
+      "note": "团队模式：上下级（委派白名单）"
+    },
+    {
+      "name": "harnessTeamSetMemory",
+      "channel": "harness-team:set-memory",
+      "paramsImpl": "groupId: string, text: string",
+      "paramsDecl": "groupId: string, text: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, text",
+      "cast": null,
+      "note": "团队模式：群记忆 / 群文件"
+    },
+    {
+      "name": "harnessTeamSetMenu",
+      "channel": "harness-team:set-menu",
+      "paramsImpl": "groupId: string, items: unknown",
+      "paramsDecl": "groupId: string, items: unknown",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, items",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamSetMenuPlacement",
+      "channel": "harness-team:set-menu-placement",
+      "paramsImpl": "groupId: string, placement: string",
+      "paramsDecl": "groupId: string, placement: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, placement",
+      "cast": null,
+      "note": "团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT）"
+    },
+    {
+      "name": "harnessTeamSetMessageForm",
+      "channel": "harness-team:set-message-form",
+      "paramsImpl": "groupId: string, form: string",
+      "paramsDecl": "groupId: string, form: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "groupId, form",
+      "cast": null,
+      "note": "团队模式：群消息形式（chat 对话消息 / topic 话题消息）"
+    },
+    {
+      "name": "harnessTeamSetMessageLayout",
+      "channel": "harness-team:set-message-layout",
+      "paramsImpl": "groupId: string, layout: string",
+      "paramsDecl": "groupId: string, layout: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, layout",
+      "cast": null,
+      "note": "团队模式：群消息排版（split = 伙伴左/用户右，left = 全部靠左）"
+    },
+    {
+      "name": "harnessTeamSetReplyMode",
+      "channel": "harness-team:set-reply-mode",
+      "paramsImpl": "groupId: string, mode: string",
+      "paramsDecl": "groupId: string, mode: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "groupId, mode",
+      "cast": null,
+      "note": "团队模式：群回复模式（process 运行中显示过程 / placeholder 只显示占位）"
+    },
+    {
+      "name": "harnessTeamSetRules",
+      "channel": "harness-team:set-rules",
+      "paramsImpl": "groupId: string, text: string",
+      "paramsDecl": "groupId: string, text: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, text",
+      "cast": null,
+      "note": "团队模式：群规矩（硬约束，每轮注入）"
+    },
+    {
+      "name": "harnessTeamSetSchedule",
+      "channel": "harness-team:set-schedule",
+      "paramsImpl": "groupId: string, list: unknown",
+      "paramsDecl": "groupId: string, list: unknown",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, list",
+      "cast": null,
+      "note": "团队模式：群定时任务（整组替换，nextRunAt 由主进程算）"
+    },
+    {
+      "name": "harnessTeamSetWorkspace",
+      "channel": "harness-team:set-workspace",
+      "paramsImpl": "groupId: string, workspace: string",
+      "paramsDecl": "groupId: string, workspace: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, workspace",
+      "cast": null,
+      "note": "团队模式：群项目地址（派活时作为子会话 cwd）"
+    },
+    {
+      "name": "harnessTeamStop",
+      "channel": "harness-team:stop",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "团队模式：停止某个伙伴当前这一回合"
+    },
+    {
+      "name": "harnessTeamTalkThreads",
+      "channel": "harness-team:talk-threads",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number; avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string; id: string }> }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签"
+    },
+    {
+      "name": "harnessTeamThreadUsage",
+      "channel": "harness-team:thread-usage",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "团队模式：取该会话最近一轮真实 token"
+    },
+    {
       "name": "searchHistory",
       "channel": "history:search",
       "paramsImpl": "input?: { query?: string; limit?: number }",
@@ -2112,6 +2902,46 @@
       "invokeArgs": "input",
       "cast": "Promise<any>",
       "note": "P1（10-11）：把本地 HTML/URL 动画在本地渲成 MP4 —— Chromium 抓帧 + 运行时自带 MP4 编码器，零 ffmpeg 依赖；源须为 http(s) 或可信根内 .html"
+    },
+    {
+      "name": "huskDevice",
+      "channel": "husk:device",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ connected: boolean; devices: string[]; platform: string; detail: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作"
+    },
+    {
+      "name": "huskGuide",
+      "channel": "husk:guide",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 打开 Husk 官方安装指南（itslevii.dev/docs/install：SideStore / AltStore / TrollStore 三条路）"
+    },
+    {
+      "name": "huskReveal",
+      "channel": "husk:reveal",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; path: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder）"
+    },
+    {
+      "name": "huskStatus",
+      "channel": "husk:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; tipaInstalled: boolean; tipaVersion: string; tipaPath: string; tipaSizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态）"
     },
     {
       "name": "imageEdit",
@@ -2384,26 +3214,6 @@
       "note": "卸载 Laya（先停服务进程，再 pip uninstall -y laya）；模型权重缓存在用户 HF 缓存目录，不随卸载删除（其他工具可能共用）"
     },
     {
-      "name": "readMcpServerOverrides",
-      "channel": "mcp-servers:overrides",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<Record<string, boolean>>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用"
-    },
-    {
-      "name": "mcpServersTools",
-      "channel": "mcp-servers:tools",
-      "paramsImpl": "input: { query?: string; service?: string; limit?: number }",
-      "paramsDecl": "input: { query?: string; service?: string; limit?: number }",
-      "returns": "Promise<Array<{ name: string; service: string; desc: string; inputSchema?: Record<string, unknown> }>>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema"
-    },
-    {
       "name": "mcpServersCall",
       "channel": "mcp-servers:call",
       "paramsImpl": "input: { name?: string; args?: unknown }",
@@ -2412,6 +3222,16 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "MCP 懒加载：按名字转发调用"
+    },
+    {
+      "name": "readMcpServerOverrides",
+      "channel": "mcp-servers:overrides",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<Record<string, boolean>>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用"
     },
     {
       "name": "readMcpToolPermissions",
@@ -2442,6 +3262,116 @@
       "invokeArgs": "{ server, tool, mode }",
       "cast": null,
       "note": "设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效"
+    },
+    {
+      "name": "mcpServersTools",
+      "channel": "mcp-servers:tools",
+      "paramsImpl": "input: { query?: string; service?: string; limit?: number }",
+      "paramsDecl": "input: { query?: string; service?: string; limit?: number }",
+      "returns": "Promise<Array<{ name: string; service: string; desc: string; inputSchema?: Record<string, unknown> }>>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema"
+    },
+    {
+      "name": "mediaDeskCheckUpdate",
+      "channel": "media-desk:check-update",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速）"
+    },
+    {
+      "name": "mediaDeskEndpoint",
+      "channel": "media-desk:endpoint",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开"
+    },
+    {
+      "name": "handoffMediaDesk",
+      "channel": "media-desk:handoff",
+      "paramsImpl": "input?: { kind?: \"group\" | \"video\" | \"design\"; itemId?: string }",
+      "paramsDecl": "input?: { kind?: \"group\" | \"video\" | \"design\"; itemId?: string }",
+      "returns": "Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "mediaDeskPopout",
+      "channel": "media-desk:popout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; focused: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例）"
+    },
+    {
+      "name": "mediaDeskUpdate",
+      "channel": "media-desk:update",
+      "paramsImpl": "input?: { version?: string }",
+      "paramsDecl": "input?: { version?: string }",
+      "returns": "Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源"
+    },
+    {
+      "name": "mediaDeskVersion",
+      "channel": "media-desk:version",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ current: string; bundled: string; overridden: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线"
+    },
+    {
+      "name": "forgetMemoryAtoms",
+      "channel": "memory:atoms:forget",
+      "paramsImpl": "workspace: string, targets: Array<string | { id: string; group?: string }>",
+      "paramsDecl": "workspace: string, targets: Array<string | { id: string; group?: string }>",
+      "returns": "Promise<{ ok: boolean; done: number; failed: number; error?: string }>",
+      "invokeArgs": "workspace, targets",
+      "cast": null,
+      "note": "11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目"
+    },
+    {
+      "name": "listMemoryAtoms",
+      "channel": "memory:atoms:list",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<{ ok: boolean; index?: string; stats?: { total: number; active: number; broken: number }; entries?: Array<{ id: string; summary: string; type: string; scope: string; status: string; confidence: string; updated: string; tags: string[]; group?: string; body: string }>; history?: Array<{ at: string; op: string; id: string; by: string; summary: string }>; broken?: string[]; policies?: Array<{ label: string; writable: string[]; supersede: string; render: string; recallLimit: number; inject: string[] }>; error?: string }>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": "记忆原子：列出条目 + 索引（新记忆界面的唯一数据源）"
+    },
+    {
+      "name": "recallMemoryAtoms",
+      "channel": "memory:atoms:recall",
+      "paramsImpl": "workspace: string, query: string, seat?: string",
+      "paramsDecl": "workspace: string, query: string, seat?: string",
+      "returns": "Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>",
+      "invokeArgs": "workspace, query, seat",
+      "cast": null,
+      "note": "记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤）"
+    },
+    {
+      "name": "saveMemoryAtoms",
+      "channel": "memory:atoms:save",
+      "paramsImpl": "workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }",
+      "paramsDecl": "workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }",
+      "returns": "Promise<{ ok: boolean; outcome?: string; error?: string }>",
+      "invokeArgs": "workspace, input",
+      "cast": null,
+      "note": "记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功）"
     },
     {
       "name": "readMemoryBackend",
@@ -2582,46 +3512,6 @@
       "invokeArgs": "workspace",
       "cast": null,
       "note": null
-    },
-    {
-      "name": "listMemoryAtoms",
-      "channel": "memory:atoms:list",
-      "paramsImpl": "workspace?: string",
-      "paramsDecl": "workspace?: string",
-      "returns": "Promise<{ ok: boolean; index?: string; stats?: { total: number; active: number; broken: number }; entries?: Array<{ id: string; summary: string; type: string; scope: string; status: string; confidence: string; updated: string; tags: string[]; group?: string; body: string }>; history?: Array<{ at: string; op: string; id: string; by: string; summary: string }>; broken?: string[]; policies?: Array<{ label: string; writable: string[]; supersede: string; render: string; recallLimit: number; inject: string[] }>; error?: string }>",
-      "invokeArgs": "workspace",
-      "cast": null,
-      "note": "记忆原子：列出条目 + 索引（新记忆界面的唯一数据源）"
-    },
-    {
-      "name": "recallMemoryAtoms",
-      "channel": "memory:atoms:recall",
-      "paramsImpl": "workspace: string, query: string, seat?: string",
-      "paramsDecl": "workspace: string, query: string, seat?: string",
-      "returns": "Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>",
-      "invokeArgs": "workspace, query, seat",
-      "cast": null,
-      "note": "记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤）"
-    },
-    {
-      "name": "saveMemoryAtoms",
-      "channel": "memory:atoms:save",
-      "paramsImpl": "workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }",
-      "paramsDecl": "workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }",
-      "returns": "Promise<{ ok: boolean; outcome?: string; error?: string }>",
-      "invokeArgs": "workspace, input",
-      "cast": null,
-      "note": "记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功）"
-    },
-    {
-      "name": "forgetMemoryAtoms",
-      "channel": "memory:atoms:forget",
-      "paramsImpl": "workspace: string, targets: Array<string | { id: string; group?: string }>",
-      "paramsDecl": "workspace: string, targets: Array<string | { id: string; group?: string }>",
-      "returns": "Promise<{ ok: boolean; done: number; failed: number; error?: string }>",
-      "invokeArgs": "workspace, targets",
-      "cast": null,
-      "note": "11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目"
     },
     {
       "name": "writeMemoryLayer",
@@ -2812,6 +3702,16 @@
       "invokeArgs": "{ path }",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "readTaskMonitor",
+      "channel": "monitor:read",
+      "paramsImpl": "threadId: unknown",
+      "paramsDecl": "threadId?: string",
+      "returns": "Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId）"
     },
     {
       "name": "showNotification",
@@ -3062,6 +3962,76 @@
       "invokeArgs": "",
       "cast": null,
       "note": "查最新版（npm dist-tag，镜像优先；比较只认 compareVersions）"
+    },
+    {
+      "name": "openmaicGenerate",
+      "channel": "openmaic:generate",
+      "paramsImpl": "input: { requirement?: string; materialIds?: string[] }",
+      "paramsDecl": "input: { requirement?: string; materialIds?: string[] }",
+      "returns": "Promise<{ ok: boolean; jobId: string; status: string; url: string; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 提交课堂生成任务（POST /api/generate-classroom）：异步返回 jobId；缺模型时翻成「去网页设置里配 Key」的中文指引"
+    },
+    {
+      "name": "openmaicJob",
+      "channel": "openmaic:job",
+      "paramsImpl": "jobId: string",
+      "paramsDecl": "jobId: string",
+      "returns": "Promise<{ ok: boolean; status: string; progress: number; scenesGenerated: number; totalScenes: number; classroomUrl: string; message: string; error: string; done: boolean }>",
+      "invokeArgs": "jobId",
+      "cast": null,
+      "note": "11-14 查询课堂生成任务：状态 / 进度 / 场景数 / 完成后的课堂链接（生成的课堂只属于本机 owner）"
+    },
+    {
+      "name": "openmaicOpen",
+      "channel": "openmaic:open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url: string; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 打开 OpenMAIC 本机界面：确保服务已起，再用系统浏览器打开 127.0.0.1:<port>"
+    },
+    {
+      "name": "openmaicPurge",
+      "channel": "openmaic:purge",
+      "paramsImpl": "confirm: boolean",
+      "paramsDecl": "confirm: boolean",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "confirm",
+      "cast": null,
+      "note": "11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务"
+    },
+    {
+      "name": "openmaicStart",
+      "channel": "openmaic:start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; port: number; url: string; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 起 OpenMAIC：先确保 PostgreSQL（端口冲突顺延并写回配置），再 node next start，90 秒内等 /api/health"
+    },
+    {
+      "name": "openmaicStatus",
+      "channel": "openmaic:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT）状态：源码是否已构建（.next/BUILD_ID）/ 版本 / 本地服务是否健康 / PostgreSQL 是否在跑 / 可选能力面"
+    },
+    {
+      "name": "openmaicStop",
+      "channel": "openmaic:stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 停 OpenMAIC 与 PostgreSQL（宿主重启过则按端口兜底杀）"
     },
     {
       "name": "readPastedText",
@@ -3421,6 +4391,76 @@
       "invokeArgs": "",
       "cast": "Promise<{adb:string}>",
       "note": "把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH）"
+    },
+    {
+      "name": "photocraftBatch",
+      "channel": "photocraft:batch",
+      "paramsImpl": "input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }",
+      "paramsDecl": "input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }",
+      "returns": "Promise<{ ok: boolean; outDir: string; commands: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸"
+    },
+    {
+      "name": "photocraftCommands",
+      "channel": "photocraft:commands",
+      "paramsImpl": "input: { filter?: string }",
+      "paramsDecl": "input: { filter?: string }",
+      "returns": "Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run"
+    },
+    {
+      "name": "photocraftConvert",
+      "channel": "photocraft:convert",
+      "paramsImpl": "input: { path?: string; out?: string; quality?: number }",
+      "paramsDecl": "input: { path?: string; out?: string; quality?: number }",
+      "returns": "Promise<{ ok: boolean; path: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图）"
+    },
+    {
+      "name": "photocraftInfo",
+      "channel": "photocraft:info",
+      "paramsImpl": "input: { path?: string }",
+      "paramsDecl": "input: { path?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内）"
+    },
+    {
+      "name": "photocraftOpen",
+      "channel": "photocraft:open",
+      "paramsImpl": "input: { path?: string }",
+      "paramsDecl": "input: { path?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸）"
+    },
+    {
+      "name": "photocraftRun",
+      "channel": "photocraft:run",
+      "paramsImpl": "input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }",
+      "paramsDecl": "input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }",
+      "returns": "Promise<{ ok: boolean; path: string; commands: string[]; log: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条）"
+    },
+    {
+      "name": "photocraftStatus",
+      "channel": "photocraft:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; cliPath: string; guiPath: string; ioRoot: string; mcpRegistered: boolean; platform: string; sizeBytes: number; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积"
     },
     {
       "name": "validatePlugin",
@@ -3841,16 +4881,6 @@
       "note": null
     },
     {
-      "name": "remoteScreenStop",
-      "channel": "remote:screen-stop",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-06 手机看屏：桌面端主动停采（隐私按钮）"
-    },
-    {
       "name": "remotePairRotate",
       "channel": "remote:pair-rotate",
       "paramsImpl": "",
@@ -3891,6 +4921,16 @@
       "note": null
     },
     {
+      "name": "remoteScreenStop",
+      "channel": "remote:screen-stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-06 手机看屏：桌面端主动停采（隐私按钮）"
+    },
+    {
       "name": "remoteSend",
       "channel": "remote:send",
       "paramsImpl": "cmd: string",
@@ -3899,6 +4939,16 @@
       "invokeArgs": "cmd",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "remoteSetPairingLock",
+      "channel": "remote:set-pairing-lock",
+      "paramsImpl": "locked: boolean",
+      "paramsDecl": "locked: boolean",
+      "returns": "Promise<{ ok: boolean; locked: boolean }>",
+      "invokeArgs": "locked",
+      "cast": null,
+      "note": "11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响）"
     },
     {
       "name": "remoteStart",
@@ -3931,16 +4981,6 @@
       "note": null
     },
     {
-      "name": "remoteSetPairingLock",
-      "channel": "remote:set-pairing-lock",
-      "paramsImpl": "locked: boolean",
-      "paramsDecl": "locked: boolean",
-      "returns": "Promise<{ ok: boolean; locked: boolean }>",
-      "invokeArgs": "locked",
-      "cast": null,
-      "note": "11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响）"
-    },
-    {
       "name": "deleteRpaRecipe",
       "channel": "rpa:delete",
       "paramsImpl": "id: string",
@@ -3961,22 +5001,32 @@
       "note": null
     },
     {
-      "name": "recordRpaRun",
-      "channel": "rpa:run-result",
-      "paramsImpl": "input: { id: string; ok: boolean; error?: string }",
-      "paramsDecl": "input: { id: string; ok: boolean; error?: string }",
-      "returns": "Promise<void>",
-      "invokeArgs": "input",
+      "name": "playRpaRecipe",
+      "channel": "rpa:play-start",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "id",
       "cast": null,
       "note": null
     },
     {
-      "name": "saveRpaRecipe",
-      "channel": "rpa:save",
-      "paramsImpl": "input: unknown",
-      "paramsDecl": "input: unknown",
-      "returns": "Promise<any>",
-      "invokeArgs": "input",
+      "name": "stopRpaPlayback",
+      "channel": "rpa:play-stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "discardRpaRecording",
+      "channel": "rpa:record-discard",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<void>",
+      "invokeArgs": "",
       "cast": null,
       "note": null
     },
@@ -4011,32 +5061,22 @@
       "note": null
     },
     {
-      "name": "discardRpaRecording",
-      "channel": "rpa:record-discard",
-      "paramsImpl": "",
-      "paramsDecl": "",
+      "name": "recordRpaRun",
+      "channel": "rpa:run-result",
+      "paramsImpl": "input: { id: string; ok: boolean; error?: string }",
+      "paramsDecl": "input: { id: string; ok: boolean; error?: string }",
       "returns": "Promise<void>",
-      "invokeArgs": "",
+      "invokeArgs": "input",
       "cast": null,
       "note": null
     },
     {
-      "name": "playRpaRecipe",
-      "channel": "rpa:play-start",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "stopRpaPlayback",
-      "channel": "rpa:play-stop",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean }>",
-      "invokeArgs": "",
+      "name": "saveRpaRecipe",
+      "channel": "rpa:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
       "cast": null,
       "note": null
     },
@@ -4221,6 +5261,96 @@
       "note": "改完立刻重挂快捷键（不重启即生效）"
     },
     {
+      "name": "sessionAliasEnsure",
+      "channel": "session-alias:ensure",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadId?: string; supervisorThreadId?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-31：新建会话后确保有笔名（幂等；主会话不传上级）"
+    },
+    {
+      "name": "sessionAliasSet",
+      "channel": "session-alias:set",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadId?: string; alias?: string; allowDuplicate?: boolean }",
+      "returns": "Promise<{ ok: boolean; error?: string; record?: any; engineError?: string; snapshot?: any }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用"
+    },
+    {
+      "name": "sessionAliasSnapshot",
+      "channel": "session-alias:snapshot",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<Record<string, any>>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-31：会话笔名全量快照（threadId → alias/上级/寓意）"
+    },
+    {
+      "name": "sessionspaceEnsure",
+      "channel": "sessionspace:ensure",
+      "paramsImpl": "threadId: string, projectRoot: string",
+      "paramsDecl": "threadId: string, projectRoot: string",
+      "returns": "Promise<{ ok: boolean; dir?: string; reason?: string }>",
+      "invokeArgs": "threadId, projectRoot",
+      "cast": null,
+      "note": "为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等）"
+    },
+    {
+      "name": "sessionspaceGc",
+      "channel": "sessionspace:gc",
+      "paramsImpl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
+      "paramsDecl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
+      "returns": "Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>",
+      "invokeArgs": "options",
+      "cast": null,
+      "note": "收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删）"
+    },
+    {
+      "name": "sessionspaceList",
+      "channel": "sessionspace:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<SessionWorkspaceRecord[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "列全部会话工作区记录"
+    },
+    {
+      "name": "sessionspaceRemove",
+      "channel": "sessionspace:remove",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ ok: boolean; removed: boolean; reason?: string }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径"
+    },
+    {
+      "name": "sessionspaceSetState",
+      "channel": "sessionspace:set-state",
+      "paramsImpl": "threadId: string, state: string",
+      "paramsDecl": "threadId: string, state: string",
+      "returns": "Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>",
+      "invokeArgs": "threadId, state",
+      "cast": null,
+      "note": "改状态 active/archived（删除走 remove）"
+    },
+    {
+      "name": "sessionspaceState",
+      "channel": "sessionspace:state",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<SessionWorkspaceRecord | null>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "查某会话的工作区记录"
+    },
+    {
       "name": "shellOpen",
       "channel": "shell:open",
       "paramsImpl": "target: string",
@@ -4281,6 +5411,36 @@
       "note": null
     },
     {
+      "name": "shortcutsRead",
+      "channel": "shortcuts:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ bindings: Record<string, string[]>; overrides: Record<string, string[]>; defaults: Record<string, string[]>; conflicts: string[][] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储）"
+    },
+    {
+      "name": "shortcutsReset",
+      "channel": "shortcuts:reset",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; bindings: Record<string, string[]>; conflicts: string[][] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "恢复默认：删 shortcuts.json（截图/语音不动）"
+    },
+    {
+      "name": "shortcutsSave",
+      "channel": "shortcuts:save",
+      "paramsImpl": "input: { bindings?: Record<string, string[]> } = {}",
+      "paramsDecl": "input?: { bindings?: Record<string, string[]> }",
+      "returns": "Promise<{ ok: boolean; error?: string; bindings?: Record<string, string[]>; conflicts?: string[][] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "只写应用内键；截图/语音由各自通道写（先注册成功再落盘）"
+    },
+    {
       "name": "skillDisciplineGet",
       "channel": "skill-discipline:get",
       "paramsImpl": "",
@@ -4288,6 +5448,46 @@
       "returns": "Promise<{ present: boolean; section: string }>",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "cancelSkillPack",
+      "channel": "skill-packs:cancel",
+      "paramsImpl": "input: { id: string }",
+      "paramsDecl": "input: { id: string }",
+      "returns": "Promise<{ cancelled: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "取消正在安装的技能包（中止下载 / 停止写盘并回滚本次已拷贝目录，不会重启引擎）"
+    },
+    {
+      "name": "installSkillPack",
+      "channel": "skill-packs:install",
+      "paramsImpl": "input: { id: string; update?: boolean }",
+      "paramsDecl": "input: { id: string; update?: boolean }",
+      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "下载仓库 skills/（缺失时扫仓库内 SKILL.md）→ auditSkill → 落 codex-home/skills → 重启引擎；update=true 时覆盖本包自己装的目录（凭据 packId 相同），用户自有同名技能仍跳过"
+    },
+    {
+      "name": "listSkillPacks",
+      "channel": "skill-packs:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker）"
+    },
+    {
+      "name": "uninstallSkillPack",
+      "channel": "skill-packs:uninstall",
+      "paramsImpl": "input: { id: string }",
+      "paramsDecl": "input: { id: string }",
+      "returns": "Promise<{ removed: string[]; remaining: string[]; kept: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动）"
     },
     {
       "name": "getBuiltinSkillSwitch",
@@ -4310,56 +5510,6 @@
       "note": "开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集）"
     },
     {
-      "name": "importSkill",
-      "channel": "skills:import",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ name: string; path: string; source: string; content: string } | null>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "listSkillPacks",
-      "channel": "skill-packs:list",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string }[]>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker）"
-    },
-    {
-      "name": "installSkillPack",
-      "channel": "skill-packs:install",
-      "paramsImpl": "input: { id: string; update?: boolean }",
-      "paramsDecl": "input: { id: string; update?: boolean }",
-      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "下载仓库 skills/（缺失时扫仓库内 SKILL.md）→ auditSkill → 落 codex-home/skills → 重启引擎；update=true 时覆盖本包自己装的目录（凭据 packId 相同），用户自有同名技能仍跳过"
-    },
-    {
-      "name": "cancelSkillPack",
-      "channel": "skill-packs:cancel",
-      "paramsImpl": "input: { id: string }",
-      "paramsDecl": "input: { id: string }",
-      "returns": "Promise<{ cancelled: boolean }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "取消正在安装的技能包（中止下载 / 停止写盘并回滚本次已拷贝目录，不会重启引擎）"
-    },
-    {
-      "name": "uninstallSkillPack",
-      "channel": "skill-packs:uninstall",
-      "paramsImpl": "input: { id: string }",
-      "paramsDecl": "input: { id: string }",
-      "returns": "Promise<{ removed: string[]; remaining: string[]; kept: string[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动）"
-    },
-    {
       "name": "findSkills",
       "channel": "skills:find",
       "paramsImpl": "input: { query?: string; limit?: number; cwd?: string }",
@@ -4368,6 +5518,16 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "按关键词实时检索本地技能（全局 + 项目级），刚装的技能立即可搜到；只读"
+    },
+    {
+      "name": "importSkill",
+      "channel": "skills:import",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ name: string; path: string; source: string; content: string } | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
     },
     {
       "name": "listLocalSkills",
@@ -5080,52 +6240,70 @@
       "note": null
     },
     {
-      "name": "updateCheck",
-      "channel": "updates:check",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>",
+      "name": "getUiKitItem",
+      "channel": "ui-kit:get",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>",
+      "invokeArgs": "id",
       "cast": null,
       "note": null
     },
     {
-      "name": "updateDownload",
-      "channel": "updates:download",
-      "paramsImpl": "input: { downloadUrl: string; filename?: string; mode?: \"differential\" | \"full\" }",
-      "paramsDecl": "input: { downloadUrl: string; filename?: string; mode?: \"differential\" | \"full\" }",
-      "returns": "Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>",
+      "name": "listUiKitItems",
+      "channel": "ui-kit:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; name: string; createdAt: number; bytes: number }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeUiKitItem",
+      "channel": "ui-kit:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ removed: number; count: number }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveUiKitItem",
+      "channel": "ui-kit:save",
+      "paramsImpl": "input: { name?: string; doc?: unknown }",
+      "paramsDecl": "input: { name?: string; doc?: unknown }",
+      "returns": "Promise<{ id: string; name: string; replaced: boolean; count: number }>",
       "invokeArgs": "input",
       "cast": null,
       "note": null
     },
     {
-      "name": "updateInstall",
-      "channel": "updates:install",
-      "paramsImpl": "filePath: string",
-      "paramsDecl": "filePath: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "filePath",
+      "name": "updateCheck",
+      "channel": "update:check",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; state: unknown; error?: string }>",
       "cast": null,
       "note": null
     },
     {
-      "name": "updateRestartInstall",
-      "channel": "updates:restart-install",
+      "name": "updateDownload",
+      "channel": "update:download",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; state: unknown; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateInstall",
+      "channel": "update:install",
       "paramsImpl": "",
       "paramsDecl": "",
       "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "",
       "cast": null,
-      "note": "10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住）"
-    },
-    {
-      "name": "updateReveal",
-      "channel": "updates:reveal",
-      "paramsImpl": "filePath: string",
-      "paramsDecl": "filePath: string",
-      "returns": "Promise<{ ok: boolean }>",
-      "invokeArgs": "filePath",
-      "cast": "Promise<{ ok: boolean }>",
       "note": null
     },
     {
@@ -5279,26 +6457,6 @@
       "note": null
     },
     {
-      "name": "voiceMossVoices",
-      "channel": "voice:moss-voices",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥）"
-    },
-    {
-      "name": "voiceMossPreview",
-      "channel": "voice:moss-preview",
-      "paramsImpl": "input?: { model?: string; voiceId?: string; text?: string; speed?: number }",
-      "paramsDecl": "input?: { model?: string; voiceId?: string; text?: string; speed?: number }",
-      "returns": "Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-11 MOSS-TTS 音色试听（按草稿 model/voiceId/speed 合成，不要求先开启播报）"
-    },
-    {
       "name": "voiceDictationFinish",
       "channel": "voice:dictation-finish",
       "paramsImpl": "",
@@ -5315,6 +6473,86 @@
       "returns": "Promise<{ ok: boolean; text?: string }>",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "voiceExternalCancel",
+      "channel": "voice:external-cancel",
+      "paramsImpl": "id?: string",
+      "paramsDecl": "id?: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-16 取消外部引擎安装"
+    },
+    {
+      "name": "voiceExternalEnable",
+      "channel": "voice:external-enable",
+      "paramsImpl": "id: string, enabled: boolean",
+      "paramsDecl": "id: string, enabled: boolean",
+      "returns": "Promise<{ ok: boolean; active?: string; error?: string }>",
+      "invokeArgs": "id, enabled",
+      "cast": null,
+      "note": "11-16 启用/停用外部引擎（同时只允许一个）"
+    },
+    {
+      "name": "voiceExternalInstall",
+      "channel": "voice:external-install",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; started?: boolean; error?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-16 按需下载/安装外部引擎（进度走 voice:event target=external:<id>）"
+    },
+    {
+      "name": "voiceExternalList",
+      "channel": "voice:external-list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": "Promise<any>",
+      "note": "11-16 开源语音引擎卡片：目录 + 安装/服务状态"
+    },
+    {
+      "name": "voiceExternalOpen",
+      "channel": "voice:external-open",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; mode?: string; error?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-16 打开外部引擎目录或官方项目页"
+    },
+    {
+      "name": "voiceExternalRemove",
+      "channel": "voice:external-remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-16 卸载外部引擎（停服务 + 删目录）"
+    },
+    {
+      "name": "voiceExternalReveal",
+      "channel": "voice:external-reveal",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "11-16 在文件管理器中定位外部引擎"
+    },
+    {
+      "name": "voiceExternalVoices",
+      "channel": "voice:external-voices",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": "Promise<any>",
+      "note": "11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并"
     },
     {
       "name": "voiceHotkeyGet",
@@ -5431,6 +6669,26 @@
       "invokeArgs": "",
       "cast": "Promise<{ ok: boolean }>",
       "note": null
+    },
+    {
+      "name": "voiceMossPreview",
+      "channel": "voice:moss-preview",
+      "paramsImpl": "input?: { model?: string; voiceId?: string; text?: string; speed?: number }",
+      "paramsDecl": "input?: { model?: string; voiceId?: string; text?: string; speed?: number }",
+      "returns": "Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-11 MOSS-TTS 音色试听（按草稿 model/voiceId/speed 合成，不要求先开启播报）"
+    },
+    {
+      "name": "voiceMossVoices",
+      "channel": "voice:moss-voices",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥）"
     },
     {
       "name": "voicePlaybackDone",
@@ -5649,86 +6907,6 @@
       "note": "10-26 取消当前引擎包下载"
     },
     {
-      "name": "voiceExternalList",
-      "channel": "voice:external-list",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<any>",
-      "invokeArgs": "",
-      "cast": "Promise<any>",
-      "note": "11-16 开源语音引擎卡片：目录 + 安装/服务状态"
-    },
-    {
-      "name": "voiceExternalInstall",
-      "channel": "voice:external-install",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; started?: boolean; error?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-16 按需下载/安装外部引擎（进度走 voice:event target=external:<id>）"
-    },
-    {
-      "name": "voiceExternalCancel",
-      "channel": "voice:external-cancel",
-      "paramsImpl": "id?: string",
-      "paramsDecl": "id?: string",
-      "returns": "Promise<{ ok: boolean }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-16 取消外部引擎安装"
-    },
-    {
-      "name": "voiceExternalRemove",
-      "channel": "voice:external-remove",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-16 卸载外部引擎（停服务 + 删目录）"
-    },
-    {
-      "name": "voiceExternalEnable",
-      "channel": "voice:external-enable",
-      "paramsImpl": "id: string, enabled: boolean",
-      "paramsDecl": "id: string, enabled: boolean",
-      "returns": "Promise<{ ok: boolean; active?: string; error?: string }>",
-      "invokeArgs": "id, enabled",
-      "cast": null,
-      "note": "11-16 启用/停用外部引擎（同时只允许一个）"
-    },
-    {
-      "name": "voiceExternalOpen",
-      "channel": "voice:external-open",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; mode?: string; error?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-16 打开外部引擎目录或官方项目页"
-    },
-    {
-      "name": "voiceExternalReveal",
-      "channel": "voice:external-reveal",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": "11-16 在文件管理器中定位外部引擎"
-    },
-    {
-      "name": "voiceExternalVoices",
-      "channel": "voice:external-voices",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<any>",
-      "invokeArgs": "",
-      "cast": "Promise<any>",
-      "note": "11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并"
-    },
-    {
       "name": "voiceTtsPackInstall",
       "channel": "voice:tts-pack-install",
       "paramsImpl": "pack: string",
@@ -5943,14 +7121,14 @@
       "note": null
     },
     {
-      "name": "popoutThread",
-      "channel": "window:popout-thread",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
+      "name": "popoutTeam",
+      "channel": "window:popout-team",
+      "paramsImpl": "",
+      "paramsDecl": "",
       "returns": "Promise<{ ok: boolean; focused?: boolean }>",
-      "invokeArgs": "threadId",
+      "invokeArgs": "",
       "cast": null,
-      "note": null
+      "note": "11-08 用户令：工作伙伴独立窗口（打开/聚焦单例；主应用真关闭时一起关闭）"
     },
     {
       "name": "popoutTeamClose",
@@ -5963,14 +7141,14 @@
       "note": "工作伙伴独立窗口的关闭键（只关本窗口，不影响主应用）"
     },
     {
-      "name": "popoutTeam",
-      "channel": "window:popout-team",
-      "paramsImpl": "",
-      "paramsDecl": "",
+      "name": "popoutThread",
+      "channel": "window:popout-thread",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
       "returns": "Promise<{ ok: boolean; focused?: boolean }>",
-      "invokeArgs": "",
+      "invokeArgs": "threadId",
       "cast": null,
-      "note": "11-08 用户令：工作伙伴独立窗口（打开/聚焦单例；主应用真关闭时一起关闭）"
+      "note": null
     },
     {
       "name": "workLogsDelete",
@@ -6001,1206 +7179,6 @@
       "invokeArgs": "",
       "cast": null,
       "note": "扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事"
-    },
-    {
-      "name": "extensionsCatalog",
-      "channel": "extensions:catalog",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json）"
-    },
-    {
-      "name": "extensionsMenuSet",
-      "channel": "extensions:menu-set",
-      "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { entries: MenuEntrySpec[] }",
-      "returns": "Promise<{ ok: boolean; menu: MenuEntrySpec[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限）"
-    },
-    {
-      "name": "shortcutsRead",
-      "channel": "shortcuts:read",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ bindings: Record<string, string[]>; overrides: Record<string, string[]>; defaults: Record<string, string[]>; conflicts: string[][] }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储）"
-    },
-    {
-      "name": "shortcutsSave",
-      "channel": "shortcuts:save",
-      "paramsImpl": "input: { bindings?: Record<string, string[]> } = {}",
-      "paramsDecl": "input?: { bindings?: Record<string, string[]> }",
-      "returns": "Promise<{ ok: boolean; error?: string; bindings?: Record<string, string[]>; conflicts?: string[][] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "只写应用内键；截图/语音由各自通道写（先注册成功再落盘）"
-    },
-    {
-      "name": "shortcutsReset",
-      "channel": "shortcuts:reset",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; bindings: Record<string, string[]>; conflicts: string[][] }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "恢复默认：删 shortcuts.json（截图/语音不动）"
-    },
-    {
-      "name": "dataaccessState",
-      "channel": "dataaccess:state",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
-      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": "读某会话的授权（默认全关）"
-    },
-    {
-      "name": "dataaccessGrant",
-      "channel": "dataaccess:grant",
-      "paramsImpl": "input: { threadId: string; module: string; level: string; on: boolean }",
-      "paramsDecl": "input: { threadId: string; module: string; level: string; on: boolean }",
-      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "设一个三元组（会话+模块+读/写）；只在内存，退出即失效"
-    },
-    {
-      "name": "dataaccessRevokeAll",
-      "channel": "dataaccess:revoke-all",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
-      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": "撤销某会话的全部授权"
-    },
-    {
-      "name": "dataaccessFavoritesList",
-      "channel": "dataaccess:favorites-list",
-      "paramsImpl": "input: { threadId: string; query?: string; limit?: number }",
-      "paramsDecl": "input: { threadId: string; query?: string; limit?: number }",
-      "returns": "Promise<{ total: number; matched: number; items: { id: string; title: string; kind: string; content: string; tags: string[]; createdAt: string }[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：读收藏夹（需 favorites/read）"
-    },
-    {
-      "name": "dataaccessFavoritesAppend",
-      "channel": "dataaccess:favorites-append",
-      "paramsImpl": "input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }",
-      "paramsDecl": "input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }",
-      "returns": "Promise<{ ok: boolean; id: string; title: string; total: number }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有）"
-    },
-    {
-      "name": "dataaccessJournalRead",
-      "channel": "dataaccess:journal-read",
-      "paramsImpl": "input: { threadId: string; date?: string }",
-      "paramsDecl": "input: { threadId: string; date?: string }",
-      "returns": "Promise<{ date: string; content: string; truncated: boolean }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：读某天日记全文（需 journal/read）"
-    },
-    {
-      "name": "dataaccessJournalSearch",
-      "channel": "dataaccess:journal-search",
-      "paramsImpl": "input: { threadId: string; query: string }",
-      "paramsDecl": "input: { threadId: string; query: string }",
-      "returns": "Promise<{ hits: { date: string; lines: string[] }[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：全文检索日记（需 journal/read）"
-    },
-    {
-      "name": "dataaccessJournalAppend",
-      "channel": "dataaccess:journal-append",
-      "paramsImpl": "input: { threadId: string; date?: string; title?: string; body: string }",
-      "paramsDecl": "input: { threadId: string; date?: string; title?: string; body: string }",
-      "returns": "Promise<{ ok: boolean; date: string; days: number }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史）"
-    },
-    {
-      "name": "dataaccessVaultFind",
-      "channel": "dataaccess:vault-find",
-      "paramsImpl": "input: { threadId: string; query?: string }",
-      "paramsDecl": "input: { threadId: string; query?: string }",
-      "returns": "Promise<{ total: number; items: { id: string; title: string; username: string; url: string; hasSecret: boolean }[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文）"
-    },
-    {
-      "name": "dataaccessVaultCopy",
-      "channel": "dataaccess:vault-copy",
-      "paramsImpl": "input: { threadId: string; id: string }",
-      "paramsDecl": "input: { threadId: string; id: string }",
-      "returns": "Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文）"
-    },
-    {
-      "name": "dataaccessVaultSave",
-      "channel": "dataaccess:vault-save",
-      "paramsImpl": "input: { threadId: string; item: Record<string, unknown> }",
-      "paramsDecl": "input: { threadId: string; item: Record<string, unknown> }",
-      "returns": "Promise<{ ok: boolean; total: number }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "模型工具：写入密码本（需 vault/write + 渲染层一次性确认）"
-    },
-    {
-      "name": "browserClearData",
-      "channel": "browser:clear-data",
-      "paramsImpl": "kind?: string",
-      "paramsDecl": "kind?: string",
-      "returns": "Promise<{ ok: boolean; partition: string; cleared: string }>",
-      "invokeArgs": "kind",
-      "cast": null,
-      "note": "清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清"
-    },
-    {
-      "name": "sessionspaceEnsure",
-      "channel": "sessionspace:ensure",
-      "paramsImpl": "threadId: string, projectRoot: string",
-      "paramsDecl": "threadId: string, projectRoot: string",
-      "returns": "Promise<{ ok: boolean; dir?: string; reason?: string }>",
-      "invokeArgs": "threadId, projectRoot",
-      "cast": null,
-      "note": "为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等）"
-    },
-    {
-      "name": "sessionspaceState",
-      "channel": "sessionspace:state",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
-      "returns": "Promise<SessionWorkspaceRecord | null>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": "查某会话的工作区记录"
-    },
-    {
-      "name": "sessionspaceList",
-      "channel": "sessionspace:list",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<SessionWorkspaceRecord[]>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "列全部会话工作区记录"
-    },
-    {
-      "name": "sessionspaceSetState",
-      "channel": "sessionspace:set-state",
-      "paramsImpl": "threadId: string, state: string",
-      "paramsDecl": "threadId: string, state: string",
-      "returns": "Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>",
-      "invokeArgs": "threadId, state",
-      "cast": null,
-      "note": "改状态 active/archived（删除走 remove）"
-    },
-    {
-      "name": "sessionspaceRemove",
-      "channel": "sessionspace:remove",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
-      "returns": "Promise<{ ok: boolean; removed: boolean; reason?: string }>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": "删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径"
-    },
-    {
-      "name": "sessionspaceGc",
-      "channel": "sessionspace:gc",
-      "paramsImpl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
-      "paramsDecl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
-      "returns": "Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>",
-      "invokeArgs": "options",
-      "cast": null,
-      "note": "收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删）"
-    },
-    {
-      "name": "feishuCliStatus",
-      "channel": "feishu-cli:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录"
-    },
-    {
-      "name": "fileeStatus",
-      "channel": "filee:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; path: string; version: string; detail: string; attribution: { license: string; home: string; site: string } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）/ 开源声明（仓库与官网地址单一真相源在主进程，前端零字面量 —— 10-31 补审查修正）"
-    },
-    {
-      "name": "fileeConvert",
-      "channel": "filee:convert",
-      "paramsImpl": "input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }",
-      "paramsDecl": "input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }",
-      "returns": "Promise<{ ok: boolean; code: number; report: { preset?: string; target?: string; converted?: number; skipped?: number; failed?: number; files?: { source?: string; state?: string; outputs?: string[]; error?: string }[] } | null; error: string; raw: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容"
-    },
-    {
-      "name": "apkstartStatus",
-      "channel": "apkstart:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; exePath: string; version: string; running: boolean; runtimeReady: boolean; runtimeRoot: string; adbPath: string; device: { serial: string; state: string; model: string; api: string; release: string } | null; apps: { package?: string; label?: string; versionName?: string; installedAt?: number; lastLaunchAt?: number }[]; dataDir: string; attribution: { license: string; home: string } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT）状态：安装/版本/主界面是否在跑/运行时是否备齐/当前模拟器设备/它自己的应用清单（apps.json）；3s 缓存（卡片轮询不反复打 adb）"
-    },
-    {
-      "name": "apkstartInstall",
-      "channel": "apkstart:install",
-      "paramsImpl": "input: { apk?: string; launch?: boolean; waitMs?: number }",
-      "paramsDecl": "input: { apk?: string; launch?: boolean; waitMs?: number }",
-      "returns": "Promise<{ ok: boolean; pending: boolean; packageName: string; label: string; error: string; detail: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-14 安装 APK：spawn ApkStart.exe --silent <apk>（参数数组不进 shell）；完成判据 = ApkStart 的 apps.json 出现新条目/被改写，等不到就 pending（首启要先下约 1GB 运行时），不假装成功"
-    },
-    {
-      "name": "apkstartLaunch",
-      "channel": "apkstart:launch",
-      "paramsImpl": "input: { package?: string }",
-      "paramsDecl": "input: { package?: string }",
-      "returns": "Promise<{ ok: boolean; error: string; detail: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-14 启动已装应用：spawn ApkStart.exe --launch <包名>（上游 CLI 自带 silent）；包名先过格式校验，且必须在 ApkStart 应用清单里"
-    },
-    {
-      "name": "apkstartScreenshot",
-      "channel": "apkstart:screenshot",
-      "paramsImpl": "input: { path?: string }",
-      "paramsDecl": "input: { path?: string }",
-      "returns": "Promise<{ ok: boolean; path: string; bytes: number; error: string; detail: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-14 设备截屏：adb exec-out screencap -p → PNG 落盘（默认 userData/apkstart/screenshots），返回本地路径给模型查看"
-    },
-    {
-      "name": "apkstartLogcat",
-      "channel": "apkstart:logcat",
-      "paramsImpl": "input: { lines?: number; filter?: string; packageName?: string }",
-      "paramsDecl": "input: { lines?: number; filter?: string; packageName?: string }",
-      "returns": "Promise<{ ok: boolean; text: string; error: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-14 读最近 logcat（默认 300 行，可按关键字/包名过滤；带包名时保留 FATAL EXCEPTION / ANR 行）"
-    },
-    {
-      "name": "apkstartAdb",
-      "channel": "apkstart:adb",
-      "paramsImpl": "input: { args?: string[]; timeoutMs?: number }",
-      "paramsDecl": "input: { args?: string[]; timeoutMs?: number }",
-      "returns": "Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-14 透传 adb 命令（shell input / pm grant / am start / dumpsys 等）：参数数组不进 shell，自动补 -s <当前模拟器>；输出截断"
-    },
-    {
-      "name": "apkstartOpen",
-      "channel": "apkstart:open",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; error: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 打开 ApkStart 主界面（看安装进度/手动操作；detached spawn，宿主退出后它继续跑）"
-    },
-    {
-      "name": "apkstartPurge",
-      "channel": "apkstart:purge",
-      "paramsImpl": "confirm: boolean",
-      "paramsDecl": "confirm: boolean",
-      "returns": "Promise<{ ok: boolean; error: string }>",
-      "invokeArgs": "confirm",
-      "cast": null,
-      "note": "11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错）"
-    },
-    {
-      "name": "openmaicStatus",
-      "channel": "openmaic:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT）状态：源码是否已构建（.next/BUILD_ID）/ 版本 / 本地服务是否健康 / PostgreSQL 是否在跑 / 可选能力面"
-    },
-    {
-      "name": "openmaicStart",
-      "channel": "openmaic:start",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; port: number; url: string; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 起 OpenMAIC：先确保 PostgreSQL（端口冲突顺延并写回配置），再 node next start，90 秒内等 /api/health"
-    },
-    {
-      "name": "openmaicStop",
-      "channel": "openmaic:stop",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 停 OpenMAIC 与 PostgreSQL（宿主重启过则按端口兜底杀）"
-    },
-    {
-      "name": "openmaicOpen",
-      "channel": "openmaic:open",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; url: string; error: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 打开 OpenMAIC 本机界面：确保服务已起，再用系统浏览器打开 127.0.0.1:<port>"
-    },
-    {
-      "name": "openmaicGenerate",
-      "channel": "openmaic:generate",
-      "paramsImpl": "input: { requirement?: string; materialIds?: string[] }",
-      "paramsDecl": "input: { requirement?: string; materialIds?: string[] }",
-      "returns": "Promise<{ ok: boolean; jobId: string; status: string; url: string; error: string; detail: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-14 提交课堂生成任务（POST /api/generate-classroom）：异步返回 jobId；缺模型时翻成「去网页设置里配 Key」的中文指引"
-    },
-    {
-      "name": "openmaicJob",
-      "channel": "openmaic:job",
-      "paramsImpl": "jobId: string",
-      "paramsDecl": "jobId: string",
-      "returns": "Promise<{ ok: boolean; status: string; progress: number; scenesGenerated: number; totalScenes: number; classroomUrl: string; message: string; error: string; done: boolean }>",
-      "invokeArgs": "jobId",
-      "cast": null,
-      "note": "11-14 查询课堂生成任务：状态 / 进度 / 场景数 / 完成后的课堂链接（生成的课堂只属于本机 owner）"
-    },
-    {
-      "name": "openmaicPurge",
-      "channel": "openmaic:purge",
-      "paramsImpl": "confirm: boolean",
-      "paramsDecl": "confirm: boolean",
-      "returns": "Promise<{ ok: boolean; error: string }>",
-      "invokeArgs": "confirm",
-      "cast": null,
-      "note": "11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务"
-    },
-    {
-      "name": "huskStatus",
-      "channel": "husk:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; tipaInstalled: boolean; tipaVersion: string; tipaPath: string; tipaSizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态）"
-    },
-    {
-      "name": "huskGuide",
-      "channel": "husk:guide",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; url: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 打开 Husk 官方安装指南（itslevii.dev/docs/install：SideStore / AltStore / TrollStore 三条路）"
-    },
-    {
-      "name": "huskReveal",
-      "channel": "husk:reveal",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; path: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder）"
-    },
-    {
-      "name": "huskDevice",
-      "channel": "husk:device",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ connected: boolean; devices: string[]; platform: string; detail: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作"
-    },
-    {
-      "name": "feishuCliSetupStart",
-      "channel": "feishu-cli:setup-start",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; url?: string; error?: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接"
-    },
-    {
-      "name": "feishuCliLoginStart",
-      "channel": "feishu-cli:login-start",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成"
-    },
-    {
-      "name": "feishuCliLogout",
-      "channel": "feishu-cli:logout",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; error: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "feishuCliCancel",
-      "channel": "feishu-cli:cancel",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "取消本次授权：杀掉挂在后台的 config init / device-code 轮询进程"
-    },
-    {
-      "name": "feishuCliRun",
-      "channel": "feishu-cli:run",
-      "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { args: string[]; cwd?: string }",
-      "returns": "Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell）"
-    },
-    {
-      "name": "readTaskMonitor",
-      "channel": "monitor:read",
-      "paramsImpl": "threadId: unknown",
-      "paramsDecl": "threadId?: string",
-      "returns": "Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": "10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId）"
-    },
-    {
-      "name": "sessionAliasSnapshot",
-      "channel": "session-alias:snapshot",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<Record<string, any>>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "10-31：会话笔名全量快照（threadId → alias/上级/寓意）"
-    },
-    {
-      "name": "sessionAliasSet",
-      "channel": "session-alias:set",
-      "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { threadId?: string; alias?: string; allowDuplicate?: boolean }",
-      "returns": "Promise<{ ok: boolean; error?: string; record?: any; engineError?: string; snapshot?: any }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用"
-    },
-    {
-      "name": "sessionAliasEnsure",
-      "channel": "session-alias:ensure",
-      "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { threadId?: string; supervisorThreadId?: string }",
-      "returns": "Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "10-31：新建会话后确保有笔名（幂等；主会话不传上级）"
-    },
-    {
-      "name": "harnessTeamList",
-      "channel": "harness-team:list",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamTalkThreads",
-      "channel": "harness-team:talk-threads",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number; avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string; id: string }> }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签"
-    },
-    {
-      "name": "harnessTeamCreate",
-      "channel": "harness-team:create",
-      "paramsImpl": "input: Record<string, unknown>",
-      "paramsDecl": "input: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamRename",
-      "channel": "harness-team:rename",
-      "paramsImpl": "groupId: string, name: string",
-      "paramsDecl": "groupId: string, name: string",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
-      "invokeArgs": "groupId, name",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamRenameMember",
-      "channel": "harness-team:rename-member",
-      "paramsImpl": "groupId: string, memberId: string, name: string",
-      "paramsDecl": "groupId: string, memberId: string, name: string",
-      "returns": "Promise<{ ok: boolean; changed?: boolean; error?: string; reason?: string; group?: any; issues?: string[] }>",
-      "invokeArgs": "groupId, memberId, name",
-      "cast": null,
-      "note": "群成员改名（联动伙伴会话标题与群内识别）"
-    },
-    {
-      "name": "harnessTeamAddPartner",
-      "channel": "harness-team:add-partner",
-      "paramsImpl": "groupId: string, partner: Record<string, unknown>, addedBy: string",
-      "paramsDecl": "groupId: string, partner: Record<string, unknown>, addedBy: string",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>",
-      "invokeArgs": "groupId, partner, addedBy",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamRemovePartner",
-      "channel": "harness-team:remove-partner",
-      "paramsImpl": "groupId: string, partnerId: string, byId: string",
-      "paramsDecl": "groupId: string, partnerId: string, byId: string",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>",
-      "invokeArgs": "groupId, partnerId, byId",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamMute",
-      "channel": "harness-team:mute",
-      "paramsImpl": "groupId: string, partnerId: string, muted: boolean",
-      "paramsDecl": "groupId: string, partnerId: string, muted: boolean",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[] }>",
-      "invokeArgs": "groupId, partnerId, muted",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamSetAvatar",
-      "channel": "harness-team:set-avatar",
-      "paramsImpl": "groupId: string, memberId: string, avatar: string",
-      "paramsDecl": "groupId: string, memberId: string, avatar: string",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
-      "invokeArgs": "groupId, memberId, avatar",
-      "cast": null,
-      "note": "团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心）"
-    },
-    {
-      "name": "harnessTeamSetGuard",
-      "channel": "harness-team:set-guard",
-      "paramsImpl": "groupId: string, guard: Record<string, unknown>",
-      "paramsDecl": "groupId: string, guard: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[] }>",
-      "invokeArgs": "groupId, guard",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamClearMessages",
-      "channel": "harness-team:clear-messages",
-      "paramsImpl": "groupId: string",
-      "paramsDecl": "groupId: string",
-      "returns": "Promise<{ ok: boolean; cleared: number; error?: string }>",
-      "invokeArgs": "groupId",
-      "cast": null,
-      "note": "团队模式：清空群聊天记录（只清投影日志，子会话不动）"
-    },
-    {
-      "name": "harnessTeamProject",
-      "channel": "harness-team:project",
-      "paramsImpl": "sources: unknown",
-      "paramsDecl": "sources: unknown",
-      "returns": "Promise<{ rows: any[] }>",
-      "invokeArgs": "sources",
-      "cast": null,
-      "note": "团队模式 P0"
-    },
-    {
-      "name": "harnessTeamMessages",
-      "channel": "harness-team:messages",
-      "paramsImpl": "groupId: string",
-      "paramsDecl": "groupId: string",
-      "returns": "Promise<{ ok: boolean; rows: any[]; error?: string }>",
-      "invokeArgs": "groupId",
-      "cast": null,
-      "note": "团队模式 P0b（群消息日志）"
-    },
-    {
-      "name": "harnessTeamAppendMessage",
-      "channel": "harness-team:append-message",
-      "paramsImpl": "groupId: string, entry: Record<string, unknown>",
-      "paramsDecl": "groupId: string, entry: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; entry?: any; rows: any[]; error?: string }>",
-      "invokeArgs": "groupId, entry",
-      "cast": null,
-      "note": "团队模式 P0b（群消息日志）"
-    },
-    {
-      "name": "harnessTeamDispatch",
-      "channel": "harness-team:dispatch",
-      "paramsImpl": "groupId: string, input: Record<string, unknown>",
-      "paramsDecl": "groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }",
-      "returns": "Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>",
-      "invokeArgs": "groupId, input",
-      "cast": null,
-      "note": "团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行）"
-    },
-    {
-      "name": "harnessTeamDelete",
-      "channel": "harness-team:delete",
-      "paramsImpl": "groupId: string",
-      "paramsDecl": "groupId: string",
-      "returns": "Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>",
-      "invokeArgs": "groupId",
-      "cast": null,
-      "note": "团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed）"
-    },
-    {
-      "name": "harnessTeamSetMemory",
-      "channel": "harness-team:set-memory",
-      "paramsImpl": "groupId: string, text: string",
-      "paramsDecl": "groupId: string, text: string",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
-      "invokeArgs": "groupId, text",
-      "cast": null,
-      "note": "团队模式：群记忆 / 群文件"
-    },
-    {
-      "name": "harnessTeamSetRules",
-      "channel": "harness-team:set-rules",
-      "paramsImpl": "groupId: string, text: string",
-      "paramsDecl": "groupId: string, text: string",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
-      "invokeArgs": "groupId, text",
-      "cast": null,
-      "note": "团队模式：群规矩（硬约束，每轮注入）"
-    },
-    {
-      "name": "harnessTeamSetWorkspace",
-      "channel": "harness-team:set-workspace",
-      "paramsImpl": "groupId: string, workspace: string",
-      "paramsDecl": "groupId: string, workspace: string",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
-      "invokeArgs": "groupId, workspace",
-      "cast": null,
-      "note": "团队模式：群项目地址（派活时作为子会话 cwd）"
-    },
-    {
-      "name": "harnessTeamRunning",
-      "channel": "harness-team:running",
-      "paramsImpl": "groupId: string",
-      "paramsDecl": "groupId: string",
-      "returns": "Promise<{ ok: boolean; runs: any[]; error?: string }>",
-      "invokeArgs": "groupId",
-      "cast": null,
-      "note": "团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出）"
-    },
-    {
-      "name": "harnessTeamSetFiles",
-      "channel": "harness-team:set-files",
-      "paramsImpl": "groupId: string, files: unknown",
-      "paramsDecl": "groupId: string, files: unknown",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
-      "invokeArgs": "groupId, files",
-      "cast": null,
-      "note": "团队模式：群记忆 / 群文件"
-    },
-    {
-      "name": "harnessTeamSetManager",
-      "channel": "harness-team:set-manager",
-      "paramsImpl": "groupId: string, memberId: string, managerId: string",
-      "paramsDecl": "groupId: string, memberId: string, managerId: string",
-      "returns": "Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>",
-      "invokeArgs": "groupId, memberId, managerId",
-      "cast": null,
-      "note": "团队模式：上下级（委派白名单）"
-    },
-    {
-      "name": "harnessTeamSetAdmin",
-      "channel": "harness-team:set-admin",
-      "paramsImpl": "groupId: string, memberId: string",
-      "paramsDecl": "groupId: string, memberId: string",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
-      "invokeArgs": "groupId, memberId",
-      "cast": null,
-      "note": "团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底）"
-    },
-    {
-      "name": "harnessTeamGroupProgress",
-      "channel": "harness-team:group-progress",
-      "paramsImpl": "groupId: string",
-      "paramsDecl": "groupId: string",
-      "returns": "Promise<{ ok: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>; error?: string }>",
-      "invokeArgs": "groupId",
-      "cast": null,
-      "note": "团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度"
-    },
-    {
-      "name": "harnessTeamAddNote",
-      "channel": "harness-team:add-note",
-      "paramsImpl": "groupId: string, note: Record<string, unknown>",
-      "paramsDecl": "groupId: string, note: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>",
-      "invokeArgs": "groupId, note",
-      "cast": null,
-      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
-    },
-    {
-      "name": "harnessTeamRemoveNote",
-      "channel": "harness-team:remove-note",
-      "paramsImpl": "groupId: string, noteId: string",
-      "paramsDecl": "groupId: string, noteId: string",
-      "returns": "Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>",
-      "invokeArgs": "groupId, noteId",
-      "cast": null,
-      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
-    },
-    {
-      "name": "harnessTeamSetMenu",
-      "channel": "harness-team:set-menu",
-      "paramsImpl": "groupId: string, items: unknown",
-      "paramsDecl": "groupId: string, items: unknown",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
-      "invokeArgs": "groupId, items",
-      "cast": null,
-      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
-    },
-    {
-      "name": "harnessTeamSetMenuPlacement",
-      "channel": "harness-team:set-menu-placement",
-      "paramsImpl": "groupId: string, placement: string",
-      "paramsDecl": "groupId: string, placement: string",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
-      "invokeArgs": "groupId, placement",
-      "cast": null,
-      "note": "团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT）"
-    },
-    {
-      "name": "harnessTeamSetMessageLayout",
-      "channel": "harness-team:set-message-layout",
-      "paramsImpl": "groupId: string, layout: string",
-      "paramsDecl": "groupId: string, layout: string",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
-      "invokeArgs": "groupId, layout",
-      "cast": null,
-      "note": "团队模式：群消息排版（split = 伙伴左/用户右，left = 全部靠左）"
-    },
-    {
-      "name": "harnessTeamSetReplyMode",
-      "channel": "harness-team:set-reply-mode",
-      "paramsImpl": "groupId: string, mode: string",
-      "paramsDecl": "groupId: string, mode: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "groupId, mode",
-      "cast": null,
-      "note": "团队模式：群回复模式（process 运行中显示过程 / placeholder 只显示占位）"
-    },
-    {
-      "name": "harnessTeamSetMessageForm",
-      "channel": "harness-team:set-message-form",
-      "paramsImpl": "groupId: string, form: string",
-      "paramsDecl": "groupId: string, form: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "groupId, form",
-      "cast": null,
-      "note": "团队模式：群消息形式（chat 对话消息 / topic 话题消息）"
-    },
-    {
-      "name": "harnessTeamSetDialogFlow",
-      "channel": "harness-team:set-dialog-flow",
-      "paramsImpl": "groupId: string, mode: string",
-      "paramsDecl": "groupId: string, mode: string",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "groupId, mode",
-      "cast": null,
-      "note": "团队模式：群对话流（simple 运行中过程折叠 / detail 运行中铺开过程）"
-    },
-    {
-      "name": "harnessTeamSetSchedule",
-      "channel": "harness-team:set-schedule",
-      "paramsImpl": "groupId: string, list: unknown",
-      "paramsDecl": "groupId: string, list: unknown",
-      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
-      "invokeArgs": "groupId, list",
-      "cast": null,
-      "note": "团队模式：群定时任务（整组替换，nextRunAt 由主进程算）"
-    },
-    {
-      "name": "harnessTeamRunSchedule",
-      "channel": "harness-team:run-schedule",
-      "paramsImpl": "groupId: string, scheduleId: string",
-      "paramsDecl": "groupId: string, scheduleId: string",
-      "returns": "Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>",
-      "invokeArgs": "groupId, scheduleId",
-      "cast": null,
-      "note": "团队模式：立刻运行一条定时任务"
-    },
-    {
-      "name": "harnessTeamLogUsage",
-      "channel": "harness-team:log-usage",
-      "paramsImpl": "entry: Record<string, unknown>",
-      "paramsDecl": "entry: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; count?: number; error?: string }>",
-      "invokeArgs": "entry",
-      "cast": null,
-      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
-    },
-    {
-      "name": "harnessTeamLedger",
-      "channel": "harness-team:ledger",
-      "paramsImpl": "groupId: string, days: number",
-      "paramsDecl": "groupId: string, days: number",
-      "returns": "Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>",
-      "invokeArgs": "groupId, days",
-      "cast": null,
-      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
-    },
-    {
-      "name": "harnessTeamStop",
-      "channel": "harness-team:stop",
-      "paramsImpl": "input: Record<string, unknown>",
-      "paramsDecl": "input: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "团队模式：停止某个伙伴当前这一回合"
-    },
-    {
-      "name": "harnessTeamQueueStart",
-      "channel": "harness-team:queue-start",
-      "paramsImpl": "input: Record<string, unknown>",
-      "paramsDecl": "input: Record<string, unknown>",
-      "returns": "Promise<{ ok: boolean; mode?: \"steer\" | \"start\"; error?: string; reason?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "团队模式：排队消息「立即」——能插队就 steer 进正在跑的回合，插不了按新回合启动"
-    },
-    {
-      "name": "harnessTeamThreadUsage",
-      "channel": "harness-team:thread-usage",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
-      "returns": "Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": "团队模式：取该会话最近一轮真实 token"
-    },
-    {
-      "name": "mediaDeskEndpoint",
-      "channel": "media-desk:endpoint",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<string>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开"
-    },
-    {
-      "name": "mediaDeskPopout",
-      "channel": "media-desk:popout",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; focused: boolean }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例）"
-    },
-    {
-      "name": "mediaDeskVersion",
-      "channel": "media-desk:version",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ current: string; bundled: string; overridden: boolean }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线"
-    },
-    {
-      "name": "mediaDeskCheckUpdate",
-      "channel": "media-desk:check-update",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速）"
-    },
-    {
-      "name": "mediaDeskUpdate",
-      "channel": "media-desk:update",
-      "paramsImpl": "input?: { version?: string }",
-      "paramsDecl": "input?: { version?: string }",
-      "returns": "Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源"
-    },
-    {
-      "name": "listArtifactArchives",
-      "channel": "artifact:list",
-      "paramsImpl": "workspace?: string",
-      "paramsDecl": "workspace?: string",
-      "returns": "Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>",
-      "invokeArgs": "workspace",
-      "cast": null,
-      "note": "11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它"
-    },
-    {
-      "name": "designMdList",
-      "channel": "design-md:list",
-      "paramsImpl": "input: { category?: string; query?: string; limit?: number }",
-      "paramsDecl": "input: { category?: string; query?: string; limit?: number }",
-      "returns": "Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string; zh: string }> }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用"
-    },
-    {
-      "name": "designMdGet",
-      "channel": "design-md:get",
-      "paramsImpl": "slug: string",
-      "paramsDecl": "slug: string",
-      "returns": "Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>",
-      "invokeArgs": "slug",
-      "cast": null,
-      "note": "11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null"
-    },
-    {
-      "name": "designMdExport",
-      "channel": "design-md:export",
-      "paramsImpl": "input: { slug?: string; dir?: string }",
-      "paramsDecl": "input: { slug?: string; dir?: string }",
-      "returns": "Promise<{ ok: boolean; path?: string; category?: string; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径）"
-    },
-    {
-      "name": "photocraftStatus",
-      "channel": "photocraft:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; cliPath: string; guiPath: string; ioRoot: string; mcpRegistered: boolean; platform: string; sizeBytes: number; attribution: { license: string; home: string } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积"
-    },
-    {
-      "name": "photocraftInfo",
-      "channel": "photocraft:info",
-      "paramsImpl": "input: { path?: string }",
-      "paramsDecl": "input: { path?: string }",
-      "returns": "Promise<any>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内）"
-    },
-    {
-      "name": "photocraftConvert",
-      "channel": "photocraft:convert",
-      "paramsImpl": "input: { path?: string; out?: string; quality?: number }",
-      "paramsDecl": "input: { path?: string; out?: string; quality?: number }",
-      "returns": "Promise<{ ok: boolean; path: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图）"
-    },
-    {
-      "name": "photocraftRun",
-      "channel": "photocraft:run",
-      "paramsImpl": "input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }",
-      "paramsDecl": "input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }",
-      "returns": "Promise<{ ok: boolean; path: string; commands: string[]; log: string[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条）"
-    },
-    {
-      "name": "photocraftBatch",
-      "channel": "photocraft:batch",
-      "paramsImpl": "input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }",
-      "paramsDecl": "input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }",
-      "returns": "Promise<{ ok: boolean; outDir: string; commands: string[] }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸"
-    },
-    {
-      "name": "photocraftCommands",
-      "channel": "photocraft:commands",
-      "paramsImpl": "input: { filter?: string }",
-      "paramsDecl": "input: { filter?: string }",
-      "returns": "Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run"
-    },
-    {
-      "name": "photocraftOpen",
-      "channel": "photocraft:open",
-      "paramsImpl": "input: { path?: string }",
-      "paramsDecl": "input: { path?: string }",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸）"
-    },
-    {
-      "name": "artcraftStatus",
-      "channel": "artcraft:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; launcherPath: string; platform: string; sizeBytes: number; installedApps: Array<{ id: string; name: string; dir: string; exePath: string; cliPath: string; version: string }>; mcpServers: string[]; attribution: { license: string; home: string; apps: string } }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 已装 App 列表（Launcher 安装目录扫描 + exe 版本）/ 已写入的独立 MCP 名单 / 许可"
-    },
-    {
-      "name": "artcraftOpen",
-      "channel": "artcraft:open",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; error?: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-16 打开 ArtCraft Launcher（19 个创作 App 的安装/更新/打开由它自己完成；宿主不代装）"
-    },
-    {
-      "name": "artcraftSync",
-      "channel": "artcraft:sync",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ servers: string[] }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "11-16 重新扫描已装 App 并重写 config.toml（每个 App 一条独立 [mcp_servers.<id>]）；引擎需重启才加载"
-    },
-    {
-      "name": "artcraftRun",
-      "channel": "artcraft:run",
-      "paramsImpl": "input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }",
-      "paramsDecl": "input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }",
-      "returns": "Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入）"
-    },
-    {
-      "name": "artcraftPickRoot",
-      "channel": "artcraft:pick-root",
-      "paramsImpl": "input?: { clear?: boolean }",
-      "paramsDecl": "input?: { clear?: boolean }",
-      "returns": "Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": "11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测）"
-    },
-    {
-      "name": "listUiKitItems",
-      "channel": "ui-kit:list",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ id: string; name: string; createdAt: number; bytes: number }[]>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "getUiKitItem",
-      "channel": "ui-kit:get",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "saveUiKitItem",
-      "channel": "ui-kit:save",
-      "paramsImpl": "input: { name?: string; doc?: unknown }",
-      "paramsDecl": "input: { name?: string; doc?: unknown }",
-      "returns": "Promise<{ id: string; name: string; replaced: boolean; count: number }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "removeUiKitItem",
-      "channel": "ui-kit:remove",
-      "paramsImpl": "id: string",
-      "paramsDecl": "id: string",
-      "returns": "Promise<{ removed: number; count: number }>",
-      "invokeArgs": "id",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "handoffMediaDesk",
-      "channel": "media-desk:handoff",
-      "paramsImpl": "input?: { kind?: \"group\" | \"video\" | \"design\"; itemId?: string }",
-      "paramsDecl": "input?: { kind?: \"group\" | \"video\" | \"design\"; itemId?: string }",
-      "returns": "Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "installLocalSkillset",
-      "channel": "expert-market:install-local",
-      "paramsImpl": "input?: { dir?: string; zip?: string }",
-      "paramsDecl": "input?: { dir?: string; zip?: string }",
-      "returns": "Promise<{ ok: boolean; slug?: string; installed?: string[]; skipped?: Array<{ name: string; reason: string }>; restartError?: string; error?: string }>",
-      "invokeArgs": "input",
-      "cast": null,
-      "note": null
     }
   ]
 }

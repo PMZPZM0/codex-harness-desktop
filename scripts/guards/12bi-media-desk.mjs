@@ -161,7 +161,7 @@ export async function run() {
       "更新装到 userData/media-desk-vendor/<version> 并用 current.json 指向（⛔ 不改写随包资源）");
     ok(/registry\.npmjs\.org/.test(vendor) && /registry\.npmmirror\.com/.test(vendor)
       && /if \(v && \(!latest \|\| compareVersions\(v, latest\) > 0\)\)/.test(vendor)
-      && /from "\.\.\/\.\.\/updates"/.test(vendor),
+      && /from "\.\.\/\.\.\/version-utils"/.test(vendor),
       "查最新版：官方 + 镜像都问、取最大（镜像滞后不会把旧版报成最新）");
     ok(/\.media-desk-bar \{/.test(boardCss) && /\.media-desk-btn\.is-primary/.test(boardCss)
       && /\.media-desk-frame \{ height: 100%; \}/.test(boardCss),

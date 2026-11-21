@@ -1,0 +1,66 @@
+/**
+ * 应用更新链 IPC（11-21 重写；替代已删除的 `features/updates-ipc.ts`）。
+ *
+ * 只有三个调用 + 一个推送，别再加通道：
+ *   `update:check`    → 查最新版本（只读，⛔ 不下载）
+ *   `update:download` → 下载 / 复用已下好的包（幂等、单飞）
+ *   `update:install`  → 退出应用并起安装器（Windows `--updated`）
+ *   `update:state`    ← 主进程主动推送状态快照（前端唯一数据源）
+ *
+ * ⛔ 安全口径（沿用 09-13 审计 P0）：渲染层**不能**指定下载地址或安装路径 ——
+ *   地址来自 `latest.yml`（主进程读），安装路径来自主进程落盘的状态文件。
+ * ⛔ 不在本文件写任何状态逻辑：状态机全在 `update-service.ts`，这里只做 IPC 转发与推送。
+ */
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
+import { sendToWindow } from "./window-bus";
+import { checkForUpdate, downloadUpdatePackage, getUpdateSnapshot, installUpdatePackage, restoreUpdateState, setUpdateNotifier } from "../update-service";
+
+/** 本域全部通道（卸载时逐个摘掉，避免热重载叠 handler）。 */
+const UPDATE_CHANNELS = ["update:check", "update:download", "update:install"];
+
+/** 更新 feature：注册三个调用通道，并把状态推送接到窗口。 */
+export const updateFeature = defineFeature<null>({
+  id: "update",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    if (!ipcHost) throw new Error("update: 缺少 ipc 服务（宿主未提供）");
+
+    /* 状态推送：服务层只认回调，窗口细节留在这一层。 */
+    setUpdateNotifier((snapshot) => sendToWindow("update:state", snapshot));
+
+    /* 启动即恢复：磁盘上已有就绪包 / 上次安装没完成，都要在首屏就体现在徽标上。
+       ⛔ 失败静默：更新状态读不出来绝不能挡启动。 */
+    void restoreUpdateState().catch(() => undefined);
+
+    ipcHost.handle("update:check", async () => {
+      try {
+        return { ok: true, state: await checkForUpdate() };
+      } catch (err) {
+        return { ok: false, error: (err as Error)?.message ?? String(err), state: getUpdateSnapshot() };
+      }
+    });
+
+    ipcHost.handle("update:download", async () => {
+      try {
+        return { ok: true, state: await downloadUpdatePackage() };
+      } catch (err) {
+        return { ok: false, error: (err as Error)?.message ?? String(err), state: getUpdateSnapshot() };
+      }
+    });
+
+    ipcHost.handle("update:install", async () => {
+      try {
+        return await installUpdatePackage();
+      } catch (err) {
+        return { ok: false, error: (err as Error)?.message ?? String(err) };
+      }
+    });
+
+    ctx.effect(() => {
+      for (const channel of UPDATE_CHANNELS) ipcHost.removeHandler(channel);
+      setUpdateNotifier(null);
+    });
+  },
+});

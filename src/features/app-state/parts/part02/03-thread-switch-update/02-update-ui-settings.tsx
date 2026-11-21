@@ -12,159 +12,9 @@ import { setWidgetDark, isWidgetDark } from "../../../../../lib/widget-dark";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 
-/** bag 分片 02c2：更新流程的 UI 状态与下载进度（听主进程的 download-progress 推送）。 */
+/** bag 分片 02c2：界面语言 / 缩放 / 设置页开关等**纯 UI 状态**（11-21 更新链重写后，更新状态已全部移出 bag）。 */
 export function usePart02c2(bag: Bag) {
-  // 下载进度：主进程通过 updates:download-progress 推送
-  useEffect(() => {
-    const off = window.codex.updateOnProgress?.((percent: number) => bag.setUpdateProgress(percent));
-    return () => { off?.(); };
-  }, []);
 
-  /* ══════════════════════════════════════════════════════════════════════
-   * 更新就绪状态机（10-12）—— 需求 2/3/4
-   *
-   *   idle ──(后台静默下载完成 / 手动检查发现已下好)──▶ ready
-   *   ready ──「取消」──▶ dismissed ──(下次更新事件)──▶ ready
-   *   ready ──「重启安装」──▶ 调 restart-install（主进程 spawn 安装包后 quit 自己）
-   *
-   * ⛔ 版本号存两处是**故意的**：`updateInfo.version`（检查结果）与 `updateReadyVersion`
-   *   （静默下载完成时主进程推来的）可能不是同一次检查来的；弹窗只显示"已就绪"的
-   *   那一个，所以独立存，别在弹窗里读 updateInfo（会显示成旧版本）。
-   * ⛔ dismissed 只压**这一版**：换版本后仍会重新弹（否则用户永远看不到新版本）。
-   * ══════════════════════════════════════════════════════════════════════ */
-  const [updateReady, setUpdateReady] = useState(false);
-  const [updateReadyVersion, setUpdateReadyVersion] = useState("");
-  const [updateRestarting, setUpdateRestarting] = useState(false);
-  const dismissedVersionRef = useRef<string>("");
-  bag.updateReady = updateReady as typeof bag.updateReady;
-  bag.updateReadyVersion = updateReadyVersion as typeof bag.updateReadyVersion;
-  bag.updateRestarting = updateRestarting as typeof bag.updateRestarting;
-
-  /* 11-20 用户令：「把那个自动更新删了吧，就保留手动的」「手动重启，不要自动了」。
-     ⇒ 自动安装整套移除（开关 / 定时器 / 阻塞判据 / localStorage 键）：更新就绪后只弹提示条，
-        必须由用户点「重启安装」才装。⛔ 别再把定时自动安装加回来 —— 用户实测它会在人没注意时
-        把应用直接关掉，而安装流程根本没出来。 */
-
-  /* 11-16：上次安装失败（版本没变）⇒ 本会话不再自动安装；toast 让用户手动重试。 */
-  const [updateInstallFailed, setUpdateInstallFailed] = useState("");
-  bag.updateInstallFailed = updateInstallFailed as typeof bag.updateInstallFailed;
-  bag.setUpdateInstallFailed = setUpdateInstallFailed as typeof bag.setUpdateInstallFailed;
-  useEffect(() => {
-    const onFailed = (event: Event) => {
-      const version = String((event as CustomEvent<{ version?: string }>)?.detail?.version ?? "");
-      setUpdateInstallFailed(version || "unknown");
-      bag.showToast?.("上次更新未完成", `v${version || "新版本"} 没有装成功，已切换为手动安装；请点「重启安装」重试`, "");
-    };
-    window.addEventListener("harness:update-install-failed", onFailed);
-    return () => window.removeEventListener("harness:update-install-failed", onFailed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** 已就绪 ⇒ 弹窗出现；被用户取消过的这一版不再打扰。 */
-  const armUpdateReady = (version?: string) => {
-    const v = String(version ?? "").trim();
-    if (dismissedVersionRef.current && v && dismissedVersionRef.current === v) return;
-    if (v) setUpdateReadyVersion(v);
-    setUpdateReady(true);
-  };
-  bag.armUpdateReady = armUpdateReady as typeof bag.armUpdateReady;
-
-  /** 「取消 / 稍后」：手动模式 = 本版不再打扰；自动模式 = 延后 30 分钟再自动装。 */
-  const dismissUpdateReady = () => {
-    dismissedVersionRef.current = updateReadyVersion;
-    setUpdateReady(false);
-  };
-  bag.dismissUpdateReady = dismissUpdateReady as typeof bag.dismissUpdateReady;
-
-  /** 「重启安装」：主进程先起安装包再退出自己；失败要如实告知（不静默吞）。 */
-  const restartAndInstall = async () => {
-    setUpdateRestarting(true);
-    setUpdateInstallFailed("");
-    try {
-      const r = await window.codex.updateRestartInstall?.();
-      if (!r?.ok) {
-        // macOS 上没有 NSIS 覆盖安装这条路 ⇒ 如实降级到"打开文件夹"，并说明原因
-        if (r?.error === "unsupported_platform") {
-          await window.codex.updateReveal?.("");
-          bag.showToast?.("macOS 请打开下载的压缩包，把 PPcode 拖进「应用程序」", "");
-        } else {
-          bag.setUpdateError(`重启安装失败：${r?.error || "未知原因"}`);
-        }
-        return;
-      }
-      // ok ⇒ 主进程会 quit，这里不再收尾（进程即将退出）。
-    } finally {
-      setUpdateRestarting(false);
-    }
-  };
-  bag.restartAndInstall = restartAndInstall as typeof bag.restartAndInstall;
-
-
-  /* ⛔⛔ 11-20 用户令：「我现在进应用就弹自动下载，很烦，只提醒，不要强制更新和自动下载」。
-     这里原来是「启动 8 秒后自动调 download-silent 下完整包」—— 用户没点任何东西就开始下 668MB。
-     已删除。⛔ 别再加回来：更新只能由用户在账号菜单里点「更新」触发。 */
-
-  // 需求 3：主进程下载完成后主动推 `updates:ready` ⇒ 弹窗（与是否开着设置页无关）。
-  useEffect(() => {
-    const off = window.codex.updateOnReady?.((info: { version?: string }) => {
-      armUpdateReady(info?.version);
-    });
-    return () => { off?.(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-
-  const runUpdateCheck = async () => {
-    bag.setUpdateChecking(true);
-    bag.setUpdateError("");
-    try {
-      const r = await window.codex.updateCheck?.();
-      if (!r) throw new Error("IPC 不可用");
-      if (!r.ok) throw new Error(r.error || "检查失败");
-      bag.setUpdateInfo(r.info ?? null);
-      bag.setUpdateCurrentVersion(r.currentVersion ?? "");
-      // ⛔⛔ 10-12 需求 4：手动「检查更新」若发现**更新包已经下好**，要弹同一个重启安装框。
-      //   这里不自己判断"下好了没"（渲染层没有这个权威状态）⇒ 直接问主进程要：
-      //   `download-silent` 是幂等的（已下好直接回 alreadyDone，不会重复下几百 MB）。
-      /* ⛔ 11-20 用户令：这里原来会**自动开始静默下载**（发现新版就下几百 MB）。已删除 ——
-         检查更新只更新状态，用户点「更新」才下载。 */
-    } catch (err: any) {
-      bag.setUpdateError(err?.message || String(err));
-    } finally {
-      bag.setUpdateChecking(false);
-    }
-  };
-bag.runUpdateCheck = runUpdateCheck as typeof bag.runUpdateCheck;
-
-  /** 下载安装包 → 自动打开安装程序；唤起失败则退化为打开所在文件夹 */
-  const runUpdateDownload = async () => {
-    if (!bag.updateInfo?.downloadUrl) return;
-    bag.setUpdateDownloading(true);
-    bag.setUpdateProgress(0);
-    bag.setUpdateError("");
-    try {
-      const r = await window.codex.updateDownload?.({
-        downloadUrl: bag.updateInfo.downloadUrl,
-        filename: bag.updateInfo.filename || "codex-harness-update.bin",
-      });
-      if (!r?.ok) throw new Error(r?.error || "下载失败");
-      const started = await window.codex.updateInstall?.(r.path!);
-      if (!started?.ok) {
-        void window.codex.updateReveal?.(r.path!);
-        bag.showToast?.(`已下载 v${bag.updateInfo.version}，请手动安装`, "");
-      } else {
-        bag.showToast?.(`正在打开 v${bag.updateInfo.version} 安装程序`, "");
-      }
-    } catch (err: any) {
-      bag.setUpdateError(err?.message || String(err));
-    } finally {
-      bag.setUpdateDownloading(false);
-      bag.setUpdateProgress(0);
-    }
-  };
-bag.runUpdateDownload = runUpdateDownload as typeof bag.runUpdateDownload;
-
-  // 打开网站反馈页：带上当前版本与系统信息（管理员可据此复现）
   // 发布站 09-15 起不再分发安装包，只负责应用介绍与问题反馈——反馈页地址保持不变
   const openFeedbackPage = () => {
     const ua = navigator.userAgent;
@@ -174,7 +24,6 @@ bag.runUpdateDownload = runUpdateDownload as typeof bag.runUpdateDownload;
       : /Linux/.test(ua) ? "Linux"
       : navigator.platform || "";
     const qs = new URLSearchParams();
-    if (bag.updateCurrentVersion) qs.set("v", bag.updateCurrentVersion);
     if (os) qs.set("os", os);
     // 发布中心地址固定（应用介绍 + 问题反馈），用户无需配置
     const base = "https://dl.ppz123.asia";
@@ -294,5 +143,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, updateReady, updateReadyVersion, updateRestarting, armUpdateReady, dismissUpdateReady, restartAndInstall, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

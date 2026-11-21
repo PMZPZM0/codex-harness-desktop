@@ -50,7 +50,7 @@ import { defineFeature } from "../context";
 import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
 // 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
-import { compareVersions } from "../updates";
+import { compareVersions } from "../version-utils";
 /* 11-10：查最新版本走统一判定层（所有源都查 + 取最大，官方源兜底）；
    NPM_SOURCES 用于把「胜出源」映射成安装器认识的取值，不在这里再抄一份 URL。 */
 import { probeNewestNpmVersion } from "../npm-version";

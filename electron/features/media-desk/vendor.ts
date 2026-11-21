@@ -15,7 +15,7 @@ import { mkdirSync, writeFileSync as writeSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { app } from "electron";
-import { compareVersions } from "../../updates";
+import { compareVersions } from "../../version-utils";
 import { gunzipSync } from "node:zlib";
 
 /** 随包基线版本（与 resources/media-desk 同步；守卫 12? 会比对）。 */

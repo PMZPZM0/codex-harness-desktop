@@ -21,7 +21,7 @@ export const EXTENSIBILITY_GROUPS = ["接口与契约", "界面与呈现", "智�
  * IPC 通道数（页面统计用）。
  * ⛔ 这个数字**由守卫【128】保证与 manifest 实际条数一致**（写死在别处必然过期）。改 manifest 后若忘了改这里，预检会红。
  */
-export const IPC_CHANNEL_COUNT = 723;
+export const IPC_CHANNEL_COUNT = 721;
 
 export const EXTENSIBILITY_ENTRIES = [
   /* ── 接口与契约 ─────────────────────────────────────────────────────── */
@@ -161,7 +161,7 @@ export const EXTENSIBILITY_ENTRIES = [
     where: [
       "electron/update-registry.ts（可更新项与「不支持更新」原因）",
       "electron/update-backends.ts（手动与后台共用的 updateComponent）",
-      "electron/updates.ts（应用自更新：NSIS 差分 + blockmap）",
+      "electron/update-service.ts（应用自更新：检查 / 下载 / 安装，状态机 + 落盘复用）",
       "electron/gh-mirror.ts（镜像前缀单一真相源）",
     ],
     steps: [

@@ -702,10 +702,10 @@
       "config": null
     },
     {
-      "id": "updates",
+      "id": "update",
       "enabled": true,
-      "file": "features/updates-ipc.ts",
-      "export": "updatesFeature",
+      "file": "features/update-ipc.ts",
+      "export": "updateFeature",
       "config": null
     },
     {

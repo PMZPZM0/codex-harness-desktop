@@ -2,6 +2,7 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { UpdateBadge, UpdateMenuRow } from "../../app-update/UpdateBadge";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ThemeQuickSwitch } from "../../../components/ThemeQuickSwitch";
@@ -160,7 +161,6 @@ import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
 import { runVisualSwitch, themeLabelOf } from "../../../lib/visual-switch";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
-import { UpdateProgressBar } from "../../../components/UpdateProgressBar";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
@@ -168,7 +168,6 @@ import { NewbieGuide } from "../../newbie-guide";
 import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from "./SidebarGuideModal";
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
 import { NewProjectDialog } from "./NewProjectDialog";
-import { UpdateFlowBanner } from "./UpdateFlowBanner";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 /** 项目「⋯」按钮矩形：项目改名/删除气泡贴着**项目行**弹（⛔ 不用菜单项位置，否则飘在侧栏中间）。 */
@@ -403,8 +402,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     projectMenu,
     refreshThreads,
     renderClusterList,
-    runUpdateCheck,
-    runUpdateDownload,
     saveAccountName,
     setAccountDraft,
     setAccountEditing,
@@ -454,18 +451,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     toggleSection,
     uiLang,
     uiZoom,
-    updateChecking,
-    updateCurrentVersion,
-    updateDownloading,
-    updateError,
-    updateInfo,
-    updateProgress,
-    // ⛔ 10-12 更新就绪弹窗（需求 3）：与设置页无关，独立挂在左下角。
-    updateReady,
-    updateReadyVersion,
-    updateRestarting,
-    dismissUpdateReady,
-    restartAndInstall,
     userAvatar,
     username,
     viewTab,
@@ -761,6 +746,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
    *  当时只能靠"请你重启一次"来猜）。把版本/构建/产物/引擎信息一次复制出来，双方都能对账。
    *  引擎信息取不到就退化（best-effort，不阻塞复制）。 */
   const copyBuildDiagnostics = async () => {
+    /* 版本号现取：11-21 重写后渲染层不再持有更新状态，这里问一次主进程（只读，不下载）。 */
+    let appVersionForDiagnostics = "";
+    try { const versionReply = (await window.codex.updateCheck?.()) as { state?: { currentVersion?: string } } | undefined;
+      appVersionForDiagnostics = String(versionReply?.state?.currentVersion ?? ""); } catch { /* 取不到就留空 */ }
     let engine: string = "（未取到）";
     try {
       const info = await window.codex.engineInfo();
@@ -768,7 +757,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       if (engine.length > 500) engine = engine.slice(0, 500) + "…";
     } catch { /* 引擎没起来时取不到属正常 */ }
     const text = [
-      `应用版本：v${updateCurrentVersion || "—"}`,
+      `应用版本：v${appVersionForDiagnostics || "—"}`,
       `构建指纹：${buildStamp}`,
       `渲染层产物：${bundleFile}`,
       `引擎信息：${engine}`,
@@ -1102,37 +1091,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               ) : (
                 <button className="account-name" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{username}</button>
               )}
-              {/* ⛔⛔ 11-20 用户令：「有更新就在这里提醒，点击下载，就同步展示下载进度，完成后就一个很小的弹窗」。
-                 ⇒ 更新提示只在这里（账户行右侧一个小徽标）：有新版 = 图标 + 红点；下载中 = 百分比；
-                   就绪 = 绿点，点它重启安装。⛔ 不许再弹「发现新版本」大卡片，也不许启动就自动下载。 */}
-              {updateInfo?.hasUpdate || updateDownloading || updateReady ? (
-                <button
-                  type="button"
-                  className={`account-update-badge${updateDownloading ? " is-downloading" : ""}${updateReady ? " is-ready" : ""}`}
-                  title={updateReady
-                    ? `更新已就绪${updateReadyVersion ? ` v${updateReadyVersion}` : ""}：点击重启安装`
-                    : updateDownloading
-                      ? `正在下载更新${updateProgress > 0 ? ` ${Math.round(updateProgress * 100)}%` : ""}（不影响你继续使用）`
-                      : `有新版本 v${updateInfo?.version}：点击下载`}
-                  aria-label="软件更新"
-                  onClick={() => {
-                    if (updateReady) { void restartAndInstall(); return; }
-                    if (updateDownloading) return;
-                    void runUpdateDownload();
-                  }}
-                >
-                  {updateDownloading
-                    ? <Download size={13} className="account-update-icon spin-slow" />
-                    : <Download size={13} className="account-update-icon" />}
-                  <span className="account-update-label">
-                    {updateReady
-                      ? "安装"
-                      : updateDownloading
-                        ? (updateProgress > 0 ? `${Math.round(updateProgress * 100)}%` : "下载中")
-                        : "更新"}
-                  </span>
-                </button>
-              ) : null}
+              <UpdateBadge />
+
               {accountMenuOpen && (
                 <div className="account-menu" role="menu" ref={accountMenuRef}>
                   {accountMenuSub === null && <>
@@ -1153,7 +1113,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <button className="account-menu-item" onClick={() => setAccountMenuSub("update")}>
                       <RefreshCw size={15} className="ic-green" />
                       <span>检查更新</span>
-                      {updateInfo?.hasUpdate ? <span className="account-menu-dot" title={`v${updateInfo.version} 可用`} /> : null}
                       <ChevronRight size={14} className="account-menu-arrow" />
                     </button>
                     <div className="account-menu-sep" />
@@ -1181,44 +1140,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   {accountMenuSub === "update" && <>
                     <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>检查更新</span></button>
                     <div className="account-menu-section">
-                      <div className="account-menu-row"><span className="account-menu-label">当前版本</span><span className="account-menu-value mono">v{updateCurrentVersion || "—"}</span></div>
-                      {/* 构建指纹（09-23）：回答「你正在跑的是哪一份产物」——原来只显示版本号，
-                          改了源码没重启时用户与我都无法自证（09-23 真实事故）。两个值分别是构建期
-                          注入的指纹与自身 URL 里的产物名，显示的就是正在执行的那份，不是磁盘现状。 */}
                       <div className="account-menu-row"><span className="account-menu-label">构建</span><span className="account-menu-value mono" title="构建期写进包体的指纹（YYYYMMDD-HHmm）">{buildStamp}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">产物</span><span className="account-menu-value mono" title="正在执行的渲染层 bundle（含内容 hash）">{bundleFile}</span></div>
-                      <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases<span className="update-help" title="国内镜像优先：gh-proxy.com → ghfast.top → GitHub 直连；任一通道失败自动换下一档">?</span></span></div>
-                      <div className="account-menu-row"><span className="account-menu-label">更新方式</span><span className="account-menu-value">完整包<span className="update-help" title="每版下载完整安装包（差分更新已下线）；macOS 下载后把应用拖进「应用程序」完成更新">?</span></span></div>
                     </div>
+                    {/* 11-21 重写：状态与动作都在 app-update 里，这里只挂一行 UI。 */}
+                    <UpdateMenuRow />
                     <button className="account-menu-item" onClick={() => void copyBuildDiagnostics()}>
                       <ClipboardList size={15} /><span>复制诊断信息</span>
                     </button>
-                    <button className="account-menu-item" onClick={() => void runUpdateCheck()} disabled={updateChecking}>
-                      <RefreshCw size={15} className={updateChecking ? "spin" : ""} />
-                      <span>{updateChecking ? "检查中…" : "检查更新"}</span>
-                      <UpdateProgressBar active={updateChecking} indeterminate />
-                    </button>
-                    {updateError ? <div className="account-menu-error">{updateError}</div> : null}
-                    {updateInfo && !updateInfo.hasUpdate ? (
-                      <div className="account-menu-success">
-                        <CircleCheck size={14} /><span>已是最新版本</span>
-                      </div>
-                    ) : null}
-                    {updateInfo?.hasUpdate ? <>
-                      <div className="account-menu-sep" />
-                      <div className="account-menu-section">
-                        <div className="account-menu-row"><span className="account-menu-label">新版本</span><span className="account-menu-value mono">v{updateInfo.version}</span></div>
-                        {updateInfo.size ? <div className="account-menu-row"><span className="account-menu-label">大小</span><span className="account-menu-value">{((updateInfo.size / 1024 / 1024) || 0).toFixed(1)} MB</span></div> : null}
-                      </div>
-                      {updateInfo.changelog ? <div className="account-menu-changelog">{updateInfo.changelog}</div> : null}
-                      <button className="account-menu-item primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
-                        <Download size={15} className={updateDownloading ? "pulse" : ""} />
-                        <span>{updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}</span>
-                        <UpdateProgressBar active={updateDownloading} progress={updateProgress} indeterminate={updateProgress <= 0} />
-                      </button>
-                    </> : null}
-                    <div className="account-menu-sep" />
-                    <button className="account-menu-item" title="打开发布中心反馈页（自动携带版本与系统信息）" onClick={openFeedbackPage}><MessageSquare size={15} /><span>遇到问题？去反馈</span><ExternalLink size={13} className="account-menu-arrow" /></button>
                   </>}
                 </div>
               )}
@@ -1231,8 +1160,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     ) : null}
     {/* 11-20 用户令：「右上角的更新提醒弹窗就不要了，不要烦用户」——
         就绪状态只体现在账户行的蓝色胶囊上（点它安装），⛔ 不再弹提示条。 */}
-    {/* 11-16 更新流程进度条 / 安装遮罩：自订阅主进程的 updates:download-state。 */}
-    <UpdateFlowBanner />
     {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
         close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。 */}
     {/* 工作区外文件预览的授权确认（10-18，应用内模态；⛔ 不用系统弹窗） */}

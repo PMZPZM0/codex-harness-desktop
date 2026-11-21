@@ -26,7 +26,7 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { WHATS_NEW_ENTRIES, whatsNewEntryOf } from "../whats-new-notes";
-import { GITHUB_REPO } from "../updates";
+import { GITHUB_REPO } from "../repo-info";
 
 /** 本域占用的通道（卸载时要逐个摘掉）。 */
 const WHATSNEW_CHANNELS = ["whatsnew:state", "whatsnew:ack", "whatsnew:history"];
@@ -135,7 +135,7 @@ export const whatsNewFeature = defineFeature<null>({
     ipcHost.handle("whatsnew:ack", (_event, version: string) => {
       const current = String(app.getVersion() || "");
       /* ⛔ 只接受"当前版本"：渲染层传别的值会被写进记录 ⇒ 下次真升级时被误判成"看过"
-         （与 updates:install 只认刚校验过的包同一个口径：**权威值在主进程**）。 */
+         （与本仓更新链只认主进程落盘的权威值同一个口径）。 */
       if (String(version ?? "") !== current) return { ok: false, error: "version_mismatch" };
       const userData = app.getPath("userData");
       writeRecord(userData, { ...readRecord(userData), lastSeenVersion: current, seenAt: Date.now() });

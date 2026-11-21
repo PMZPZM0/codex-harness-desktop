@@ -30,7 +30,7 @@ import os from "node:os";
 import path from "node:path";
 import { GH_MIRROR_PREFIXES } from "./gh-mirror";
 import { OFFICIAL_CATALOG_GENERATED_AT, OFFICIAL_PLUGIN_CATALOG } from "./codex-official-catalog.gen";
-import { compareVersions } from "./updates";
+import { compareVersions } from "./version-utils";
 import { appendSectionAtomic } from "./config-toml";
 
 const GH_OWNER = "openai";

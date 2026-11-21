@@ -238,32 +238,8 @@ bag.accountMenuOpen = accountMenuOpen as typeof bag.accountMenuOpen; bag.setAcco
   const [accountMenuSub, setAccountMenuSub] = useState<"lang" | "theme" | "zoom" | "update" | null>(null);
 bag.accountMenuSub = accountMenuSub as typeof bag.accountMenuSub; bag.setAccountMenuSub = setAccountMenuSub as typeof bag.setAccountMenuSub;
 
-  // 自更新：更新源固定 GitHub Releases（09-15 用户定稿：发布站不再分发安装包，网页源已删除）
-  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string; reason?: string } | null>(null);
-bag.updateInfo = updateInfo as typeof bag.updateInfo; bag.setUpdateInfo = setUpdateInfo as typeof bag.setUpdateInfo;
-
-  const [updateCurrentVersion, setUpdateCurrentVersion] = useState<string>("");
-bag.updateCurrentVersion = updateCurrentVersion as typeof bag.updateCurrentVersion; bag.setUpdateCurrentVersion = setUpdateCurrentVersion as typeof bag.setUpdateCurrentVersion;
-
-  const [updateChecking, setUpdateChecking] = useState(false);
-bag.updateChecking = updateChecking as typeof bag.updateChecking; bag.setUpdateChecking = setUpdateChecking as typeof bag.setUpdateChecking;
-
-  const [updateError, setUpdateError] = useState<string>("");
-bag.updateError = updateError as typeof bag.updateError; bag.setUpdateError = setUpdateError as typeof bag.setUpdateError;
-
-  const [updateDownloading, setUpdateDownloading] = useState(false);
-bag.updateDownloading = updateDownloading as typeof bag.updateDownloading; bag.setUpdateDownloading = setUpdateDownloading as typeof bag.setUpdateDownloading;
-
-  /* 11-20 用户令：「差分更新删了吧，就保留一个正常安装包更新」。
-     ⇒ 「更新方式（补丁 / 完整包）」整套删除：没有可选项，每版都下完整安装包。
-        ⛔ 别再往回加：实测当前镜像链路上差分根本下载不了（multipart 不支持 + 单段请求被重置）。 */
-
-  const [updateProgress, setUpdateProgress] = useState(0);
-bag.updateProgress = updateProgress as typeof bag.updateProgress; bag.setUpdateProgress = setUpdateProgress as typeof bag.setUpdateProgress;
-
-  // 启动静默检查发现新版本 → 弹出的通知卡片（用户关掉后本次会话不再弹）
-  /* 11-20 用户令：「只要用户没点击更新，就不要弹窗，也不要自动下载」。启动静默检查只更新
-     updateInfo（账号菜单里显示「有新版本」），⛔ 不再弹「发现新版本」卡片。 */
+  /* 11-21 更新链重写：启动不再检查更新、不再记录任何更新状态（都移到 app-update 模块，
+     由主进程 `update:state` 推送驱动）。⛔ 别把「开机静默检查 + 状态塞进 bag」加回来。 */
 
   const accountMenuRef = useRef<HTMLDivElement>(null);
 bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
@@ -275,32 +251,5 @@ bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
     return () => window.removeEventListener("mousedown", onDown);
   }, [bag.accountMenuOpen]);
 
-  // 启动时静默检查一次：有新版本就弹通知卡片；无更新或出错一律不打扰
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const r = await window.codex.updateCheck?.();
-        if (cancelled || !r?.ok) return;
-        bag.setUpdateInfo(r.info ?? null);
-        bag.setUpdateCurrentVersion(r.currentVersion ?? "");
-        /* 11-16：上次「重启安装」后版本没变 ⇒ 安装没成功。通知更新状态机暂停自动安装，
-           避免每次开机都自动退出、看起来像闪退循环。 */
-        const pending = (r as unknown as { pendingInstall?: { failed?: boolean; version?: string } }).pendingInstall;
-        if (pending?.failed) {
-          window.dispatchEvent(new CustomEvent("harness:update-install-failed", {
-            detail: { version: String(pending.version ?? "") },
-          }));
-        }
-        /* ⛔ 11-20：不再弹「发现新版本」卡片；有更新只在侧栏底部图标上提示。 */
-      } catch (err) {
-        // 静默：网络不通、发布站不可达都不打扰用户
-        console.warn("[update] startup check failed:", err);
-      }
-    })();
-    return () => { cancelled = true; };
-    // 仅启动时跑一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return { buildStamp, bundleFile, lightbox, setLightbox, pastedText, setPastedText, systemEvents, setSystemEvents, hookPulse, setHookPulse, welcomeScratchDir, setWelcomeScratchDir, welcomeCwdMenuOpen, setWelcomeCwdMenuOpen, identityGreeted, setIdentityGreeted, ponytailOn, setPonytailOn, channelOnline, setChannelOnline, switchJumpRef, switchJumpPending, threadCacheRef, threadProviderRef, autoMigratedRef, switchingThreadId, setSwitchingThreadId, switchSeqRef, recentResumeAtRef, turnsCursorRef, switchingFading, setSwitchingFading, fadeOutTimerRef, switchHardTimerRef, theme, setTheme, accountMenuOpen, setAccountMenuOpen, accountMenuSub, setAccountMenuSub, updateInfo, setUpdateInfo, updateCurrentVersion, setUpdateCurrentVersion, updateChecking, setUpdateChecking, updateError, setUpdateError, updateDownloading, setUpdateDownloading, updateProgress, setUpdateProgress, accountMenuRef };
+  return { buildStamp, bundleFile, lightbox, setLightbox, pastedText, setPastedText, systemEvents, setSystemEvents, hookPulse, setHookPulse, welcomeScratchDir, setWelcomeScratchDir, welcomeCwdMenuOpen, setWelcomeCwdMenuOpen, identityGreeted, setIdentityGreeted, ponytailOn, setPonytailOn, channelOnline, setChannelOnline, switchJumpRef, switchJumpPending, threadCacheRef, threadProviderRef, autoMigratedRef, switchingThreadId, setSwitchingThreadId, switchSeqRef, recentResumeAtRef, turnsCursorRef, switchingFading, setSwitchingFading, fadeOutTimerRef, switchHardTimerRef, theme, setTheme, accountMenuOpen, setAccountMenuOpen, accountMenuSub, setAccountMenuSub, accountMenuRef };
 }

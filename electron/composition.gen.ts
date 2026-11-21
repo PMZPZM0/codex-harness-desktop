@@ -107,7 +107,7 @@ import { terminalFeature as feat_terminal } from "./features/terminal-ipc";
 import { threadRuntimeFeature as feat_thread_runtime } from "./features/thread-runtime-ipc";
 import { threadsFeature as feat_threads } from "./features/threads-ipc";
 import { toolsFeature as feat_tools } from "./features/tools-ipc";
-import { updatesFeature as feat_updates } from "./features/updates-ipc";
+import { updateFeature as feat_update } from "./features/update-ipc";
 import { userFeature as feat_user } from "./features/user-ipc";
 import { vaultFeature as feat_vault } from "./features/vault-ipc";
 import { videoFeature as feat_video } from "./features/video-gen";
@@ -242,7 +242,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "thread-runtime", plugin: feat_thread_runtime as Plugin<unknown>, config: null },
   { id: "threads", plugin: feat_threads as Plugin<unknown>, config: null },
   { id: "tools", plugin: feat_tools as Plugin<unknown>, config: null },
-  { id: "updates", plugin: feat_updates as Plugin<unknown>, config: null },
+  { id: "update", plugin: feat_update as Plugin<unknown>, config: null },
   { id: "user", plugin: feat_user as Plugin<unknown>, config: null },
   { id: "vault", plugin: feat_vault as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },

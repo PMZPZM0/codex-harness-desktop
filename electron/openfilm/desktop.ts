@@ -26,7 +26,8 @@ import path from "node:path";
 import { shell } from "electron";
 import { mirrorCandidates } from "../gh-mirror";
 import { guardedFetch } from "../net-guard";
-import { compareVersions, downloadUpdate } from "../updates";
+import { compareVersions } from "../version-utils";
+import { downloadThroughMirrors } from "../mirror-download";
 import { broadcastCodexEvent } from "../features/window-bus";
 import { desktopDir } from "./paths";
 import { launchDetached, runExe } from "./runner";
@@ -248,12 +249,22 @@ export async function downloadDesktop(): Promise<{ ok: boolean; path?: string; e
   fs.mkdirSync(desktopDir(), { recursive: true });
   progress(1, `从 GitHub 获取 ${asset.name}（${(asset.size / 1048576).toFixed(0)}MB）…`);
   try {
-    const result = await downloadUpdate(asset.url, target, ({ percent, receivedBytes }) => {
-      progress(Math.max(2, Math.min(99, percent * 100)), `已下载 ${(receivedBytes / 1048576).toFixed(1)}MB / ${(asset.size / 1048576).toFixed(0)}MB`);
-    }, sha256 || undefined);
+    /* 11-21：更新链重写后 `downloadUpdate` 已删除 ⇒ 这里的通用下载改用同一个镜像下载器
+       （镜像排序 / 停滞 / 低速看门狗都在 `mirror-download.ts`，全仓只留这一套）。
+       ⛔ 它返回的是本地重算的 sha256，与上游 digest 直接比对（不再传"期望值"进去）。 */
+    const result = await downloadThroughMirrors({
+      url: asset.url,
+      target,
+      onProgress: (p) => {
+        progress(Math.max(2, Math.min(99, p.percent * 100)), `已下载 ${(p.received / 1048576).toFixed(1)}MB / ${(asset.size / 1048576).toFixed(0)}MB`);
+      },
+    });
+    if (sha256 && result.sha256.toLowerCase() !== sha256.toLowerCase()) {
+      throw new Error("安装包校验失败（内容与上游 digest 不一致）");
+    }
     fs.writeFileSync(stampFile(), release.version, "utf8");
-    progress(100, `已校验并保存：${result.path}`);
-    return { ok: true, path: result.path, version: release.version, info: await desktopInfo() };
+    progress(100, `已校验并保存：${target}`);
+    return { ok: true, path: target, version: release.version, info: await desktopInfo() };
   } catch (error: any) {
     progress(0, "");
     return { ok: false, error: String(error?.message ?? error), info: await desktopInfo() };

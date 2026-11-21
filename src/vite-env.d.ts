@@ -492,6 +492,22 @@ interface Window {
     dispatchNotice(before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
     threadRole(threadId: string): Promise<{ restricted: boolean; dispatchOnly?: boolean; label: string; kind: "normal" | "hub" | "expertTeam" | "expert" | "workPartner" | "delegate"; caps: { dispatch: boolean; bossGroup: boolean; scheduler: boolean; knowledge: boolean; cliInstall: boolean; memory: "private" | "team"; workspace: "project" | "hub" | "session"; ownsGroups: boolean } }>;
     dispatchToolDescription(threadId: string): Promise<{ description: string }>;
+    /* 11-14 透传 adb 命令（shell input / pm grant / am start / dumpsys 等）：参数数组不进 shell，自动补 -s <当前模拟器>；输出截断 */
+    apkstartAdb(input: { args?: string[]; timeoutMs?: number }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error: string }>;
+    /* 11-14 安装 APK：spawn ApkStart.exe --silent <apk>（参数数组不进 shell）；完成判据 = ApkStart 的 apps.json 出现新条目/被改写，等不到就 pending（首启要先下约 1GB 运行时），不假装成功 */
+    apkstartInstall(input: { apk?: string; launch?: boolean; waitMs?: number }): Promise<{ ok: boolean; pending: boolean; packageName: string; label: string; error: string; detail: string }>;
+    /* 11-14 启动已装应用：spawn ApkStart.exe --launch <包名>（上游 CLI 自带 silent）；包名先过格式校验，且必须在 ApkStart 应用清单里 */
+    apkstartLaunch(input: { package?: string }): Promise<{ ok: boolean; error: string; detail: string }>;
+    /* 11-14 读最近 logcat（默认 300 行，可按关键字/包名过滤；带包名时保留 FATAL EXCEPTION / ANR 行） */
+    apkstartLogcat(input: { lines?: number; filter?: string; packageName?: string }): Promise<{ ok: boolean; text: string; error: string }>;
+    /* 11-14 打开 ApkStart 主界面（看安装进度/手动操作；detached spawn，宿主退出后它继续跑） */
+    apkstartOpen(): Promise<{ ok: boolean; error: string }>;
+    /* 11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错） */
+    apkstartPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
+    /* 11-14 设备截屏：adb exec-out screencap -p → PNG 落盘（默认 userData/apkstart/screenshots），返回本地路径给模型查看 */
+    apkstartScreenshot(input: { path?: string }): Promise<{ ok: boolean; path: string; bytes: number; error: string; detail: string }>;
+    /* 11-14 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT）状态：安装/版本/主界面是否在跑/运行时是否备齐/当前模拟器设备/它自己的应用清单（apps.json）；3s 缓存（卡片轮询不反复打 adb） */
+    apkstartStatus(): Promise<{ installed: boolean; exePath: string; version: string; running: boolean; runtimeReady: boolean; runtimeRoot: string; adbPath: string; device: { serial: string; state: string; model: string; api: string; release: string } | null; apps: { package?: string; label?: string; versionName?: string; installedAt?: number; lastLaunchAt?: number }[]; dataDir: string; attribution: { license: string; home: string } }>;
     /* 取消尚未确认的开启流程（不落盘） */
     appLockCancel(setupId: string): Promise<{ ok: boolean }>;
     /* 关闭应用锁需当前密码；错误同样计数 */
@@ -518,6 +534,18 @@ interface Window {
     /* 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; desktopBackendNuphus?: boolean; desktopBackendComputerUse?: boolean; desktopBackendAgentDesktop?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean; composerRailOrder?: string[] }>;
     saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; desktopBackendNuphus?: boolean; desktopBackendComputerUse?: boolean; desktopBackendAgentDesktop?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean; composerRailOrder?: string[] }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; desktopBackendNuphus?: boolean; desktopBackendComputerUse?: boolean; desktopBackendAgentDesktop?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean; composerRailOrder?: string[] }>;
+    /* 11-16 打开 ArtCraft Launcher（19 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
+    artcraftOpen(): Promise<{ ok: boolean; error?: string }>;
+    /* 11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测） */
+    artcraftPickRoot(input?: { clear?: boolean }): Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>;
+    /* 11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入） */
+    artcraftRun(input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }): Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>;
+    /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 已装 App 列表（Launcher 安装目录扫描 + exe 版本）/ 已写入的独立 MCP 名单 / 许可 */
+    artcraftStatus(): Promise<{ installed: boolean; version: string; launcherPath: string; platform: string; sizeBytes: number; installedApps: Array<{ id: string; name: string; dir: string; exePath: string; cliPath: string; version: string }>; mcpServers: string[]; attribution: { license: string; home: string; apps: string } }>;
+    /* 11-16 重新扫描已装 App 并重写 config.toml（每个 App 一条独立 [mcp_servers.<id>]）；引擎需重启才加载 */
+    artcraftSync(): Promise<{ servers: string[] }>;
+    /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
+    listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
     /* 10-13 统一更新体系：按行 id 更新指定组件。幂等（内容一致 ⇒ unchanged，不重装）；有目标目录的一律先快照、失败自动回滚（electron/update-safety.ts）。更新源一律国内镜像：npm→npmmirror、pip→清华、GitHub→gh-mirror 通道 */
     runAutoUpdateComponent(id: string): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>;
     /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
@@ -591,6 +619,8 @@ interface Window {
     botsGet(): Promise<any[]>;
     botsSet(list: any[]): Promise<{ ok: boolean; count: number }>;
     bridgeStatus(): Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, "responses" | "chat"> }>;
+    /* 清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清 */
+    browserClearData(kind?: string): Promise<{ ok: boolean; partition: string; cleared: string }>;
     /* 归档会话时回收 codex-<threadId> TaskSpace；不传 threadId 则清全部 codex-* */
     egoCleanup(threadId?: string): Promise<{ ok: boolean; cleaned: number; detail: string }>;
     /* 打开 ego lite 官方下载页（不静默安装系统软件） */
@@ -612,31 +642,31 @@ interface Window {
     saveChannelBot(config: unknown): Promise<any>;
     testChannelBot(config: unknown): Promise<{ ok: boolean; latencyMs: number }>;
     channelsStatus(): Promise<{ weixin: boolean; telegram: boolean; feishu?: boolean; dingtalk?: boolean; qq?: boolean; "wecom-webhook"?: boolean }>;
+    /* 11-06 取消安装/更新：kill 子进程（真停，不是只改 UI） */
+    cancelCliAgentInstall(id: string): Promise<{ ok: boolean; cancelled: boolean }>;
+    /* 11-06：查最新版本（npm view / pip index），结果缓存 10 分钟 */
+    checkCliAgentUpdates(ids?: string[]): Promise<{ items: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> }>;
+    /* 只在用户点「检测」时调：有子进程（where/which + --version） */
+    detectCliAgent(input?: { id?: string; bin?: string }): Promise<{ installed: boolean; path: string; version: string; error: string }>;
+    /* 10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH */
+    installCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
+    /* 10-29 CLI 智能体板块：分类表跟着列表下发（渲染层不复制第二份分类字面量） */
+    listCliAgents(): Promise<{ items: CliAgentEntry[]; categories: { key: string; label: string; hint: string }[] }>;
+    removeCliAgent(id: string): Promise<{ ok: boolean; error?: string }>;
+    /* 新增/更新；内置项不可删只能关停 */
+    saveCliAgent(input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }): Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>;
+    /* 11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；scope=all 逐 CLI 回执（synced/current/auto/manual/failed） */
+    applyCliSync(input?: { scope?: string; targetId?: string }): Promise<{ ok: boolean; id?: string; name?: string; detail?: string; results?: Array<{ id?: string; name: string; ok: boolean; state?: "synced" | "current" | "auto" | "manual" | "failed"; detail: string }> }>;
+    /* 11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key） */
+    inspectCliSyncTargets(): Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: "claude" | "keyed" | "config" | "env" | "own"; action: string; status: string; docs?: string }> }>;
+    /* 配套卸载：只动应用自己的工具目录，系统里用户自装的另一份不越界 */
+    uninstallCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
+    /* 11-06 一键更新：npm i -g pkg@latest / pip install -U；真跑 + 复核 PATH */
+    updateCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
     readClipboardImage(): Promise<string | null>;
     readClipboardFiles(): Promise<string[]>;
     writeClipboard(text: string): Promise<boolean>;
     writeClipboardImage(filePath: string): Promise<boolean>;
-    /* 10-29 CLI 智能体板块：分类表跟着列表下发（渲染层不复制第二份分类字面量） */
-    listCliAgents(): Promise<{ items: CliAgentEntry[]; categories: { key: string; label: string; hint: string }[] }>;
-    /* 只在用户点「检测」时调：有子进程（where/which + --version） */
-    detectCliAgent(input?: { id?: string; bin?: string }): Promise<{ installed: boolean; path: string; version: string; error: string }>;
-    /* 新增/更新；内置项不可删只能关停 */
-    saveCliAgent(input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }): Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>;
-    removeCliAgent(id: string): Promise<{ ok: boolean; error?: string }>;
-    /* 10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH */
-    installCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
-    /* 配套卸载：只动应用自己的工具目录，系统里用户自装的另一份不越界 */
-    uninstallCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
-    /* 11-06：查最新版本（npm view / pip index），结果缓存 10 分钟 */
-    checkCliAgentUpdates(ids?: string[]): Promise<{ items: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> }>;
-    /* 11-06 一键更新：npm i -g pkg@latest / pip install -U；真跑 + 复核 PATH */
-    updateCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
-    /* 11-06 取消安装/更新：kill 子进程（真停，不是只改 UI） */
-    cancelCliAgentInstall(id: string): Promise<{ ok: boolean; cancelled: boolean }>;
-    /* 11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key） */
-    inspectCliSyncTargets(): Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: "claude" | "keyed" | "config" | "env" | "own"; action: string; status: string; docs?: string }> }>;
-    /* 11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；scope=all 逐 CLI 回执（synced/current/auto/manual/failed） */
-    applyCliSync(input?: { scope?: string; targetId?: string }): Promise<{ ok: boolean; id?: string; name?: string; detail?: string; results?: Array<{ id?: string; name: string; ok: boolean; state?: "synced" | "current" | "auto" | "manual" | "failed"; detail: string }> }>;
     /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
     respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
     /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */
@@ -673,6 +703,10 @@ interface Window {
     cloudModelsToken(input?: { force?: boolean }): Promise<{ ok: boolean; token: string; reused: boolean; error?: string }>;
     /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
     cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+    /* 11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动） */
+    cloudSyncDelete(input?: { ids?: string[] }): Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>;
+    /* 11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除 */
+    cloudSyncIndex(): Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>;
     /* 10-18：列出本地会话供勾选上传（只读）；11-04 加来源分类与同步游标 */
     cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; kind: string; syncedLines: number; newLines: number }> }>;
     /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
@@ -683,10 +717,6 @@ interface Window {
     cloudSyncStatus(): Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>;
     /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */
     cloudSyncUsage(): Promise<{ ok: boolean; code?: string; error?: string; usedBytes?: number; limitBytes?: number; sessions?: number; devices?: number; deviceLimit?: number }>;
-    /* 11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除 */
-    cloudSyncIndex(): Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>;
-    /* 11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动） */
-    cloudSyncDelete(input?: { ids?: string[] }): Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>;
     /* 官方源的 10 个分类（含每类数量）。⛔ 与 Gitee 镜像源的分类各算各的，tab 按源切换 */
     listOfficialMarketCategories(): Promise<{ key: string; displayName: string; count: number }[]>;
     /* 镜像下载 plugins/<slug> 子树 → 写本地市场目录 → 注册 [marketplaces.codex-official-market] → 引擎 plugin/install + 重启 → plugin/list 确认；进度走 harness:event 的 official-plugin-install（⛔ 不与 plugin-install 共用 type，上游 slug 有重名） */
@@ -729,6 +759,28 @@ interface Window {
     setProviderEnabled(input: { provider: string; enabled: boolean }): Promise<CustomModelState>;
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
+    /* 模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有） */
+    dataaccessFavoritesAppend(input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }): Promise<{ ok: boolean; id: string; title: string; total: number }>;
+    /* 模型工具：读收藏夹（需 favorites/read） */
+    dataaccessFavoritesList(input: { threadId: string; query?: string; limit?: number }): Promise<{ total: number; matched: number; items: { id: string; title: string; kind: string; content: string; tags: string[]; createdAt: string }[] }>;
+    /* 设一个三元组（会话+模块+读/写）；只在内存，退出即失效 */
+    dataaccessGrant(input: { threadId: string; module: string; level: string; on: boolean }): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
+    /* 模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史） */
+    dataaccessJournalAppend(input: { threadId: string; date?: string; title?: string; body: string }): Promise<{ ok: boolean; date: string; days: number }>;
+    /* 模型工具：读某天日记全文（需 journal/read） */
+    dataaccessJournalRead(input: { threadId: string; date?: string }): Promise<{ date: string; content: string; truncated: boolean }>;
+    /* 模型工具：全文检索日记（需 journal/read） */
+    dataaccessJournalSearch(input: { threadId: string; query: string }): Promise<{ hits: { date: string; lines: string[] }[] }>;
+    /* 撤销某会话的全部授权 */
+    dataaccessRevokeAll(threadId: string): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
+    /* 读某会话的授权（默认全关） */
+    dataaccessState(threadId: string): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
+    /* 模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文） */
+    dataaccessVaultCopy(input: { threadId: string; id: string }): Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>;
+    /* 模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文） */
+    dataaccessVaultFind(input: { threadId: string; query?: string }): Promise<{ total: number; items: { id: string; title: string; username: string; url: string; hasSecret: boolean }[] }>;
+    /* 模型工具：写入密码本（需 vault/write + 渲染层一次性确认） */
+    dataaccessVaultSave(input: { threadId: string; item: Record<string, unknown> }): Promise<{ ok: boolean; total: number }>;
     /* 写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch */
     prepareDataDir(dir: string): Promise<{ ok: boolean; restoreDefault: boolean; needRestart: boolean; target: string; migrate?: boolean; hasExistingData?: boolean; migrated?: { files: number; bytes: number }; note?: string }>;
     /* 数据目录（userData）现状：生效值 / 默认锚点 / 自定义值 / 待迁移标记 / 迁移进度 */
@@ -739,6 +791,12 @@ interface Window {
     declaredPluginsOpenDirs(): Promise<{ ok: boolean; error?: string; userDir?: string; builtinDir?: string }>;
     /* 10-04 启停声明式插件（插槽即时生效，无需重启） */
     declaredPluginsToggle(input: { id: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>;
+    /* 11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径） */
+    designMdExport(input: { slug?: string; dir?: string }): Promise<{ ok: boolean; path?: string; category?: string; error?: string }>;
+    /* 11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null */
+    designMdGet(slug: string): Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>;
+    /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */
+    designMdList(input: { category?: string; query?: string; limit?: number }): Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string; zh: string }> }>;
     chooseDirectory(): Promise<string | null>;
     chooseDirectoryAt(startPath: string): Promise<string | null>;
     chooseFiles(): Promise<string[]>;
@@ -773,8 +831,13 @@ interface Window {
     engineRestartLog(): Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[]>;
     /* 装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片 */
     installExpertMarketPackage(input: { slug: string }): Promise<{ slug: string; teamId: string; displayName: string; installedChildren: string[]; childFailures: string[]; expertCreated: boolean; expertUpdated: boolean }>;
+    installLocalSkillset(input?: { dir?: string; zip?: string }): Promise<{ ok: boolean; slug?: string; installed?: string[]; skipped?: Array<{ name: string; reason: string }>; restartError?: string; error?: string }>;
     /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
     listExpertMarketPackages(input?: { page?: number; pageSize?: number; query?: string }): Promise<{ items: { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] }[]; total: number; page: number; pageSize: number }>;
+    /* 输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json） */
+    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
+    /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
+    extensionsMenuSet(input: { entries: MenuEntrySpec[] }): Promise<{ ok: boolean; menu: MenuEntrySpec[] }>;
     openExternal(url: string): Promise<void>;
     addFavorite(input: Partial<FavoriteItem>): Promise<{ items: FavoriteItem[]; item: FavoriteItem }>;
     /* 批量删除只认显式 id 列表（不提供隐式删全部） */
@@ -785,11 +848,26 @@ interface Window {
     /* 记一次使用（useCount/lastUsedAt），失败不阻断发送 */
     touchFavorite(id: string): Promise<FavoriteItem[]>;
     updateFavorite(input: { id: string; patch: Partial<FavoriteItem> }): Promise<FavoriteItem[]>;
+    /* 取消本次授权：杀掉挂在后台的 config init / device-code 轮询进程 */
+    feishuCliCancel(): Promise<{ ok: boolean }>;
+    /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
+    feishuCliLoginStart(): Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>;
+    feishuCliLogout(): Promise<{ ok: boolean; error: string }>;
+    /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
+    feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
+    /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
+    feishuCliSetupStart(): Promise<{ ok: boolean; url?: string; error?: string }>;
+    /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
+    feishuCliStatus(): Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>;
     feishuConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
     feishuLogout(): Promise<{ ok: boolean }>;
     feishuQrCancel(): Promise<{ ok: boolean }>;
     feishuQrStart(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
     feishuQrStatus(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
+    /* 10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容 */
+    fileeConvert(input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }): Promise<{ ok: boolean; code: number; report: { preset?: string; target?: string; converted?: number; skipped?: number; failed?: number; files?: { source?: string; state?: string; outputs?: string[]; error?: string }[] } | null; error: string; raw: string }>;
+    /* 10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）/ 开源声明（仓库与官网地址单一真相源在主进程，前端零字面量 —— 10-31 补审查修正） */
+    fileeStatus(): Promise<{ installed: boolean; path: string; version: string; detail: string; attribution: { license: string; home: string; site: string } }>;
     fileExists(path: string): Promise<{ exists: boolean }>;
     /* 10-30 用户令「只要电脑上有的文件都能打开」：给定路径不存在时**按文件名在磁盘上找回**（同名 + 尾段打分 + 有界预算，判定全在 electron/file-locate.ts）。只回路径，不读不写 */
     locateFile(path: string, threadId?: string): Promise<{ path: string }>;
@@ -799,6 +877,84 @@ interface Window {
     writeFile(path: string, content: string, root: string): Promise<void>;
     /* 10-18 实修：unstaged=git diff / staged=--cached / head=分支起点 merge-base diff（含已提交+未提交，找不到基准才退回 HEAD 并说明）/ last 由渲染层展示；Git 缺失/非仓库/无 HEAD 都回中文原因 */
     gitDiff(cwd: string, scope: string): Promise<{ code: number | null; output: string; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamAddNote(groupId: string, note: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamAddPartner(groupId: string, partner: Record<string, unknown>, addedBy: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>;
+    /* 团队模式 P0b（群消息日志） */
+    harnessTeamAppendMessage(groupId: string, entry: Record<string, unknown>): Promise<{ ok: boolean; entry?: any; rows: any[]; error?: string }>;
+    /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+    harnessTeamClearMessages(groupId: string): Promise<{ ok: boolean; cleared: number; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamCreate(input: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed） */
+    harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>;
+    /* 团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行） */
+    harnessTeamDispatch(groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }): Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>;
+    /* 团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度 */
+    harnessTeamGroupProgress(groupId: string): Promise<{ ok: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamLedger(groupId: string, days: number): Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>;
+    /* 团队模式 P0 */
+    harnessTeamList(): Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
+    /* 团队模式 P0b（群消息日志） */
+    harnessTeamMessages(groupId: string): Promise<{ ok: boolean; rows: any[]; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamMute(groupId: string, partnerId: string, muted: boolean): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式 P0 */
+    harnessTeamProject(sources: unknown): Promise<{ rows: any[] }>;
+    /* 团队模式：排队消息「立即」——能插队就 steer 进正在跑的回合，插不了按新回合启动 */
+    harnessTeamQueueStart(input: Record<string, unknown>): Promise<{ ok: boolean; mode?: "steer" | "start"; error?: string; reason?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamRemoveNote(groupId: string, noteId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamRemovePartner(groupId: string, partnerId: string, byId: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>;
+    /* 团队模式 P0 */
+    harnessTeamRename(groupId: string, name: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 群成员改名（联动伙伴会话标题与群内识别） */
+    harnessTeamRenameMember(groupId: string, memberId: string, name: string): Promise<{ ok: boolean; changed?: boolean; error?: string; reason?: string; group?: any; issues?: string[] }>;
+    /* 团队模式：立刻运行一条定时任务 */
+    harnessTeamRunSchedule(groupId: string, scheduleId: string): Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>;
+    /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+    harnessTeamRunning(groupId: string): Promise<{ ok: boolean; runs: any[]; error?: string }>;
+    /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
+    harnessTeamSetAdmin(groupId: string, memberId: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心） */
+    harnessTeamSetAvatar(groupId: string, memberId: string, avatar: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：群对话流（simple 运行中过程折叠 / detail 运行中铺开过程） */
+    harnessTeamSetDialogFlow(groupId: string, mode: string): Promise<{ ok: boolean; error?: string }>;
+    /* 团队模式：群记忆 / 群文件 */
+    harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamSetGuard(groupId: string, guard: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式：上下级（委派白名单） */
+    harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
+    /* 团队模式：群记忆 / 群文件 */
+    harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamSetMenu(groupId: string, items: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
+    harnessTeamSetMenuPlacement(groupId: string, placement: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：群消息形式（chat 对话消息 / topic 话题消息） */
+    harnessTeamSetMessageForm(groupId: string, form: string): Promise<{ ok: boolean; error?: string }>;
+    /* 团队模式：群消息排版（split = 伙伴左/用户右，left = 全部靠左） */
+    harnessTeamSetMessageLayout(groupId: string, layout: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：群回复模式（process 运行中显示过程 / placeholder 只显示占位） */
+    harnessTeamSetReplyMode(groupId: string, mode: string): Promise<{ ok: boolean; error?: string }>;
+    /* 团队模式：群规矩（硬约束，每轮注入） */
+    harnessTeamSetRules(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群定时任务（整组替换，nextRunAt 由主进程算） */
+    harnessTeamSetSchedule(groupId: string, list: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+    harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：停止某个伙伴当前这一回合 */
+    harnessTeamStop(input: Record<string, unknown>): Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>;
+    /* 群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签 */
+    harnessTeamTalkThreads(): Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number; avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string; id: string }> }>;
+    /* 团队模式：取该会话最近一轮真实 token */
+    harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
     /* 09-24 新增：顶栏 🔍 历史会话搜索。扫 codex-home rollout 原档（sessions/** + archived_sessions/**）搜对话内容；先 indexOf 快速否决再解析，>32MB 跳过并计数 */
     searchHistory(input?: { query?: string; limit?: number }): Promise<{ threads: { threadId: string; title: string; archived: boolean; updatedAt: number; matchCount: number; matches: { role: string; ts: string; snippet: string }[] }[]; scannedFiles: number; skippedLarge: number; elapsedMs: number }>;
     setHookEnabled(input: { hookKeys: string[]; enabled: boolean }): Promise<{ changed: number; failures: string[] }>;
@@ -809,6 +965,14 @@ interface Window {
     htmlPreviewWatch(input: { path: string }): Promise<{ ok: boolean; path?: string; error?: string }>;
     /* P1（10-11）：把本地 HTML/URL 动画在本地渲成 MP4 —— Chromium 抓帧 + 运行时自带 MP4 编码器，零 ffmpeg 依赖；源须为 http(s) 或可信根内 .html */
     htmlVideoRender(input: { source?: string; seconds?: number; fps?: number; width?: number; height?: number; outPath?: string }): Promise<any>;
+    /* 11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作 */
+    huskDevice(): Promise<{ connected: boolean; devices: string[]; platform: string; detail: string }>;
+    /* 11-14 打开 Husk 官方安装指南（itslevii.dev/docs/install：SideStore / AltStore / TrollStore 三条路） */
+    huskGuide(): Promise<{ ok: boolean; url: string }>;
+    /* 11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder） */
+    huskReveal(): Promise<{ ok: boolean; path: string }>;
+    /* 11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态） */
+    huskStatus(): Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; tipaInstalled: boolean; tipaVersion: string; tipaPath: string; tipaSizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>;
     /* 修图执行端（10-09 从 agents:dispatch-call 拆出）：**零凭证**，纯本地 jimp（20 种 ops）。先亮源图 → 换产物 → 自动收起。⛔ 输出不覆盖原图（产出 <名字>-edit.<ext>），天然可回退 */
     imageEdit(input: { path?: string; paths?: string[]; ops: unknown[]; output?: string; format?: string; quality?: number }): Promise<{ ok: boolean; output: string; error?: string }>;
     /* 生图执行端（10-09 从 agents:dispatch-call 拆出）：**唯一需要生图插件凭证的**通道（读 builtin-plugins.json 的 image 段 → 打外部网关）。调用时弹「图像工坊」浮层，完成自动收起。⛔ 与 image-lab:edit 分属两条通道 —— 用户明确要求「生成和编辑的 IPC 彻底分开」 */
@@ -853,18 +1017,37 @@ interface Window {
     layaStatus(): Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string; installProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null; startProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null }>;
     /* 卸载 Laya（先停服务进程，再 pip uninstall -y laya）；模型权重缓存在用户 HF 缓存目录，不随卸载删除（其他工具可能共用） */
     layaUninstall(): Promise<{ ok: boolean; log: string }>;
-    /* app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
-    readMcpServerOverrides(): Promise<Record<string, boolean>>;
-    /* MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema */
-    mcpServersTools(input: { query?: string; service?: string; limit?: number }): Promise<Array<{ name: string; service: string; desc: string; inputSchema?: Record<string, unknown> }>>;
     /* MCP 懒加载：按名字转发调用 */
     mcpServersCall(input: { name?: string; args?: unknown }): Promise<{ ok: boolean; text: string }>;
+    /* app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
+    readMcpServerOverrides(): Promise<Record<string, boolean>>;
     /* 各 MCP 服务器的按工具权限档位：{ 服务器: { 工具: "deny"|"ask"|"allow" } } */
     readMcpToolPermissions(): Promise<Record<string, Record<string, "deny" | "ask" | "allow">>>;
     /* 统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎 */
     setMcpServersEnabled(ids: string[], enabled: boolean): Promise<{ ok: boolean; updated: number }>;
     /* 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
     setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null): Promise<{ ok: boolean; updated: boolean; reason?: string }>;
+    /* MCP 懒加载：按关键词列/搜工具；精确名字返回完整 schema */
+    mcpServersTools(input: { query?: string; service?: string; limit?: number }): Promise<Array<{ name: string; service: string; desc: string; inputSchema?: Record<string, unknown> }>>;
+    /* 11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速） */
+    mediaDeskCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>;
+    /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
+    mediaDeskEndpoint(): Promise<string>;
+    handoffMediaDesk(input?: { kind?: "group" | "video" | "design"; itemId?: string }): Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>;
+    /* 11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例） */
+    mediaDeskPopout(): Promise<{ ok: boolean; focused: boolean }>;
+    /* 11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源 */
+    mediaDeskUpdate(input?: { version?: string }): Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>;
+    /* 11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线 */
+    mediaDeskVersion(): Promise<{ current: string; bundled: string; overridden: boolean }>;
+    /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目 */
+    forgetMemoryAtoms(workspace: string, targets: Array<string | { id: string; group?: string }>): Promise<{ ok: boolean; done: number; failed: number; error?: string }>;
+    /* 记忆原子：列出条目 + 索引（新记忆界面的唯一数据源） */
+    listMemoryAtoms(workspace?: string): Promise<{ ok: boolean; index?: string; stats?: { total: number; active: number; broken: number }; entries?: Array<{ id: string; summary: string; type: string; scope: string; status: string; confidence: string; updated: string; tags: string[]; group?: string; body: string }>; history?: Array<{ at: string; op: string; id: string; by: string; summary: string }>; broken?: string[]; policies?: Array<{ label: string; writable: string[]; supersede: string; render: string; recallLimit: number; inject: string[] }>; error?: string }>;
+    /* 记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤） */
+    recallMemoryAtoms(workspace: string, query: string, seat?: string): Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>;
+    /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
+    saveMemoryAtoms(workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }): Promise<{ ok: boolean; outcome?: string; error?: string }>;
     /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位；云端未开通则回退内置）+ 云端开通状态 + 安装命令 */
     readMemoryBackend(): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
     /* 切换记忆后端并回传新状态；选云端但未开通/未接通 ⇒ 不落盘，回执带 refused 原因 */
@@ -887,14 +1070,6 @@ interface Window {
     /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
     readMemoryContext(workspace?: string, includeWorkspace?: boolean, threadId?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
-    /* 记忆原子：列出条目 + 索引（新记忆界面的唯一数据源） */
-    listMemoryAtoms(workspace?: string): Promise<{ ok: boolean; index?: string; stats?: { total: number; active: number; broken: number }; entries?: Array<{ id: string; summary: string; type: string; scope: string; status: string; confidence: string; updated: string; tags: string[]; group?: string; body: string }>; history?: Array<{ at: string; op: string; id: string; by: string; summary: string }>; broken?: string[]; policies?: Array<{ label: string; writable: string[]; supersede: string; render: string; recallLimit: number; inject: string[] }>; error?: string }>;
-    /* 记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤） */
-    recallMemoryAtoms(workspace: string, query: string, seat?: string): Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>;
-    /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
-    saveMemoryAtoms(workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }): Promise<{ ok: boolean; outcome?: string; error?: string }>;
-    /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目 */
-    forgetMemoryAtoms(workspace: string, targets: Array<string | { id: string; group?: string }>): Promise<{ ok: boolean; done: number; failed: number; error?: string }>;
     writeMemoryLayer(input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
     listMemory(category?: string): Promise<any[]>;
     /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
@@ -924,6 +1099,8 @@ interface Window {
     setWorkspaceMemoryEnabled(input: { workspace: string; enabled: boolean }): Promise<boolean>;
     readModelSpecs(): Promise<unknown[] | null>;
     readModel(path: string): Promise<{ data: Uint8Array; size: number }>;
+    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId） */
+    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>;
     showNotification(title: string, body: string): Promise<boolean>;
     openaiAccountRemove(id: string): Promise<{ ok: boolean; total: number }>;
     openaiAccountSwitch(id: string): Promise<{ ok: boolean; email: string }>;
@@ -961,6 +1138,20 @@ interface Window {
     openfilmUninstall(): Promise<{ ok: boolean; removed: number; error?: string }>;
     /* 查最新版（npm dist-tag，镜像优先；比较只认 compareVersions） */
     openfilmUpdateCheck(): Promise<{ current: string; latest: string; source: string; hasUpdate: boolean; error?: string }>;
+    /* 11-14 提交课堂生成任务（POST /api/generate-classroom）：异步返回 jobId；缺模型时翻成「去网页设置里配 Key」的中文指引 */
+    openmaicGenerate(input: { requirement?: string; materialIds?: string[] }): Promise<{ ok: boolean; jobId: string; status: string; url: string; error: string; detail: string }>;
+    /* 11-14 查询课堂生成任务：状态 / 进度 / 场景数 / 完成后的课堂链接（生成的课堂只属于本机 owner） */
+    openmaicJob(jobId: string): Promise<{ ok: boolean; status: string; progress: number; scenesGenerated: number; totalScenes: number; classroomUrl: string; message: string; error: string; done: boolean }>;
+    /* 11-14 打开 OpenMAIC 本机界面：确保服务已起，再用系统浏览器打开 127.0.0.1:<port> */
+    openmaicOpen(): Promise<{ ok: boolean; url: string; error: string }>;
+    /* 11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务 */
+    openmaicPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
+    /* 11-14 起 OpenMAIC：先确保 PostgreSQL（端口冲突顺延并写回配置），再 node next start，90 秒内等 /api/health */
+    openmaicStart(): Promise<{ ok: boolean; port: number; url: string; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>;
+    /* 11-14 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT）状态：源码是否已构建（.next/BUILD_ID）/ 版本 / 本地服务是否健康 / PostgreSQL 是否在跑 / 可选能力面 */
+    openmaicStatus(): Promise<{ installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } }>;
+    /* 11-14 停 OpenMAIC 与 PostgreSQL（宿主重启过则按端口兜底杀） */
+    openmaicStop(): Promise<{ ok: boolean; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>;
     readPastedText(path: string): Promise<{ editable: boolean; content?: string | null }>;
     savePastedText(text: string): Promise<string | null>;
     updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
@@ -1026,6 +1217,20 @@ interface Window {
     phoneHarnessUninstall(): Promise<{ok:boolean;log:string}>;
     /* 把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH） */
     phoneHarnessWireAdb(): Promise<{adb:string}>;
+    /* 11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸 */
+    photocraftBatch(input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }): Promise<{ ok: boolean; outDir: string; commands: string[] }>;
+    /* 11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run */
+    photocraftCommands(input: { filter?: string }): Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>;
+    /* 11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图） */
+    photocraftConvert(input: { path?: string; out?: string; quality?: number }): Promise<{ ok: boolean; path: string }>;
+    /* 11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内） */
+    photocraftInfo(input: { path?: string }): Promise<any>;
+    /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
+    photocraftOpen(input: { path?: string }): Promise<{ ok: boolean; error?: string }>;
+    /* 11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条） */
+    photocraftRun(input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }): Promise<{ ok: boolean; path: string; commands: string[]; log: string[] }>;
+    /* 11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积 */
+    photocraftStatus(): Promise<{ installed: boolean; version: string; cliPath: string; guiPath: string; ioRoot: string; mcpRegistered: boolean; platform: string; sizeBytes: number; attribution: { license: string; home: string } }>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
     installMarketPlugin(plugin: PluginMarketEntry): Promise<PluginMarketInstallResult>;
     /* 10-03：本地已装市场插件清单（**只扫本地目录、零网络**；供「已安装」列表补齐引擎没认领的那批 —— 不能走 market-list，那条会拉远端 48 个插件） */
@@ -1081,28 +1286,28 @@ interface Window {
     remoteApprove(rid: string): Promise<{ ok: boolean }>;
     remoteDeny(rid: string): Promise<{ ok: boolean }>;
     remoteDevices(): Promise<any[]>;
-    /* 11-06 手机看屏：桌面端主动停采（隐私按钮） */
-    remoteScreenStop(): Promise<{ ok: boolean }>;
     remotePairRotate(): Promise<{ code: string }>;
     remotePairState(): Promise<{ code: string; pending: { rid: string; deviceId: string; name: string; createdAt: number }[]; approved: { deviceId: string; name: string; approvedAt: number; lastSeen: number }[] }>;
     remoteQrcode(botId?: string): Promise<string>;
     remoteRevoke(deviceId: string): Promise<{ ok: boolean }>;
+    /* 11-06 手机看屏：桌面端主动停采（隐私按钮） */
+    remoteScreenStop(): Promise<{ ok: boolean }>;
     remoteSend(cmd: string): Promise<{ ok: boolean }>;
+    /* 11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响） */
+    remoteSetPairingLock(locked: boolean): Promise<{ ok: boolean; locked: boolean }>;
     remoteStart(): Promise<{ port: number; url: string }>;
     remoteStatus(): Promise<{ status: string; devices: any[]; url: string; relay: { state: string; id: string; base: string; publicBase: string; error: string; since: number } }>;
     remoteStop(): Promise<{ ok: boolean }>;
-    /* 11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响） */
-    remoteSetPairingLock(locked: boolean): Promise<{ ok: boolean; locked: boolean }>;
     deleteRpaRecipe(id: string): Promise<void>;
     listRpaRecipes(): Promise<any[]>;
-    recordRpaRun(input: { id: string; ok: boolean; error?: string }): Promise<void>;
-    saveRpaRecipe(input: unknown): Promise<any>;
+    playRpaRecipe(id: string): Promise<{ ok: boolean; error?: string }>;
+    stopRpaPlayback(): Promise<{ ok: boolean }>;
+    discardRpaRecording(): Promise<void>;
     startRpaRecording(): Promise<{ ok: boolean; startedAt?: number; hotkeyReady?: boolean; error?: string }>;
     stopRpaRecording(): Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number; platform: "win32" | "darwin" }; error?: string }>;
     rpaRecorderState(): Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number; platform: "win32" | "darwin" } | null }>;
-    discardRpaRecording(): Promise<void>;
-    playRpaRecipe(id: string): Promise<{ ok: boolean; error?: string }>;
-    stopRpaPlayback(): Promise<{ ok: boolean }>;
+    recordRpaRun(input: { id: string; ok: boolean; error?: string }): Promise<void>;
+    saveRpaRecipe(input: unknown): Promise<any>;
     /* 10-07 取消安装：杀子进程 + 清临时文件；reason=not-running 表示该工具没有在跑的安装 */
     cancelRuntime(id: string): Promise<{ ok: boolean; reason?: string; killed?: number }>;
     /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
@@ -1130,6 +1335,24 @@ interface Window {
     screenshotSettingsGet(): Promise<ScreenshotSettingsSnapshot>;
     /* 改完立刻重挂快捷键（不重启即生效） */
     screenshotSettingsSet(patch: Partial<ScreenshotSettings>): Promise<ScreenshotSettingsSnapshot>;
+    /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
+    sessionAliasEnsure(input: { threadId?: string; supervisorThreadId?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
+    /* 11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用 */
+    sessionAliasSet(input: { threadId?: string; alias?: string; allowDuplicate?: boolean }): Promise<{ ok: boolean; error?: string; record?: any; engineError?: string; snapshot?: any }>;
+    /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
+    sessionAliasSnapshot(): Promise<Record<string, any>>;
+    /* 为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等） */
+    sessionspaceEnsure(threadId: string, projectRoot: string): Promise<{ ok: boolean; dir?: string; reason?: string }>;
+    /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
+    sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>;
+    /* 列全部会话工作区记录 */
+    sessionspaceList(): Promise<SessionWorkspaceRecord[]>;
+    /* 删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径 */
+    sessionspaceRemove(threadId: string): Promise<{ ok: boolean; removed: boolean; reason?: string }>;
+    /* 改状态 active/archived（删除走 remove） */
+    sessionspaceSetState(threadId: string, state: string): Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>;
+    /* 查某会话的工作区记录 */
+    sessionspaceState(threadId: string): Promise<SessionWorkspaceRecord | null>;
     shellOpen(target: string): Promise<void>;
     shellReveal(target: string): Promise<void>;
     windowClose(): Promise<{ ok: boolean }>;
@@ -1137,22 +1360,28 @@ interface Window {
     windowMinimize(): Promise<{ ok: boolean }>;
     windowState(): Promise<{ maximized: boolean }>;
     windowToggleMaximize(): Promise<{ maximized: boolean }>;
+    /* 聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储） */
+    shortcutsRead(): Promise<{ bindings: Record<string, string[]>; overrides: Record<string, string[]>; defaults: Record<string, string[]>; conflicts: string[][] }>;
+    /* 恢复默认：删 shortcuts.json（截图/语音不动） */
+    shortcutsReset(): Promise<{ ok: boolean; bindings: Record<string, string[]>; conflicts: string[][] }>;
+    /* 只写应用内键；截图/语音由各自通道写（先注册成功再落盘） */
+    shortcutsSave(input?: { bindings?: Record<string, string[]> }): Promise<{ ok: boolean; error?: string; bindings?: Record<string, string[]>; conflicts?: string[][] }>;
     skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
+    /* 取消正在安装的技能包（中止下载 / 停止写盘并回滚本次已拷贝目录，不会重启引擎） */
+    cancelSkillPack(input: { id: string }): Promise<{ cancelled: boolean }>;
+    /* 下载仓库 skills/（缺失时扫仓库内 SKILL.md）→ auditSkill → 落 codex-home/skills → 重启引擎；update=true 时覆盖本包自己装的目录（凭据 packId 相同），用户自有同名技能仍跳过 */
+    installSkillPack(input: { id: string; update?: boolean }): Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>;
+    /* 精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker） */
+    listSkillPacks(): Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string }[]>;
+    /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
+    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[]; kept: string[] }>;
     /* 内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源） */
     getBuiltinSkillSwitch(input: { name: string }): Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>;
     /* 开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集） */
     setBuiltinSkillSwitch(input: { name: string; enabled: boolean; cwd?: string }): Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>;
-    importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
-    /* 精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker） */
-    listSkillPacks(): Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string }[]>;
-    /* 下载仓库 skills/（缺失时扫仓库内 SKILL.md）→ auditSkill → 落 codex-home/skills → 重启引擎；update=true 时覆盖本包自己装的目录（凭据 packId 相同），用户自有同名技能仍跳过 */
-    installSkillPack(input: { id: string; update?: boolean }): Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>;
-    /* 取消正在安装的技能包（中止下载 / 停止写盘并回滚本次已拷贝目录，不会重启引擎） */
-    cancelSkillPack(input: { id: string }): Promise<{ cancelled: boolean }>;
-    /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
-    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[]; kept: string[] }>;
     /* 按关键词实时检索本地技能（全局 + 项目级），刚装的技能立即可搜到；只读 */
     findSkills(input: { query?: string; limit?: number; cwd?: string }): Promise<Array<{ name: string; path: string; desc: string; scope: "user" | "repo"; enabled: boolean; score: number }>>;
+    importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
@@ -1243,12 +1472,13 @@ interface Window {
     /* ⛔ 09-23 补：以下方法 preload 里早就有、渲染层也在用，但这里一直没有签名 —— 渲染层从不跑 tsc ⇒ 静默漏网（gen-ipc-bridge 提取时暴露）。返回形状没把握的先 any。 */
     previewConversation(threadId: string): Promise<any>;
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
-    updateCheck(): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>;
-    updateDownload(input: { downloadUrl: string; filename?: string; mode?: "differential" | "full" }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
-    updateInstall(filePath: string): Promise<{ ok: boolean; error?: string }>;
-    /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
-    updateRestartInstall(): Promise<{ ok: boolean; error?: string }>;
-    updateReveal(filePath: string): Promise<{ ok: boolean }>;
+    getUiKitItem(id: string): Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>;
+    listUiKitItems(): Promise<{ id: string; name: string; createdAt: number; bytes: number }[]>;
+    removeUiKitItem(id: string): Promise<{ removed: number; count: number }>;
+    saveUiKitItem(input: { name?: string; doc?: unknown }): Promise<{ id: string; name: string; replaced: boolean; count: number }>;
+    updateCheck(): Promise<{ ok: boolean; state: unknown; error?: string }>;
+    updateDownload(): Promise<{ ok: boolean; state: unknown; error?: string }>;
+    updateInstall(): Promise<{ ok: boolean; error?: string }>;
     getUsername(): Promise<string>;
     /* 主进程解密后直写剪贴板（明文不返回渲染层） */
     vaultCopy(id: string): Promise<{ ok: boolean; reason?: string }>;
@@ -1276,12 +1506,24 @@ interface Window {
     /* 会话级静音闩锁（同一 threadId 的窗口一起安静；别的会话不受影响） */
     announceSetMuted(input?: { muted?: boolean; threadId?: string }): Promise<{ muted: boolean; threadId: string }>;
     voiceBarge(): Promise<{ ok: boolean }>;
-    /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
-    voiceMossVoices(): Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>;
-    /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId/speed 合成，不要求先开启播报） */
-    voiceMossPreview(input?: { model?: string; voiceId?: string; text?: string; speed?: number }): Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>;
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
+    /* 11-16 取消外部引擎安装 */
+    voiceExternalCancel(id?: string): Promise<{ ok: boolean }>;
+    /* 11-16 启用/停用外部引擎（同时只允许一个） */
+    voiceExternalEnable(id: string, enabled: boolean): Promise<{ ok: boolean; active?: string; error?: string }>;
+    /* 11-16 按需下载/安装外部引擎（进度走 voice:event target=external:<id>） */
+    voiceExternalInstall(id: string): Promise<{ ok: boolean; started?: boolean; error?: string }>;
+    /* 11-16 开源语音引擎卡片：目录 + 安装/服务状态 */
+    voiceExternalList(): Promise<any>;
+    /* 11-16 打开外部引擎目录或官方项目页 */
+    voiceExternalOpen(id: string): Promise<{ ok: boolean; mode?: string; error?: string }>;
+    /* 11-16 卸载外部引擎（停服务 + 删目录） */
+    voiceExternalRemove(id: string): Promise<{ ok: boolean; error?: string }>;
+    /* 11-16 在文件管理器中定位外部引擎 */
+    voiceExternalReveal(id: string): Promise<{ ok: boolean; error?: string }>;
+    /* 11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并 */
+    voiceExternalVoices(): Promise<any>;
     voiceHotkeyGet(): Promise<{ registered: string }>;
     voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
     voiceKwsCancel(): Promise<{ ok: boolean }>;
@@ -1295,6 +1537,10 @@ interface Window {
     /* 10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态 */
     voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; call?: { backend?: "local" | "moss-live"; remoteConfigured?: boolean }; mossLive?: { configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string }; mossTts?: { enabled: boolean; configured: boolean; model: string; voiceId: string; error: string }; speech?: { effective: string; ready: boolean; label: string; reason: string }; }>;
     voiceModelsUninstall(): Promise<{ ok: boolean }>;
+    /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId/speed 合成，不要求先开启播报） */
+    voiceMossPreview(input?: { model?: string; voiceId?: string; text?: string; speed?: number }): Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>;
+    /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
+    voiceMossVoices(): Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
     voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
@@ -1322,22 +1568,6 @@ interface Window {
     voiceStop(): Promise<{ ok: boolean }>;
     /* 10-26 取消当前引擎包下载 */
     voiceTtsPackCancel(): Promise<any>;
-    /* 11-16 开源语音引擎卡片：目录 + 安装/服务状态 */
-    voiceExternalList(): Promise<any>;
-    /* 11-16 按需下载/安装外部引擎（进度走 voice:event target=external:<id>） */
-    voiceExternalInstall(id: string): Promise<{ ok: boolean; started?: boolean; error?: string }>;
-    /* 11-16 取消外部引擎安装 */
-    voiceExternalCancel(id?: string): Promise<{ ok: boolean }>;
-    /* 11-16 卸载外部引擎（停服务 + 删目录） */
-    voiceExternalRemove(id: string): Promise<{ ok: boolean; error?: string }>;
-    /* 11-16 启用/停用外部引擎（同时只允许一个） */
-    voiceExternalEnable(id: string, enabled: boolean): Promise<{ ok: boolean; active?: string; error?: string }>;
-    /* 11-16 打开外部引擎目录或官方项目页 */
-    voiceExternalOpen(id: string): Promise<{ ok: boolean; mode?: string; error?: string }>;
-    /* 11-16 在文件管理器中定位外部引擎 */
-    voiceExternalReveal(id: string): Promise<{ ok: boolean; error?: string }>;
-    /* 11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并 */
-    voiceExternalVoices(): Promise<any>;
     /* 可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack */
     voiceTtsPackInstall(pack: string): Promise<any>;
     voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;
@@ -1365,250 +1595,17 @@ interface Window {
     popoutClose(threadId: string | null): Promise<{ ok: boolean }>;
     popoutThreadId(): Promise<string | null>;
     popoutList(): Promise<string[]>;
-    popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
-    /* 工作伙伴独立窗口的关闭键（只关本窗口，不影响主应用） */
-    popoutTeamClose(): Promise<{ ok: boolean }>;
     /* 11-08 用户令：工作伙伴独立窗口（打开/聚焦单例；主应用真关闭时一起关闭） */
     popoutTeam(): Promise<{ ok: boolean; focused?: boolean }>;
+    /* 工作伙伴独立窗口的关闭键（只关本窗口，不影响主应用） */
+    popoutTeamClose(): Promise<{ ok: boolean }>;
+    popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
     /* 删工作日志文件（销毁性，不会重建）：只删 .codex-harness/memory 之下的普通文件；目录、越界路径一律拒绝 */
     workLogsDelete(input: { paths: string[] }): Promise<{ deleted: number; bytes: number; failed: string[] }>;
     /* 读一份工作日志/记忆文件的正文（UI 内查看）。路径必须落在某个项目的 .codex-harness/memory 之下；>512KB 拒绝（提示去文件管理器打开） */
     workLogsRead(input: { path: string }): Promise<{ path: string; text: string; bytes: number; mtime: number }>;
     /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
     workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
-    /* 输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json） */
-    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
-    /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
-    extensionsMenuSet(input: { entries: MenuEntrySpec[] }): Promise<{ ok: boolean; menu: MenuEntrySpec[] }>;
-    /* 聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储） */
-    shortcutsRead(): Promise<{ bindings: Record<string, string[]>; overrides: Record<string, string[]>; defaults: Record<string, string[]>; conflicts: string[][] }>;
-    /* 只写应用内键；截图/语音由各自通道写（先注册成功再落盘） */
-    shortcutsSave(input?: { bindings?: Record<string, string[]> }): Promise<{ ok: boolean; error?: string; bindings?: Record<string, string[]>; conflicts?: string[][] }>;
-    /* 恢复默认：删 shortcuts.json（截图/语音不动） */
-    shortcutsReset(): Promise<{ ok: boolean; bindings: Record<string, string[]>; conflicts: string[][] }>;
-    /* 读某会话的授权（默认全关） */
-    dataaccessState(threadId: string): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
-    /* 设一个三元组（会话+模块+读/写）；只在内存，退出即失效 */
-    dataaccessGrant(input: { threadId: string; module: string; level: string; on: boolean }): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
-    /* 撤销某会话的全部授权 */
-    dataaccessRevokeAll(threadId: string): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
-    /* 模型工具：读收藏夹（需 favorites/read） */
-    dataaccessFavoritesList(input: { threadId: string; query?: string; limit?: number }): Promise<{ total: number; matched: number; items: { id: string; title: string; kind: string; content: string; tags: string[]; createdAt: string }[] }>;
-    /* 模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有） */
-    dataaccessFavoritesAppend(input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }): Promise<{ ok: boolean; id: string; title: string; total: number }>;
-    /* 模型工具：读某天日记全文（需 journal/read） */
-    dataaccessJournalRead(input: { threadId: string; date?: string }): Promise<{ date: string; content: string; truncated: boolean }>;
-    /* 模型工具：全文检索日记（需 journal/read） */
-    dataaccessJournalSearch(input: { threadId: string; query: string }): Promise<{ hits: { date: string; lines: string[] }[] }>;
-    /* 模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史） */
-    dataaccessJournalAppend(input: { threadId: string; date?: string; title?: string; body: string }): Promise<{ ok: boolean; date: string; days: number }>;
-    /* 模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文） */
-    dataaccessVaultFind(input: { threadId: string; query?: string }): Promise<{ total: number; items: { id: string; title: string; username: string; url: string; hasSecret: boolean }[] }>;
-    /* 模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文） */
-    dataaccessVaultCopy(input: { threadId: string; id: string }): Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>;
-    /* 模型工具：写入密码本（需 vault/write + 渲染层一次性确认） */
-    dataaccessVaultSave(input: { threadId: string; item: Record<string, unknown> }): Promise<{ ok: boolean; total: number }>;
-    /* 清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清 */
-    browserClearData(kind?: string): Promise<{ ok: boolean; partition: string; cleared: string }>;
-    /* 为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等） */
-    sessionspaceEnsure(threadId: string, projectRoot: string): Promise<{ ok: boolean; dir?: string; reason?: string }>;
-    /* 查某会话的工作区记录 */
-    sessionspaceState(threadId: string): Promise<SessionWorkspaceRecord | null>;
-    /* 列全部会话工作区记录 */
-    sessionspaceList(): Promise<SessionWorkspaceRecord[]>;
-    /* 改状态 active/archived（删除走 remove） */
-    sessionspaceSetState(threadId: string, state: string): Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>;
-    /* 删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径 */
-    sessionspaceRemove(threadId: string): Promise<{ ok: boolean; removed: boolean; reason?: string }>;
-    /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
-    sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>;
-    /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
-    feishuCliStatus(): Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>;
-    /* 10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）/ 开源声明（仓库与官网地址单一真相源在主进程，前端零字面量 —— 10-31 补审查修正） */
-    fileeStatus(): Promise<{ installed: boolean; path: string; version: string; detail: string; attribution: { license: string; home: string; site: string } }>;
-    /* 10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容 */
-    fileeConvert(input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }): Promise<{ ok: boolean; code: number; report: { preset?: string; target?: string; converted?: number; skipped?: number; failed?: number; files?: { source?: string; state?: string; outputs?: string[]; error?: string }[] } | null; error: string; raw: string }>;
-    /* 11-14 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT）状态：安装/版本/主界面是否在跑/运行时是否备齐/当前模拟器设备/它自己的应用清单（apps.json）；3s 缓存（卡片轮询不反复打 adb） */
-    apkstartStatus(): Promise<{ installed: boolean; exePath: string; version: string; running: boolean; runtimeReady: boolean; runtimeRoot: string; adbPath: string; device: { serial: string; state: string; model: string; api: string; release: string } | null; apps: { package?: string; label?: string; versionName?: string; installedAt?: number; lastLaunchAt?: number }[]; dataDir: string; attribution: { license: string; home: string } }>;
-    /* 11-14 安装 APK：spawn ApkStart.exe --silent <apk>（参数数组不进 shell）；完成判据 = ApkStart 的 apps.json 出现新条目/被改写，等不到就 pending（首启要先下约 1GB 运行时），不假装成功 */
-    apkstartInstall(input: { apk?: string; launch?: boolean; waitMs?: number }): Promise<{ ok: boolean; pending: boolean; packageName: string; label: string; error: string; detail: string }>;
-    /* 11-14 启动已装应用：spawn ApkStart.exe --launch <包名>（上游 CLI 自带 silent）；包名先过格式校验，且必须在 ApkStart 应用清单里 */
-    apkstartLaunch(input: { package?: string }): Promise<{ ok: boolean; error: string; detail: string }>;
-    /* 11-14 设备截屏：adb exec-out screencap -p → PNG 落盘（默认 userData/apkstart/screenshots），返回本地路径给模型查看 */
-    apkstartScreenshot(input: { path?: string }): Promise<{ ok: boolean; path: string; bytes: number; error: string; detail: string }>;
-    /* 11-14 读最近 logcat（默认 300 行，可按关键字/包名过滤；带包名时保留 FATAL EXCEPTION / ANR 行） */
-    apkstartLogcat(input: { lines?: number; filter?: string; packageName?: string }): Promise<{ ok: boolean; text: string; error: string }>;
-    /* 11-14 透传 adb 命令（shell input / pm grant / am start / dumpsys 等）：参数数组不进 shell，自动补 -s <当前模拟器>；输出截断 */
-    apkstartAdb(input: { args?: string[]; timeoutMs?: number }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error: string }>;
-    /* 11-14 打开 ApkStart 主界面（看安装进度/手动操作；detached spawn，宿主退出后它继续跑） */
-    apkstartOpen(): Promise<{ ok: boolean; error: string }>;
-    /* 11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错） */
-    apkstartPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
-    /* 11-14 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT）状态：源码是否已构建（.next/BUILD_ID）/ 版本 / 本地服务是否健康 / PostgreSQL 是否在跑 / 可选能力面 */
-    openmaicStatus(): Promise<{ installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } }>;
-    /* 11-14 起 OpenMAIC：先确保 PostgreSQL（端口冲突顺延并写回配置），再 node next start，90 秒内等 /api/health */
-    openmaicStart(): Promise<{ ok: boolean; port: number; url: string; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>;
-    /* 11-14 停 OpenMAIC 与 PostgreSQL（宿主重启过则按端口兜底杀） */
-    openmaicStop(): Promise<{ ok: boolean; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>;
-    /* 11-14 打开 OpenMAIC 本机界面：确保服务已起，再用系统浏览器打开 127.0.0.1:<port> */
-    openmaicOpen(): Promise<{ ok: boolean; url: string; error: string }>;
-    /* 11-14 提交课堂生成任务（POST /api/generate-classroom）：异步返回 jobId；缺模型时翻成「去网页设置里配 Key」的中文指引 */
-    openmaicGenerate(input: { requirement?: string; materialIds?: string[] }): Promise<{ ok: boolean; jobId: string; status: string; url: string; error: string; detail: string }>;
-    /* 11-14 查询课堂生成任务：状态 / 进度 / 场景数 / 完成后的课堂链接（生成的课堂只属于本机 owner） */
-    openmaicJob(jobId: string): Promise<{ ok: boolean; status: string; progress: number; scenesGenerated: number; totalScenes: number; classroomUrl: string; message: string; error: string; done: boolean }>;
-    /* 11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务 */
-    openmaicPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
-    /* 11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态） */
-    huskStatus(): Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; tipaInstalled: boolean; tipaVersion: string; tipaPath: string; tipaSizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>;
-    /* 11-14 打开 Husk 官方安装指南（itslevii.dev/docs/install：SideStore / AltStore / TrollStore 三条路） */
-    huskGuide(): Promise<{ ok: boolean; url: string }>;
-    /* 11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder） */
-    huskReveal(): Promise<{ ok: boolean; path: string }>;
-    /* 11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作 */
-    huskDevice(): Promise<{ connected: boolean; devices: string[]; platform: string; detail: string }>;
-    /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
-    feishuCliSetupStart(): Promise<{ ok: boolean; url?: string; error?: string }>;
-    /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
-    feishuCliLoginStart(): Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>;
-    feishuCliLogout(): Promise<{ ok: boolean; error: string }>;
-    /* 取消本次授权：杀掉挂在后台的 config init / device-code 轮询进程 */
-    feishuCliCancel(): Promise<{ ok: boolean }>;
-    /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
-    feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
-    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId） */
-    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>;
-    /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
-    sessionAliasSnapshot(): Promise<Record<string, any>>;
-    /* 11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用 */
-    sessionAliasSet(input: { threadId?: string; alias?: string; allowDuplicate?: boolean }): Promise<{ ok: boolean; error?: string; record?: any; engineError?: string; snapshot?: any }>;
-    /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
-    sessionAliasEnsure(input: { threadId?: string; supervisorThreadId?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
-    /* 团队模式 P0 */
-    harnessTeamList(): Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>;
-    /* 群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签 */
-    harnessTeamTalkThreads(): Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number; avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string; id: string }> }>;
-    /* 团队模式 P0 */
-    harnessTeamCreate(input: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
-    /* 团队模式 P0 */
-    harnessTeamRename(groupId: string, name: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
-    /* 群成员改名（联动伙伴会话标题与群内识别） */
-    harnessTeamRenameMember(groupId: string, memberId: string, name: string): Promise<{ ok: boolean; changed?: boolean; error?: string; reason?: string; group?: any; issues?: string[] }>;
-    /* 团队模式 P0 */
-    harnessTeamAddPartner(groupId: string, partner: Record<string, unknown>, addedBy: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>;
-    /* 团队模式 P0 */
-    harnessTeamRemovePartner(groupId: string, partnerId: string, byId: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>;
-    /* 团队模式 P0 */
-    harnessTeamMute(groupId: string, partnerId: string, muted: boolean): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
-    /* 团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心） */
-    harnessTeamSetAvatar(groupId: string, memberId: string, avatar: string): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式 P0 */
-    harnessTeamSetGuard(groupId: string, guard: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
-    /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
-    harnessTeamClearMessages(groupId: string): Promise<{ ok: boolean; cleared: number; error?: string }>;
-    /* 团队模式 P0 */
-    harnessTeamProject(sources: unknown): Promise<{ rows: any[] }>;
-    /* 团队模式 P0b（群消息日志） */
-    harnessTeamMessages(groupId: string): Promise<{ ok: boolean; rows: any[]; error?: string }>;
-    /* 团队模式 P0b（群消息日志） */
-    harnessTeamAppendMessage(groupId: string, entry: Record<string, unknown>): Promise<{ ok: boolean; entry?: any; rows: any[]; error?: string }>;
-    /* 团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行） */
-    harnessTeamDispatch(groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }): Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>;
-    /* 团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed） */
-    harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>;
-    /* 团队模式：群记忆 / 群文件 */
-    harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
-    /* 团队模式：群规矩（硬约束，每轮注入） */
-    harnessTeamSetRules(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
-    /* 团队模式：群项目地址（派活时作为子会话 cwd） */
-    harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
-    harnessTeamRunning(groupId: string): Promise<{ ok: boolean; runs: any[]; error?: string }>;
-    /* 团队模式：群记忆 / 群文件 */
-    harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
-    /* 团队模式：上下级（委派白名单） */
-    harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
-    /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
-    harnessTeamSetAdmin(groupId: string, memberId: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
-    /* 团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度 */
-    harnessTeamGroupProgress(groupId: string): Promise<{ ok: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>; error?: string }>;
-    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
-    harnessTeamAddNote(groupId: string, note: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>;
-    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
-    harnessTeamRemoveNote(groupId: string, noteId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>;
-    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
-    harnessTeamSetMenu(groupId: string, items: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
-    harnessTeamSetMenuPlacement(groupId: string, placement: string): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式：群消息排版（split = 伙伴左/用户右，left = 全部靠左） */
-    harnessTeamSetMessageLayout(groupId: string, layout: string): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式：群回复模式（process 运行中显示过程 / placeholder 只显示占位） */
-    harnessTeamSetReplyMode(groupId: string, mode: string): Promise<{ ok: boolean; error?: string }>;
-    /* 团队模式：群消息形式（chat 对话消息 / topic 话题消息） */
-    harnessTeamSetMessageForm(groupId: string, form: string): Promise<{ ok: boolean; error?: string }>;
-    /* 团队模式：群对话流（simple 运行中过程折叠 / detail 运行中铺开过程） */
-    harnessTeamSetDialogFlow(groupId: string, mode: string): Promise<{ ok: boolean; error?: string }>;
-    /* 团队模式：群定时任务（整组替换，nextRunAt 由主进程算） */
-    harnessTeamSetSchedule(groupId: string, list: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式：立刻运行一条定时任务 */
-    harnessTeamRunSchedule(groupId: string, scheduleId: string): Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>;
-    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
-    harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
-    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
-    harnessTeamLedger(groupId: string, days: number): Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>;
-    /* 团队模式：停止某个伙伴当前这一回合 */
-    harnessTeamStop(input: Record<string, unknown>): Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>;
-    /* 团队模式：排队消息「立即」——能插队就 steer 进正在跑的回合，插不了按新回合启动 */
-    harnessTeamQueueStart(input: Record<string, unknown>): Promise<{ ok: boolean; mode?: "steer" | "start"; error?: string; reason?: string }>;
-    /* 团队模式：取该会话最近一轮真实 token */
-    harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
-    /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
-    mediaDeskEndpoint(): Promise<string>;
-    /* 11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例） */
-    mediaDeskPopout(): Promise<{ ok: boolean; focused: boolean }>;
-    /* 11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线 */
-    mediaDeskVersion(): Promise<{ current: string; bundled: string; overridden: boolean }>;
-    /* 11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速） */
-    mediaDeskCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>;
-    /* 11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源 */
-    mediaDeskUpdate(input?: { version?: string }): Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>;
-    /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
-    listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
-    /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */
-    designMdList(input: { category?: string; query?: string; limit?: number }): Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string; zh: string }> }>;
-    /* 11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null */
-    designMdGet(slug: string): Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>;
-    /* 11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径） */
-    designMdExport(input: { slug?: string; dir?: string }): Promise<{ ok: boolean; path?: string; category?: string; error?: string }>;
-    /* 11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积 */
-    photocraftStatus(): Promise<{ installed: boolean; version: string; cliPath: string; guiPath: string; ioRoot: string; mcpRegistered: boolean; platform: string; sizeBytes: number; attribution: { license: string; home: string } }>;
-    /* 11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内） */
-    photocraftInfo(input: { path?: string }): Promise<any>;
-    /* 11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图） */
-    photocraftConvert(input: { path?: string; out?: string; quality?: number }): Promise<{ ok: boolean; path: string }>;
-    /* 11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条） */
-    photocraftRun(input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }): Promise<{ ok: boolean; path: string; commands: string[]; log: string[] }>;
-    /* 11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸 */
-    photocraftBatch(input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }): Promise<{ ok: boolean; outDir: string; commands: string[] }>;
-    /* 11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run */
-    photocraftCommands(input: { filter?: string }): Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>;
-    /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
-    photocraftOpen(input: { path?: string }): Promise<{ ok: boolean; error?: string }>;
-    /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 已装 App 列表（Launcher 安装目录扫描 + exe 版本）/ 已写入的独立 MCP 名单 / 许可 */
-    artcraftStatus(): Promise<{ installed: boolean; version: string; launcherPath: string; platform: string; sizeBytes: number; installedApps: Array<{ id: string; name: string; dir: string; exePath: string; cliPath: string; version: string }>; mcpServers: string[]; attribution: { license: string; home: string; apps: string } }>;
-    /* 11-16 打开 ArtCraft Launcher（19 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
-    artcraftOpen(): Promise<{ ok: boolean; error?: string }>;
-    /* 11-16 重新扫描已装 App 并重写 config.toml（每个 App 一条独立 [mcp_servers.<id>]）；引擎需重启才加载 */
-    artcraftSync(): Promise<{ servers: string[] }>;
-    /* 11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入） */
-    artcraftRun(input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }): Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>;
-    /* 11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测） */
-    artcraftPickRoot(input?: { clear?: boolean }): Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>;
-    listUiKitItems(): Promise<{ id: string; name: string; createdAt: number; bytes: number }[]>;
-    getUiKitItem(id: string): Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>;
-    saveUiKitItem(input: { name?: string; doc?: unknown }): Promise<{ id: string; name: string; replaced: boolean; count: number }>;
-    removeUiKitItem(id: string): Promise<{ removed: number; count: number }>;
-    handoffMediaDesk(input?: { kind?: "group" | "video" | "design"; itemId?: string }): Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>;
-    installLocalSkillset(input?: { dir?: string; zip?: string }): Promise<{ ok: boolean; slug?: string; installed?: string[]; skipped?: Array<{ name: string; reason: string }>; restartError?: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

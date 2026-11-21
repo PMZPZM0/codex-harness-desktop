@@ -233,8 +233,8 @@ console.log("【⑪ 当前版本 = 实际安装态（不是随包常量）】");
   const engineSrc = stripComments(read("electron/engine-updater.ts"));
   ok(/export function pickNewestVersion/.test(probeSrc) && /export async function probeNewestNpmVersion/.test(probeSrc),
     "【⑬】npm 版本判定收敛到 npm-version.ts（pickNewestVersion + probeNewestNpmVersion）");
-  ok(/compareVersions/.test(probeSrc) && /from "\.\/updates"/.test(probeSrc),
-    "【⑬】版本比较只认 updates.ts 的 compareVersions（不手写第二份）");
+  ok(/compareVersions/.test(probeSrc) && /from "\.\/version-utils"/.test(probeSrc),
+    "【⑬】版本比较只认 version-utils.ts 的 compareVersions（不手写第二份）");
   ok(/for \(const registry of registries\)/.test(probeSrc) && !/return \{ version: latest/.test(probeSrc),
     "【⑬】⛔ 探测循环不早退：所有候选源都查完再挑最大");
   ok(/probeNewestNpmVersion\(/.test(runtimeSrc) && /probeNewestNpmVersion\(/.test(engineSrc),

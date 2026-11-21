@@ -34,7 +34,7 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { broadcastCodexEvent } from "./window-bus";
 import { CHINA_NPM_REGISTRY, bundledNpmCli } from "../toolchain";
-import { compareVersions } from "../updates";
+import { compareVersions } from "../version-utils";
 import { guardedFetch } from "../net-guard";
 import {
   PKG, cliEntry, cliVersion, openfilmRoot, pkgDir, readSettings, runtimeDir, writeSettings,

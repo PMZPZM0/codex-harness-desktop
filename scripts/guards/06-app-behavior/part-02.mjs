@@ -244,7 +244,7 @@ w.postMessage({id:1,op:"list",root});
   const buildMac = readFileSync(join(wfDir, "build-mac.yml"), "utf8");
   const buildWin = readFileSync(join(wfDir, "build-win.yml"), "utf8");
   const prepWin = readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8");
-  const updates = readFileSync(join(ROOT, "electron", "updates.ts"), "utf8");
+  const updateSvc = readFileSync(join(ROOT, "electron", "update-service.ts"), "utf8");
   const pkg29 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 
   (/\n\s+push:\s*\n\s+tags:\s*\n\s+- "v\*"/.test(release) ? ok : fail)("【29】release.yml 由 tag 推送触发（SSH 推 tag 即完成发版）");
@@ -260,8 +260,9 @@ w.postMessage({id:1,op:"list",root});
      两次实测把已成功的 win / arm64 一起挡在上传之外；软取件是有意设计（缺 Intel 包仍发布其余）。 */
   ((/pick(_soft)? artifacts\/mac-arm64/.test(release) && /pick(_soft)? artifacts\/mac-x64/.test(release)) ? ok : fail)("【29】发布侧按 mac-arm64 / mac-x64 取件（与构建侧 matrix 对应；x64 允许 pick_soft）");
 
-  // 资产命名 = 更新器的匹配契约（electron/updates.ts）：名字错 → 用户静默收不到更新
-  (updates.includes('a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch)') && updates.includes('a.name.endsWith(".exe")') ? ok : fail)("【29】更新器匹配规则仍是「Windows 认 .exe / mac 认 mac+.zip+架构名」");
+  /* 11-21 重写后：更新器不再按平台猜资产名，而是**只认 latest.yml 给的 url** ⇒
+     重命名资产时必须同步改写 latest.yml（release.yml 已这么做）。 */
+  (/files/.test(updateSvc) && /file\?\.url/.test(updateSvc) ? ok : fail)("【29】资产名以 latest.yml 的 files[0].url 为准（重命名必须同步改写 latest.yml）");
   (release.includes("-win-x64.exe") && release.includes("-arm64-mac.zip") && release.includes("-x64-mac.zip") ? ok : fail)("【29】三个资产名同时满足更新器（mac x64 强制带架构名 —— electron-builder 原生产物不带 x64）");
   (release.includes("--clobber") ? ok : fail)("【29】资产上传用 --clobber（重跑失败 job 不会因子资产重名而失败）");
 

@@ -13,7 +13,7 @@
 import { net } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { compareVersions } from "./updates";
+import { compareVersions } from "./version-utils";
 import { appendSectionAtomic } from "./config-toml";
 
 const GITEE_OWNER = "yuqiaodi";
