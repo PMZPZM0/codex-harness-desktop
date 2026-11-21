@@ -7,15 +7,13 @@ import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { DiffPreviewBody } from "./DiffPreview";
-import { FileCardMenu, InlineFileCards, extractFilePathsFromMarkdown } from "../shared/InlineCards";
-import { itemText } from "../../lib/item-text";
+import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { placeLiveFileFloat } from "../../lib/live-file-float-position.mjs";
 import { useCenteredPopoverLeft } from "../../lib/use-centered-popover";
 import { useRunProcessMode } from "../../lib/run-process-mode";
 import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { OutputFileCards } from "./OutputFileCards";
 import { TurnMediaCards } from "./TurnMediaCards";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
@@ -150,11 +148,7 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
       files: reviewFiles,
     });
   }, [isLastTurn, turn.id, reviewSignature]);
-  /* 11-11 用户令：「下面的文件卡片和已修改文件，都放这个折叠里面」——正文里的文件引用卡
-     也收进回合尾部的「本轮产物」折叠（由本组件统一渲染，⛔ 消息正文里不再画第二份）。 */
-  const assistantText = turn.items.filter((entry) => entry.type === "agentMessage").map((entry) => itemText(entry)).join("\n\n");
-  const hasRefs = extractFilePathsFromMarkdown(assistantText).length > 0;
-  if (!changes.length && !tracked.length && !hasRefs) return null;
+  if (!changes.length && !tracked.length) return null;
   /** 行点击 / 菜单「打开」共用：图片走灯箱，其余交给文件预览弹窗（会话单例的统一入口）。 */
   const openPath = (path: string, name: string) => {
     if (isImagePath(path)) openImageLightbox(path, name);
@@ -175,42 +169,15 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
     onReview?.();
   };
   const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
-  /* 10-22 Qoder 式「本轮产物」：只给**新建文件**出卡片（编辑已有文件仍走下面的汇总卡），
-     避免同一批文件在卡片和汇总里重复两遍。最多 7 张、超出折叠（Qoder 同口径）。
-     11-11 用户截图「文件卡片重复两个图片卡片」：正文已经引用过的文件不再出「本轮产物」卡，
-     否则同一张图会有两张长卡（正文引用卡 + 产物卡 + 已更改行）。路径归一 + 文件名兜底匹配。 */
-  const refKeys = new Set<string>();
-  for (const match of extractFilePathsFromMarkdown(assistantText)) {
-    const norm = String(match.path).replaceAll("\\", "/");
-    refKeys.add(norm);
-    const base = norm.slice(norm.lastIndexOf("/") + 1);
-    if (base) refKeys.add(base);
-  }
-  const referencedInText = (filePath: string) => {
-    const norm = String(filePath).replaceAll("\\", "/");
-    return refKeys.has(norm) || refKeys.has(norm.slice(norm.lastIndexOf("/") + 1));
-  };
-  const outputFiles = files
-    .filter((file) => file.newFile && !file.deletedFile && !referencedInText(file.path))
-    .map((file) => ({ path: file.path, added: file.added, deleted: file.deleted }));
   return (
     <>
-      {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。
-          11-11 用户令：视频也放这个位置；图片只留正方形、不显示文件名；放在「本轮产物」折叠**上面**。 */}
+      {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。 */}
       <TurnMediaCards files={files} />
-      {/* 11-11 用户令：「这下面的展示加一个『本轮产物』字样，点击字可以折叠展开，默认折叠状态；
-          下面的文件卡片和已修改文件，都放这个折叠里面」。 */}
-      {/* 11-12 用户：「如果没有文件产出，可以不展示」——0 个文件时不画空折叠。
-          判定用**产物与改动都为空**（正文内联引用通常也是这些文件，没产物就没有卡片可展开）。 */}
-      {(outputFiles.length > 0 || files.length > 0) && (
-      <details className="turn-outputs">
-        <summary><FileCode2 size={15} /><strong>本轮产物</strong><span className="turn-outputs-count">{files.length} 个文件</span><ChevronDown size={14} /></summary>
-        <div className="turn-outputs-body">
-          <InlineFileCards text={assistantText} onOpenFile={onOpenFile} />
-          {outputFiles.length > 0 && <OutputFileCards files={outputFiles} onOpenEditor={onOpenFile} />}
-          {files.length > 0 && (
-          <details className="completed-changes" open>
-        <summary><FileCode2 size={15} /><strong>已更改 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
+      {/* 11-21 用户对照 Qoder：底部只留**一条**「已编辑 N 个文件」汇总条（默认收起，点开是行列表），
+         正文里的紧凑文件行另由 ProgressiveAgentBody 渲染；⛔ 不再在这里重复文件卡片。 */}
+      {files.length > 0 && (
+      <details className="completed-changes">
+        <summary><FileCode2 size={15} /><strong>已编辑 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
         <div>
           {visible.map((file) => {
             const { name, dir } = segments(file.path);
@@ -252,9 +219,6 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
             <button type="button" className="completed-more" onClick={() => setExpanded((value) => !value)}>
               {expanded ? "收起" : `再显示 ${files.length - COLLAPSE_LIMIT} 个文件`}
             </button>
-          )}
-        </div>
-      </details>
           )}
         </div>
       </details>

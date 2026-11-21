@@ -209,9 +209,10 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "收尾心跳带截断标记（排查日志可区分「真的没改」与「被预算截断」—— mac 排查的关键字段）");
 }
 
-/* ── 十、Qoder 式「本轮产物」文件卡 + 右栏文件预览联动（10-22）──────────────── */
+/* ── 十、正文紧凑文件行 + 右栏文件预览联动（11-21 按用户截图改版）──────────────
+   用户：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」「点击后联动右侧栏」。
+   ⇒ 正文末尾一排紧凑文件项；回合底部只留一条「已编辑 N 个文件」汇总条。 */
 {
-  const outputCards = read("src/features/status/OutputFileCards.tsx");
   const rightFile = read("src/lib/right-file.mjs");
   const bridge = read("src/features/app-view/AppView/RightFileBridge.tsx");
   const reviewPanel = read("src/features/app-view/AppView/03-review-panel.tsx");
@@ -219,27 +220,6 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   const appView = read("src/features/app-view/AppView.tsx");
   const shell = read("electron/features/shell-ipc.ts");
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
-
-  ok(statusCode.includes("file.newFile && !file.deletedFile") && statusCode.includes("<OutputFileCards"),
-    "本轮产物卡只给**新建文件**（编辑已有文件仍走汇总卡，⛔ 同一批文件不许展示两遍）");
-  ok(/MAX_VISIBLE\s*=\s*7/.test(outputCards) && /显示其余 \$\{hidden\} 个文件/.test(outputCards),
-    "最多 7 张、超出折叠（与 Qoder outputFiles 的 7 张口径一致）");
-  ok(outputCards.includes("openRightFile") && /在右侧栏/.test(outputCards) && /在编辑器打开/.test(outputCards) && /默认应用/.test(outputCards),
-    "卡片默认打开右栏，另有编辑器 / 默认应用（对应 Qoder 的 workspace / newWindow / system）");
-  ok(/data-testid="turn-output-card"/.test(outputCards) && /createPortal/.test(outputCards),
-    "卡片带稳定 testid；打开方式 / 更多操作菜单 portal 到 body（不被回合容器裁剪）");
-  /* 10-30 用户令：「右键也要能预览 / 打开 / 编辑」。⛔ 判据要钉三件事，缺一条都等于只有左键能用：
-     ① 卡片挂了 onContextMenu（且 preventDefault —— 否则弹出浏览器/系统的原生菜单，把我们的盖掉）；
-     ② 右键菜单项 = 预览 / 编辑器 / 默认应用 三种打开方式，**外加** ⋯ 里那两项（同一份动作不另造语义）；
-     ③ 开关沿用组件内既有 menu 状态（⛔ 别为右键再造一个 state + 第二套 portal，两处易漂移）。 */
-  ok(/onContextMenu=\{\(event\) => openContextMenu\(event, file\.path\)\}/.test(outputCards)
-    && /const openContextMenu = [\s\S]{0,400}?event\.preventDefault\(\);/.test(outputCards),
-    "本轮产物卡挂右键菜单，并 preventDefault 掉系统原生菜单");
-  ok(/预览（右侧栏）/.test(outputCards) && /在编辑器打开/.test(outputCards) && /用默认应用打开/.test(outputCards)
-    && (/复制路径/.test(outputCards) && /在文件夹中显示/.test(outputCards)),
-    "右键菜单含 预览 / 编辑 / 打开 三种方式 + ⋯ 的复制路径与在文件夹中显示");
-  ok(/kind: "mode" \| "more" \| "context"/.test(outputCards) && (outputCards.match(/setMenu\(/g) || []).length >= 4,
-    "右键复用组件内既有的 menu 状态（⛔ 不另造第二套菜单/portal）");
   ok(rightFile.includes("openRightFile") && rightFile.includes("subscribeRightFile") && appView.includes("<RightFileBridge"),
     "文件卡 → 右栏走事件箱 + AppView 桥（⛔ 不给整条组件链加 props）");
   ok(bridge.includes('setRightTab("tree")') && bridge.includes("setRightOpen(true)") && bridge.includes("setPanelWidth(420)"),
@@ -270,34 +250,33 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
      普通文件与图片都用同一张 FileRefCard（默认右栏预览）；只有音视频 / 3D 保留缩略芯片。 */
   const inlineCards = read("src/features/shared/InlineCards.tsx");
   const fileRefCard = read("src/components/FileRefCard.tsx");
-  ok(inlineCards.includes("FileRefCard") && /if \(!mediaKind\) \{/.test(inlineCards) && inlineCards.includes("<FileRefCard"),
-    "消息末尾普通文件 / 图片引用用 FileRefCard（整行卡；⛔ 图片不再是小缩略芯片）");
+  ok(/className="inline-file-card"/.test(inlineCards) && /onClick=\{\(\) => openRightFile\(openPath\)\}/.test(inlineCards)
+    && !/<FileRefCard/.test(inlineCards),
+    "正文文件引用 = 一排紧凑文件项，点击**直接开右栏**（⛔ 不再逐个整行卡片）");
   /* 11-11 用户：图片已有预览卡 + 已更改文件行，正文再出海缩略芯片就是三重展示；视频同理（预览卡负责播放）。 */
   ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) continue;/.test(inlineCards),
-    "视频不再出正文缩略芯片（图片走文件卡，不再排除）");
+    "视频不再出正文缩略芯片（图片走右栏预览）");
   ok(/const seenResolved = new Set<string>\(\)/.test(inlineCards) && /const openPath = m\.resolved;/.test(inlineCards),
     "同一文件（裸名 + 绝对路径各出现一次）按解析后的真实路径只出一张卡");
-  /* 11-11 用户令：图片预览小正方形、不显示文件名；视频同位置；其下「本轮产物」折叠（默认收起），
-     文件卡片与已修改文件都收进折叠里。 */
+  /* 11-21 用户截图：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」。
+     ⇒ 正文画一排紧凑文件项；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */
   {
     const statusSrc = read("src/features/status/Status.tsx");
     const mediaCss = read("src/styles/39-media-preview.css");
     const itemView = read("src/features/session-queue/ItemView.tsx");
-    ok(statusSrc.indexOf("<TurnMediaCards") > 0 && statusSrc.indexOf("<TurnMediaCards") < statusSrc.indexOf('className="turn-outputs"'),
-      "媒体预览卡在「本轮产物」折叠上方（正文下面）");
-    ok(/<details className="turn-outputs">\s*\n\s*<summary>[\s\S]{0,200}本轮产物/.test(statusSrc)
-      && statusSrc.indexOf('className="turn-outputs"') < statusSrc.indexOf("<InlineFileCards")
-      && /<InlineFileCards text=\{assistantText\}/.test(statusSrc),
-      "「本轮产物」默认折叠，文件引用卡与已更改文件都在折叠里");
-    ok(!/<InlineFileCards/.test(itemView) && !/import \{ InlineFileCards \}/.test(itemView),
-      "消息正文不再单独画文件卡（⛔ 与折叠里重复）");
-    ok(/extractFilePathsFromMarkdown\(assistantText\)/.test(statusSrc) && /!referencedInText\(file\.path\)/.test(statusSrc),
-      "正文已引用的文件不再出「本轮产物」卡（⛔ 同一张图两张长卡）");
-    ok(/\(outputFiles\.length > 0 \|\| files\.length > 0\) && \(\s*\n\s*<details className="turn-outputs">/.test(statusSrc),
-      "本轮没有文件产出时不画空的「本轮产物」折叠（11-12 用户令）");
-    ok(/\.turn-outputs > summary \{[\s\S]{0,160}display: inline-flex;/.test(read("src/styles/04-cards-tools.css"))
-      && !/\.turn-outputs > summary svg:last-child \{ margin-left: auto/.test(read("src/styles/04-cards-tools.css")),
-      "「本轮产物」标题不拉整行（紧凑 inline-flex，折叠箭头紧跟文字）");
+    ok(statusSrc.indexOf("<TurnMediaCards") > 0 && statusSrc.indexOf("<TurnMediaCards") < statusSrc.indexOf('className="completed-changes"'),
+      "媒体预览卡在「已编辑」汇总条上方（正文下面）");
+    ok(/<details className="completed-changes">\s*\n\s*<summary>[\s\S]{0,200}已编辑 \{files\.length\} 个文件/.test(statusSrc)
+      && !/className="turn-outputs"/.test(statusSrc),
+      "回合底部只留一条「已编辑 N 个文件」汇总条（默认收起；⛔ 不再套第二层本轮产物折叠）");
+    ok(/<InlineFileCards text=\{text\} \/>/.test(itemView) && !/<InlineFileCards/.test(statusSrc),
+      "正文末尾渲染紧凑文件行（底部汇总不再重复画文件引用）");
+    ok(/\{files\.length > 0 && \(\s*\n\s*<details className="completed-changes">/.test(statusSrc)
+      && !/outputFiles|extractFilePathsFromMarkdown\(assistantText\)/.test(statusSrc),
+      "没有文件改动时不画空汇总条（逐个产物卡的 outputFiles 逻辑已删除）");
+    ok(/\.completed-changes summary \{[\s\S]{0,160}min-height: 44px/.test(read("src/styles/04-cards-tools.css"))
+      && /\.completed-changes \{[^}]*border-radius: 12px/.test(read("src/styles/04-cards-tools.css")),
+      "汇总条按 Qoder 口径收紧（44px 高、12px 圆角）");
     ok(/\.turn-media-card\.is-image \{[\s\S]{0,160}width: 112px;/.test(mediaCss)
       && /\.turn-media-card\.is-image \{[\s\S]{0,200}height: 112px;/.test(mediaCss)
       && /\.turn-media-card\.is-image \.turn-media-meta \{[\s\S]{0,40}display: none;/.test(mediaCss),

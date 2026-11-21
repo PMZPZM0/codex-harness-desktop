@@ -222,11 +222,6 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
   ok(/filter\(\(opener\) => opener\.id !== "photocraft"\)/.test(media), "图片保留 PhotoCraft 专用按钮，不重复列");
   ok(/turn-media-chip-wrap/.test(media) && /\.turn-media-chip-wrap \{/.test(read("src/styles/39-media-preview.css")),
     "音频芯片用无固定尺寸的定位包裹（⛔ 不套 112×112 图片框，否则会被裁切）");
-  const outputCards = read("src/features/status/OutputFileCards.tsx");
-  ok(/craftItemsFor/.test(outputCards) && /用 (\$\{|\{)opener\.name\}? 打开/.test(outputCards),
-    "Qoder 式产出文件卡的「打开方式」与右键菜单都插入「用 X 打开」");
-  ok(/craftItemsFor\(path\)\.length \* 30/.test(outputCards) && /craftItemsFor\(menu\?\.path \?\? ""\)\.length/.test(outputCards),
-    "弹出层高度按实际项数算（贴底翻转判断不会错位）");
   ok(/craftOpenersFor/.test(read("src/lib/craft-openers.d.mts")), "TS 类型面与纯模块同源（craftOpenersFor 已声明）");
 }
 

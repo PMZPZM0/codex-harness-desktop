@@ -304,8 +304,8 @@
 .completed-changes {
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: 10px;
-  margin: 0 0 8px;
+  border-radius: 12px;
+  margin: 8px 0;
   font-size: 12px;
   animation: 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both block-grow;
   overflow: hidden;
@@ -324,8 +324,8 @@
   cursor: pointer;
   align-items: center;
   gap: 8px;
-  min-height: 52px;
-  padding: 9px 12px;
+  min-height: 44px;
+  padding: 7px 12px;
   list-style: none;
   display: flex;
 }
@@ -2524,16 +2524,8 @@
 .agent-ask-option-row.checked .agent-ask-mark.radio { color: var(--accent); }
 .agent-ask-option-row .agent-ask-badge { margin-left: auto; }
 
-/* ── 10-22 「本轮产物」文件卡（Qoder outputFiles 同构：图标 + 文件名 + 类型 + 打开方式）──
-   ⛔ 只给新建文件出卡；编辑已有文件仍走下面的 .completed-changes 汇总卡，别重复。 */
-.turn-output-files {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  margin: 8px 0;
-  max-width: 640px;
-}
+/* ── 文件卡外观（10-22 Qoder 风：图标 + 文件名 + 类型 + 打开方式）──
+   11-21 起回合尾部不再逐个出卡；这套外观由正文/群交付的 FileRefCard 继续使用。 */
 .turn-output-card {
   display: flex;
   align-items: center;
@@ -2700,21 +2692,6 @@
 .turn-output-mode:hover,
 .turn-output-more:hover { color: var(--text); background: var(--panel-2); }
 .turn-output-more { width: 26px; padding: 0; justify-content: center; }
-.turn-output-disclosure {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 2px;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.turn-output-disclosure:hover { color: var(--text); }
-.turn-output-disclosure svg { transition: transform .15s ease; }
-.turn-output-disclosure svg.open { transform: rotate(180deg); }
 
 /* 打开方式 / 更多操作：portal 到 body，轻浮层 1000 档（DESIGN 层叠带） */
 .turn-output-menu {
@@ -3004,35 +2981,6 @@
     animation: none !important;
   }
 }
-
-/* ── 11-11 用户令：「加一个本轮产物字样，点击折叠展开，默认折叠；文件卡片和已修改文件都放进去」────
-   媒体预览卡在折叠**上面**始终可见；折叠里依次是：正文文件引用卡 → 本轮产物卡 → 已更改文件汇总。
-   11-11 追加：「不用拉这么长卡片，展开折叠图标在本轮产物后面就行」⇒ 标题行改成紧凑的
-   inline-flex（无整行底色/边框），箭头紧跟文字，不再用 margin-left:auto 推到最右。 */
-.turn-outputs { margin-top: 8px; }
-.turn-outputs > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  list-style: none;
-  font-size: 13px;
-  user-select: none;
-}
-.turn-outputs > summary:hover { background: var(--panel-2, var(--panel)); }
-.turn-outputs > summary::-webkit-details-marker { display: none; }
-.turn-outputs > summary svg:last-child { color: var(--muted); transition: transform .15s ease; }
-.turn-outputs[open] > summary svg:last-child { transform: rotate(180deg); }
-.turn-outputs-count { color: var(--muted); font-size: 12px; }
-.turn-outputs-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 6px 0 0 2px;
-}
-.turn-outputs-body .completed-changes { margin-top: 0; }
 
 /* ── 11-11 归属气泡（prompt / confirm 就近弹）────────────────────────────── */
 .dialog-anchor-backdrop {

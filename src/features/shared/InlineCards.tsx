@@ -9,10 +9,10 @@ import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { FileText, Zap, Quote, Pencil, FolderOpen, Save, ExternalLink, Copy, Film, Music2, Box } from "lucide-react";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
-import { imageUrl } from "../../lib/image-url";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import { FileRefCard } from "../../components/FileRefCard";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
+import { openRightFile } from "../../lib/right-file.mjs";
 import { craftOpeners, openPathInCraft, useInstalledCraftIds } from "./craft-open";
 
 /** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
@@ -158,8 +158,8 @@ export function extractFilePathsFromMarkdown(text: string): { path: string; pref
   return out;
 }
 
-/** 正文里的内联文件卡：从 markdown 抽路径，解析成真实位置后渲染可点卡片。 */
-export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
+/** 正文里的紧凑文件行：从 markdown 抽路径，解析成真实位置后渲染可点文件项（点击开右栏）。 */
+export function InlineFileCards({ text }: { text: string }) {
   const matches = useMemo(() => extractFilePathsFromMarkdown(text), [text]);
   const [resolvedPaths, setResolvedPaths] = useState<Record<string, string>>({});
   const [menu, setMenu] = useState<FileCardMenuState | null>(null);
@@ -215,41 +215,36 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
         const openPath = m.resolved;
         const mediaKind = mediaKindOf(openPath);
         const mediaTitle = mediaKind === "video" ? "点击播放" : mediaKind === "audio" ? "点击播放音频" : mediaKind === "model" ? "点击预览 3D" : "";
-        /* 10-22：普通文件（含图片）改成 Qoder 式整行卡片（默认右栏预览）；
-           音视频 / 3D 仍走缩略芯片（点击进播放器/3D 弹窗）。 */
+        /* 11-21 用户对照 Qoder 截图：「这种文件点击后也可以联动右侧栏吧，你看我框住的那一排文件展示」
+           ⇒ 普通文件也收成一排紧凑芯片（不再逐个整行卡），点一下直接开右栏预览。 */
         if (!mediaKind) {
           return (
-            <FileRefCard
+            <button
+              type="button"
+              className="inline-file-card"
               key={`${m.path}-${index}`}
-              path={openPath}
-              onOpenEditor={onOpenFile}
+              title={`在右侧栏预览：${openPath}`}
+              onClick={() => openRightFile(openPath)}
               onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
-            />
+            >
+              <FileTypeIcon path={openPath} size={14} />
+              <span className="inline-file-name">{name}</span>
+            </button>
           );
         }
         return (
           <button
             type="button"
-            className={`inline-file-card${mediaKind ? " is-media" : ""}`}
+            className="inline-file-card is-media"
             key={`${m.path}-${index}`}
-            title={isImagePath(openPath) ? `点击预览：${openPath}` : mediaTitle ? `${mediaTitle}：${openPath}` : `点击打开：${openPath}`}
-            onClick={() => {
-              if (isImagePath(openPath)) openImageLightbox(openPath, name);
-              else if (mediaKind) openMediaPreview({ source: openPath, kind: mediaKind, title: name });
-              else onOpenFile?.(openPath);
-            }}
+            title={`${mediaTitle}：${openPath}`}
+            onClick={() => openMediaPreview({ source: openPath, kind: mediaKind, title: name })}
             onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
           >
-            {isImagePath(m.path) ? (
-              <span className="inline-file-thumb">
-                <img src={imageUrl(resolveFilePath(openPath) ?? openPath)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
-              </span>
-            ) : mediaKind === "video" ? <Film size={14} />
+            {mediaKind === "video" ? <Film size={14} />
               : mediaKind === "audio" ? <Music2 size={14} />
-              : mediaKind === "model" ? <Box size={14} />
-              : <FileText size={14} />}
+              : <Box size={14} />}
             <span className="inline-file-name">{name}</span>
-            {openPath !== name && <span className="inline-file-path">{openPath}</span>}
           </button>
         );
       })}
@@ -262,7 +257,7 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
           const mediaKind = mediaKindOf(openPath);
           if (isImagePath(openPath)) openImageLightbox(openPath, menu.name);
           else if (mediaKind) openMediaPreview({ source: openPath, kind: mediaKind, title: menu.name });
-          else onOpenFile?.(openPath);
+          else openRightFile(openPath);
         }}
         onClose={() => setMenu(null)}
       />

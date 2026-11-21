@@ -11,6 +11,7 @@ import { ThreadItem } from "../../lib/thread-item";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Turn } from "../../lib/turn";
 import { UserMessageView } from "../shared/UserMessageView";
+import { InlineFileCards } from "../shared/InlineCards";
 import { MessageFooter } from "../shared/MessageFooter";
 import { CommandExecutionCard } from "../terminal";
 import { SkillUsageCard } from "../skill-usage";
@@ -64,7 +65,6 @@ export function ItemView({ item, turn, turnActive, reasoningFloatHost, usage, to
             itemId={item.id}
             text={assistantText}
             active={turnActive}
-            onOpenFile={onOpenFile}
             footer={!hideFooter ? <MessageFooter item={item} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onFork={onFork} /> : undefined}
           />
         </div>
@@ -247,11 +247,18 @@ function payloadLanguage(text: string): string {
 }
 
 /** 正文渐进揭示：长文按包逐步显示，避免整段蹦出（揭示中带 CSS 类）。 */
-export function ProgressiveAgentBody({ itemId, text, active, footer, onOpenFile }: { itemId: string; text: string; active?: boolean; footer?: React.ReactNode; onOpenFile?: (path: string) => void }) {
+export function ProgressiveAgentBody({ itemId, text, active, footer }: { itemId: string; text: string; active?: boolean; footer?: React.ReactNode }) {
   const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedAgentRevealStarts, 24);
-  /* 11-11 用户：文件卡片 / 已修改文件都收进「本轮产物」折叠（在 Status 里统一渲染），
-     正文这里只画 Markdown 与 footer，⛔ 不再单独渲染 InlineFileCards（否则折叠外又出现一份）。 */
-  return <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}><Markdown>{displayed}</Markdown>{!revealing ? footer : null}</div>;
+  /* 11-21 用户对照 Qoder：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」
+     ⇒ 正文末尾先画一排紧凑文件项（点击开右栏）；底部只留一条「已编辑 N 个文件」汇总。
+     ⛔ 揭示期间不画：文件行每帧重扫文件会拖慢流式；出完再挂。 */
+  return (
+    <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}>
+      <Markdown>{displayed}</Markdown>
+      {!revealing ? <InlineFileCards text={text} /> : null}
+      {!revealing ? footer : null}
+    </div>
+  );
 }
 
 /** fileChange 卡（10-01 从 ItemView 主链抽出：diff 的流式揭示是 hook，不能挂在条件分支里）。
