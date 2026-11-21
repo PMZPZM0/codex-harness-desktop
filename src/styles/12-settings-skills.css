@@ -1235,6 +1235,32 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   line-height: 1.5;
 }
 .norm-toggle { margin-left: 8px; flex: none; }
+/* 11-21 用户令：「加折叠，默认折叠，每个展开占太大位置」——
+   大卡默认只留标题行；点右侧箭头展开。收起只改显示，草稿与启用态不受影响。 */
+.personalization-collapse {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  appearance: none;
+}
+.personalization-collapse:hover { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+.personalization-collapse:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.personalization-collapse svg { transition: transform var(--dur-ui, .16s) ease; }
+.personalization-collapse svg.open { transform: rotate(180deg); }
+.personalization-group.is-collapsed > .settings-subhead { margin-bottom: 0; }
+.personalization-group.is-collapsed > *:not(.settings-subhead) { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .personalization-collapse svg { transition: none; }
+}
 .personalization-norm-off {
   margin: 0 0 10px;
   color: var(--muted);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Code2, Info, MessageSquare, Network, Palette, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
+import { Check, ChevronDown, Code2, Info, MessageSquare, Network, Palette, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import { SettingsPageHero } from "./SettingsPageHero";
 import { REPLY_STYLES as REPLY_STYLE_PRESETS } from "../lib/reply-styles.mjs";
 import { ToggleSwitch } from "./SettingsWidgets";
@@ -82,8 +82,9 @@ function NormCard({
   placeholder: string;
 }) {
   const selected = presets.find((preset) => preset.id === style) ?? presets[0];
+  const [open, setOpen] = useState(false);
   return (
-    <div className={`personalization-group card-norm${enabled ? "" : " is-off"}`} data-norm-card={cardId}>
+    <div className={`personalization-group card-norm${enabled ? "" : " is-off"}${open ? "" : " is-collapsed"}`} data-norm-card={cardId}>
       <div className="settings-subhead">
         {icon}{title}
         <span className="settings-subhead-hint">{hint}</span>
@@ -94,6 +95,16 @@ function NormCard({
           className="norm-toggle"
           onChange={onEnabled}
         />
+        <button
+          type="button"
+          className="personalization-collapse"
+          aria-expanded={open}
+          aria-label={open ? `收起${title}` : `展开${title}`}
+          title={open ? "收起" : "展开"}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ChevronDown size={14} className={open ? "open" : ""} />
+        </button>
       </div>
       {enabled ? null : (
         <p className="personalization-norm-off" role="status">已关闭：不写入 AGENTS.md，也不带给专家；下方配置会保留，随时可再打开。</p>
@@ -176,6 +187,12 @@ export function PersonalizationPage({
   const [frontendStyle, setFrontendStyle] = useState(DEFAULT_FRONTEND_DESIGN_STYLE);
   const [frontendNotes, setFrontendNotes] = useState("");
   const [frontendEnabled, setFrontendEnabled] = useState(false);
+  /* 11-21 用户令：「加折叠，默认折叠，每个展开占太大位置」——
+     大卡（前端设计 / 软件 / 架构 / 自定义指令）默认收起，只留标题行；点右侧箭头展开。
+     ⛔ 收起只影响显示，草稿与启用态照常保存。 */
+  const [openCards, setOpenCards] = useState<Record<string, boolean>>({});
+  const cardOpen = (id: string) => Boolean(openCards[id]);
+  const toggleCard = (id: string) => setOpenCards((current) => ({ ...current, [id]: !current[id] }));
   const [softwareDevStyle, setSoftwareDevStyle] = useState(DEFAULT_SOFTWARE_DEV_NORM);
   const [softwareDevNotes, setSoftwareDevNotes] = useState("");
   const [softwareDevEnabled, setSoftwareDevEnabled] = useState(false);
@@ -298,7 +315,7 @@ export function PersonalizationPage({
         </div>
       </div>
 
-      <div className={`personalization-group card-frontend-design${frontendEnabled ? "" : " is-off"}`}>
+      <div className={`personalization-group card-frontend-design${frontendEnabled ? "" : " is-off"}${cardOpen("frontend") ? "" : " is-collapsed"}`}>
         <div className="settings-subhead">
           <Palette size={13} />前端设计风格
           <span className="settings-subhead-hint">前端 UI 专用 · 默认关闭 · 随应用更新</span>
@@ -309,6 +326,16 @@ export function PersonalizationPage({
             className="norm-toggle"
             onChange={setFrontendEnabled}
           />
+          <button
+            type="button"
+            className="personalization-collapse"
+            aria-expanded={cardOpen("frontend")}
+            aria-label={cardOpen("frontend") ? "收起前端设计风格" : "展开前端设计风格"}
+            title={cardOpen("frontend") ? "收起" : "展开"}
+            onClick={() => toggleCard("frontend")}
+          >
+            <ChevronDown size={14} className={cardOpen("frontend") ? "open" : ""} />
+          </button>
         </div>
         {frontendEnabled ? null : (
           <p className="personalization-norm-off" role="status">已关闭：不写入 AGENTS.md，也不带给专家；下方配置会保留，随时可再打开。</p>
@@ -446,8 +473,19 @@ export function PersonalizationPage({
         placeholder={"例如：\n· 分层单向依赖，禁止跨层深链与循环依赖\n· 写服务契约：请求 / 响应 / 错误码 / 超时 / 重试\n· 关键路径必须有日志、指标与回滚方案"}
       />
 
-      <div className="personalization-group card-instructions">
-        <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
+      <div className={`personalization-group card-instructions${cardOpen("instructions") ? "" : " is-collapsed"}`}>
+        <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span>
+          <button
+            type="button"
+            className="personalization-collapse"
+            aria-expanded={cardOpen("instructions")}
+            aria-label={cardOpen("instructions") ? "收起自定义指令" : "展开自定义指令"}
+            title={cardOpen("instructions") ? "收起" : "展开"}
+            onClick={() => toggleCard("instructions")}
+          >
+            <ChevronDown size={14} className={cardOpen("instructions") ? "open" : ""} />
+          </button>
+        </div>
         <textarea
           className="personalization-instructions"
           value={instructions}
