@@ -420,7 +420,9 @@ export function mirrorOrder(channel: UpdateChannel, source: DownloadSourceSettin
       // ⛔ 索引要用 Record<string, string | undefined> —— 直接写字面量对象再取 key，
       //    TS 会报「该属性不存在」（auto/mirror/proxy 本就是不参与选择的取值）。
       const preferred: Record<string, string | undefined> = {
-        ghproxy: "https://gh-proxy.com/",
+        /* ⛔ 11-21：ghproxy 通道指向实测最快的 gh-proxy.org（比 gh-proxy.com 快 3~4 倍）；
+           用户选「gh-proxy 加速」时不该再被送到慢档 —— 与 gh-mirror 的候选池保持一致。 */
+        ghproxy: "https://gh-proxy.org/",
         ghfast: "https://ghfast.top/",
         direct: "",
       };

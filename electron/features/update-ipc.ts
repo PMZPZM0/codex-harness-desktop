@@ -11,13 +11,15 @@
  *   地址来自 `latest.yml`（主进程读），安装路径来自主进程落盘的状态文件。
  * ⛔ 不在本文件写任何状态逻辑：状态机全在 `update-service.ts`，这里只做 IPC 转发与推送。
  */
+import { app, shell } from "electron";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { onPrimaryWindowLoaded, sendToWindow } from "./window-bus";
+import { GITHUB_REPO } from "../repo-info";
 import { checkForUpdate, downloadUpdatePackage, getUpdateSnapshot, installUpdatePackage, restoreUpdateState, setUpdateNotifier } from "../update-service";
 
 /** 本域全部通道（卸载时逐个摘掉，避免热重载叠 handler）。 */
-const UPDATE_CHANNELS = ["update:check", "update:download", "update:install"];
+const UPDATE_CHANNELS = ["update:check", "update:download", "update:install", "update:feedback"];
 
 /** 更新 feature：注册三个调用通道，并把状态推送接到窗口。 */
 export const updateFeature = defineFeature<null>({
@@ -65,6 +67,18 @@ export const updateFeature = defineFeature<null>({
       } catch (err) {
         return { ok: false, error: (err as Error)?.message ?? String(err) };
       }
+    });
+
+    /* 意见反馈（11-21 用户令「加个反馈」）：打开本仓的 Issues 新建页，并把版本/平台预填进正文。
+       ⛔ 仓库地址只在主进程有一份（`repo-info.ts`）⇒ URL 必须在这里拼，⛔ 别让渲染层写死
+          —— 两仓同步时渲染层代码是同一份，写死会把 PPcode 的反馈发到主仓去。 */
+    ipcHost.handle("update:feedback", async () => {
+      const version = String(app.getVersion() || "");
+      const title = encodeURIComponent(`[反馈] v${version}`);
+      const body = encodeURIComponent(`\n\n---\n应用版本：v${version}\n平台：${process.platform} ${process.arch}\n`);
+      const url = `https://github.com/${GITHUB_REPO}/issues/new?title=${title}&body=${body}`;
+      await shell.openExternal(url);
+      return { ok: true };
     });
 
     ctx.effect(() => {

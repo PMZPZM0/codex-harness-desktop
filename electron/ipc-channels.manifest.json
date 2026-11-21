@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 721,
+  "count": 722,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6305,6 +6305,16 @@
       "returns": "Promise<{ ok: boolean; error?: string }>",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "updateFeedback",
+      "channel": "update:feedback",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-21 用户令「加个反馈」：打开本仓 Issues 新建页并预填版本/平台；URL 在主进程拼（仓库地址只有一份）"
     },
     {
       "name": "getUsername",

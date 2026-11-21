@@ -2,11 +2,13 @@
  * GitHub 热门抓取（11-20）—— 与设置 → 发现 →「GitHub 热门」同一口径。
  *
  * GitHub 没有公开 Trending API：取「最近 N 天创建 + star 最多」的 100 个仓库。
- * 候选序与页面一致：gh-proxy 国内镜像 → 官方直连。
+ * ⛔ 镜像候选**只认 gh-mirror 的真相源**（11-21：原先这里硬编码 gh-proxy.com，
+ *   与全局镜像序各写一份 —— 实测最快的源变了它不跟着变，用户看到的就是「这里特别慢」）。
  *
  * ⛔ 不放 dispatch-rpc：执行端自己发 HTTP 会与页面各写一份实现，两条路径必然漂移
  *   （守卫【202】直接判红）。这里只做抓取与格式化，schema 在 dispatch-core。
  */
+import { mirrorCandidates } from "../gh-mirror";
 
 type TrendingArgs = Record<string, unknown>;
 
@@ -20,7 +22,8 @@ export async function fetchGithubTrending(args: TrendingArgs): Promise<{ ok: boo
   const date = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
   const query = [`created:>=${date}`, "stars:>5", language ? `language:${language}` : ""].filter(Boolean).join(" ");
   const api = `api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=100`;
-  const candidates = [`https://gh-proxy.com/https://${api}`, `https://${api}`];
+  /* 与全项目同一条镜像序（GH_API_MIRROR_PREFIXES：镜像优先、直连兜底）。 */
+  const candidates = mirrorCandidates(`https://${api}`);
   let lastError = "";
   for (const url of candidates) {
     try {

@@ -1079,6 +1079,8 @@ contextBridge.exposeInMainWorld("codex", {
   updateCheck: () => __ipc("update:check", 0, []),
   updateDownload: () => __ipc("update:download", 0, []),
   updateInstall: () => __ipc("update:install", 0, []),
+  /* 11-21 用户令「加个反馈」：打开本仓 Issues 新建页并预填版本/平台；URL 在主进程拼（仓库地址只有一份） */
+  updateFeedback: () => __ipc("update:feedback", 0, []),
   getUsername: () => __ipc("user:name", 0, []),
   /* 主进程解密后直写剪贴板（明文不返回渲染层） */
   vaultCopy: (id: string) => __ipc("vault:copy", 1, [id]),

@@ -374,12 +374,14 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts")
         && officialSrc.includes('".agents/plugins/marketplace.json"') && officialSrc.includes('".agents/plugins/api_marketplace.json"') ? ok : fail)(
         "【254】官方源锚定 GitHub openai/plugins 的 .agents/plugins/{marketplace,api_marketplace}.json（清单形态与上游一致）"
       );
-      // 镜像顺序 = 实测可用性（gh-proxy 通、直连兜底）；顺序反了国内首屏就要等三轮超时
+      // 镜像顺序 = 实测可用性；顺序反了国内首屏就要等三轮超时
       //（10-11 表收敛进 ./gh-mirror 单一真相源 —— 这里锚「别名引用 + 源头顺序」两处）
+      // ⛔ 11-21 复测（v0.0.76 资产 8MB Range）：gh-proxy.org 0.84~1.56MB/s 且支持 206 ⇒ 提到第二档；
+      //    直连仍排第一（能通时最快），hk 实测 500 保留垫底（有朝一日恢复了不必改代码）。
       (/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(officialSrc)
-        && /export const GH_MIRROR_PREFIXES = \["", "https:\/\/gh-proxy\.com\/", "https:\/\/hk\.gh-proxy\.com\/", "https:\/\/ghfast\.top\/"\] as const/.test(codeOnly(readFileSync(join(ROOT, "electron", "gh-mirror.ts"), "utf8")))
-        && /export const GH_API_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/"/.test(codeOnly(readFileSync(join(ROOT, "electron", "gh-mirror.ts"), "utf8"))) ? ok : fail)(
-        "【254】镜像优先级：资产 直连 → gh-proxy → hk.gh-proxy → ghfast（11-20 实测 16MB Range：gh-proxy 0.68MB/s > ghfast 0.095MB/s > hk 302 不可用；⛔ 顺序反转过两次，发版前重测）；api.github.com 仍走镜像优先（直连在国内不通）"
+        && /export const GH_MIRROR_PREFIXES = \["", "https:\/\/gh-proxy\.org\/", "https:\/\/gh-proxy\.com\/", "https:\/\/hk\.gh-proxy\.com\/", "https:\/\/ghfast\.top\/"\] as const/.test(codeOnly(readFileSync(join(ROOT, "electron", "gh-mirror.ts"), "utf8")))
+        && /export const GH_API_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.org\/"/.test(codeOnly(readFileSync(join(ROOT, "electron", "gh-mirror.ts"), "utf8"))) ? ok : fail)(
+        "【254】镜像优先级：资产 直连 → **gh-proxy.org** → gh-proxy → hk.gh-proxy → ghfast（11-21 实测 v0.0.76 资产 8MB Range：gh-proxy.org 0.84~1.56MB/s 支持 206 > gh-proxy.com 0.37MB/s 忽略 Range > hk 500 / ghfast 超时；⛔ 顺序反转过三次，发版前重测）；api.github.com 仍走镜像优先（直连在国内不通）"
       );
       (officialSrc.includes("const MAX_FILES = 1_200") && officialSrc.includes("MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024") ? ok : fail)(
         "【254】文件数上限按实测放宽到 1200（上游 zoom 单插件 795 个文件；沿用 Gitee 源的 300 会拒装 4 个合法插件）"

@@ -147,18 +147,17 @@ function download(url, dest, redirects = 0) {
 }
 
 /* ── 多通道下载（09-25 真机：GitHub Releases 直连在国内常中断 —— curl 实测 `exit 56`；
-      同一 URL 走本地代理 / ghfast 镜像则 10s 内完成且字节数一致）──
-   依次试：npmmirror 二进制镜像 → 直连 → ghfast.top → gh-proxy.com，每通道 2 次；全失败才报错，
-   并把各通道原因拼出来。
-   ⛔ npmmirror 必须排在**前面**（09-25 用户反馈「别的用户装不了」）：国内直连 GitHub 大概率超时，
-   而 ghfast/gh-proxy 这类公共服务本身也会限流；npmmirror 是国内最稳的那条。
+      同一 URL 走本地代理 / 镜像则 10s 内完成且字节数一致）──
+   依次试：npmmirror 二进制镜像 → **gh-proxy.org**（11-21 实测最快的 GitHub 加速）→ 直连 →
+   ghfast.top → gh-proxy.com，每通道 2 次；全失败才报错，并把各通道原因拼出来。
+   ⛔ npmmirror 必须排在**前面**（09-25 用户反馈「别的用户装不了」）：国内直连 GitHub 大概率超时。
    映射规则：`github.com/<owner>/<repo>/releases/download/<tag>/<file>`
         → `registry.npmmirror.com/-/binary/<repo>/<tag>/<file>`（npmmirror 的 GitHub release 镜像规则）。 */
 function mirrorUrls(url) {
   if (!/^https:\/\/github\.com\//.test(url)) return [url];
   const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/(.+)$/.exec(url);
   const npmmirror = m ? `https://registry.npmmirror.com/-/binary/${m[2]}/${m[3]}/${m[4]}` : null;
-  return [npmmirror, url, `https://ghfast.top/${url}`, `https://gh-proxy.com/${url}`].filter(Boolean);
+  return [npmmirror, `https://gh-proxy.org/${url}`, url, `https://ghfast.top/${url}`, `https://gh-proxy.com/${url}`].filter(Boolean);
 }
 
 async function downloadAny(url, dest) {

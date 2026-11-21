@@ -1479,6 +1479,8 @@ interface Window {
     updateCheck(): Promise<{ ok: boolean; state: unknown; error?: string }>;
     updateDownload(): Promise<{ ok: boolean; state: unknown; error?: string }>;
     updateInstall(): Promise<{ ok: boolean; error?: string }>;
+    /* 11-21 用户令「加个反馈」：打开本仓 Issues 新建页并预填版本/平台；URL 在主进程拼（仓库地址只有一份） */
+    updateFeedback(): Promise<{ ok: boolean }>;
     getUsername(): Promise<string>;
     /* 主进程解密后直写剪贴板（明文不返回渲染层） */
     vaultCopy(id: string): Promise<{ ok: boolean; reason?: string }>;

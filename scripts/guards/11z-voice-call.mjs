@@ -398,11 +398,12 @@ ok(/response\.status === 403 && received > 0 && options\?\.rangeFallback !== fal
 ok(/if \(received > 0 && response\.ok && response\.status !== 206\) received = 0;/.test(storeCode)
   && !/if \(received > 0 && response\.status !== 206\) received = 0;/.test(storeCode),
   "「服务器成功但不支持续传」才丢弃残件（⛔ 判据少 response.ok 会让 403 分支恒不可达）");
-/* ⛔⛔ 11-15 实测推翻 11-14 的「gh-proxy 优先」：同一 54MB 资产 8 秒采样 —— 直连 12.6MB/s、
-   hk.gh-proxy 12.4MB/s、gh-proxy.com 仅 269KB/s（慢 47 倍）、ghfast 对 Range 403。
-   ⇒ 只留能用的两个镜像，hk 在前；ghfast 必须不在表里。 */
-ok(/const GITHUB_MIRROR_PREFIXES = \["https:\/\/hk\.gh-proxy\.com\/", "https:\/\/gh-proxy\.com\/"\]/.test(storeCode),
-  "GitHub 镜像表 = hk.gh-proxy 优先、gh-proxy 兜底（旧序把 269KB/s 的源排第一，比直连慢 47 倍）");
+/* ⛔⛔ 11-21 复测（v0.0.76 资产 8MB Range）：**gh-proxy.org 0.84~1.56MB/s 且 206 可用**
+   ≫ gh-proxy.com 0.37MB/s（忽略 Range）＞ hk.gh-proxy.com **500 不可用**。
+   11-15 那张 [hk, gh-proxy.com] 的表两项都已不是最优（hk 直接 500）⇒ 换成 org 优先、com 兜底；
+   ghfast 仍必须不在表里（对 Range 403）。 */
+ok(/const GITHUB_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.org\/", "https:\/\/gh-proxy\.com\/"\]/.test(storeCode),
+  "GitHub 镜像表 = gh-proxy.org 优先、gh-proxy.com 兜底（11-21 实测最快的两档；hk 已 500、ghfast 对 Range 403）");
 ok(!/ghfast\.top/.test(storeCode),
   "⛔ ghfast 已从音色模型链路移除（Range 403，留着只是多一次失败）");
 ok(/headersTimeoutMs = options\?\.headersTimeoutMs \?\? 20000/.test(storeCode),

@@ -35,11 +35,14 @@
  *   11-15 ghfast 对 Range 请求 403 → 删；11-19 复测 ghfast 0.82MB/s 最快 → 加回第二档；
  *   11-20 复测**又反转**：gh-proxy.com 0.68 MB/s（单次峰值到过 10.2MB/s，波动大）
  *   > ghfast.top 0.095 MB/s（掉到几十 KB/s，用户实测「一直 0%」），hk 仍 302 不可用
- *   ⇒ gh-proxy 提到第二档。⛔ 别按旧结论钉死顺序。 */
-export const GH_MIRROR_PREFIXES = ["", "https://gh-proxy.com/", "https://hk.gh-proxy.com/", "https://ghfast.top/"] as const;
+ *   ⇒ gh-proxy 提到第二档。⛔ 别按旧结论钉死顺序。
+ *   11-21 复测（v0.0.76 资产 8MB Range）：**gh-proxy.org 0.84~1.56 MB/s 且支持 Range（206）**
+ *   > gh-proxy.com 0.37MB/s（且**忽略 Range**，回 200 全量）> 直连超时 / ghfast 超时 /
+ *   hk 500 / ghproxy.net 17KB/s。⇒ 新增 gh-proxy.org 排第二（它也是分片并发的唯一可用源）。 */
+export const GH_MIRROR_PREFIXES = ["", "https://gh-proxy.org/", "https://gh-proxy.com/", "https://hk.gh-proxy.com/", "https://ghfast.top/"] as const;
 
 /** 元数据 API 的前缀序：镜像优先（api.github.com 直连在国内常 403/超时）。 */
-export const GH_API_MIRROR_PREFIXES = ["https://gh-proxy.com/", "https://hk.gh-proxy.com/", ""] as const;
+export const GH_API_MIRROR_PREFIXES = ["https://gh-proxy.org/", "https://gh-proxy.com/", "https://hk.gh-proxy.com/", ""] as const;
 
 /** 只对 GitHub 自家域名做前缀镜像；其它 host（自建分发 / 自定义清单）原样返回，不做任何改写。 */
 const GH_MIRRORABLE_HOSTS = new Set([

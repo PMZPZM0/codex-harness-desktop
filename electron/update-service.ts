@@ -27,7 +27,7 @@ import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, re
 import path from "node:path";
 import { mirrorCandidates } from "./gh-mirror";
 import { guardedFetch } from "./net-guard";
-import { downloadThroughMirrors } from "./mirror-download";
+import { downloadThroughMirrors, clearDownloadParts } from "./mirror-download";
 import { RELEASE_FEED_URL, UPDATE_CHANNEL } from "./repo-info";
 import { compareVersions } from "./version-utils";
 
@@ -340,12 +340,15 @@ export async function downloadUpdatePackage(): Promise<UpdateSnapshot> {
       const bytes = statSync(target).size;
       if (feed.size > 0 && bytes !== feed.size) {
         try { rmSync(target, { force: true }); } catch { /* 忽略 */ }
+        /* ⛔ 11-21：字节数不对说明续传段里有坏数据 ⇒ 连分片段一起清，下次从头下。 */
+        await clearDownloadParts(target);
         return emit({ phase: "failed", error: `下载不完整（${bytes} / ${feed.size} 字节），请重试` });
       }
       if (feed.sha512) {
         const actual = await sha512OfFile(target);
         if (actual !== feed.sha512) {
           try { rmSync(target, { force: true }); } catch { /* 忽略 */ }
+          await clearDownloadParts(target);
           return emit({ phase: "failed", error: "安装包校验失败（内容与发布的不一致），请重试" });
         }
       }

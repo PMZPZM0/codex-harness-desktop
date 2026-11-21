@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（123 个能力域 / 721 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（123 个能力域 / 722 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -243,9 +243,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 内置终端（创建/输入/缩放/重启）
 通道：terminal:input, terminal:list, terminal:ready, terminal:resize, terminal:restart
 
-### update（3 通道）
+### update（4 通道）
 应用自更新（检查 / 下载 / 安装三通道；只读 Release 的 latest.yml，不走 GitHub API）
-通道：update:check, update:download, update:install
+通道：update:check, update:download, update:install, update:feedback
 
 ### backup（9 通道）
 改动备份的**查询与恢复**（设置 → 数据管理 → 改动备份：开关、备份目录、产物概览、清空）。备份本身由宿主在**每个回合结束时自动完成**（落 changes-index/<会话id>.json + changes-detail/<会话id>/cd_*.json，结构与 WorkBuddy 同构，**容量上限 3G，超了把最旧的移进系统回收站**，不是硬删）。

@@ -64,8 +64,10 @@ const trendingTool = read("electron/features/github-trending.ts");
 const profiles = read("electron/tool-profiles.ts");
 const coreBlock = (profiles.match(/CORE_TOOLS[^=]*=\s*\[([\s\S]*?)\]/) ?? ["", ""])[1];
 ok(/name:\s*"github_trending"/.test(dispatchCore) && /name === "github_trending"/.test(dispatchRpc)
-  && /gh-proxy\.com\/https:\/\/\$\{api\}/.test(trendingTool) && !/await fetch\(/.test(dispatchRpc),
-  "Codex 有 github_trending 工具（schema + 分发；抓取在独立模块，执行端不自己发 HTTP）");
+  /* ⛔ 11-21：抓取模块的镜像候选改由 gh-mirror 真相源给（原先硬编码 gh-proxy.com，
+     与全局镜像序各写一份 ⇒ 最快的源变了它还走老路）。 */
+  && /mirrorCandidates\(/.test(trendingTool) && !/await fetch\(/.test(dispatchRpc),
+  "Codex 有 github_trending 工具（schema + 分发；抓取在独立模块、镜像候选走 gh-mirror，执行端不自己发 HTTP）");
 ok(/"github_trending"/.test(profiles) && !coreBlock.includes("github_trending"),
   "工具只登记画像 / 岗位增量，不进 CORE（按需从能力网关调用）");
 ok(/copyPrompt/.test(page) && /github_trending/.test(page) && /copyTextToClipboard/.test(page),

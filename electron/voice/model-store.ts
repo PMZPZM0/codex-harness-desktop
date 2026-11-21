@@ -620,11 +620,11 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
  *   ⇒ 顺序改成 gh-proxy 优先；ghfast 留作最后手段（有朝一日恢复也不必改代码）。
  *   ⛔ 但顺序不是根治：真正的兜底在 `downloadOnce` 的「403 + 已下过一部分 ⇒ 去掉 Range 重来」。
  */
-/* ⛔⛔ 11-15 实测（54MB release 资产，8 秒采样）：直连 12.6MB/s ｜ hk.gh-proxy 12.4MB/s ｜
-   gh-proxy.com 仅 **269KB/s（慢 47 倍）** ｜ ghfast 对 Range 直接 403。
-   旧表把 gh-proxy 排第一 ⇒ 54MB 声码器从 4 秒变 200 秒（用户「12s 超时 / 下几个小时」）。
-   ⇒ 只留两个能用的镜像做兜底；直连由 downloadUrlToFile 自动排在最前（candidates = [url, ...mirrors]）。 */
-const GITHUB_MIRROR_PREFIXES = ["https://hk.gh-proxy.com/", "https://gh-proxy.com/"];
+/* ⛔⛔ 11-21 复测（v0.0.76 资产 8MB Range）：**gh-proxy.org 0.84~1.56MB/s 且 206 分段可用**
+   ≫ gh-proxy.com 0.37MB/s（且忽略 Range）＞ hk.gh-proxy.com **500 不可用**。
+   旧表 [hk, gh-proxy.com] 两个都不是最快的、hk 还直接 500 ⇒ 换成 org 优先、com 兜底。
+   直连仍由 downloadUrlToFile 自动排在最前（candidates = [url, ...mirrors]）。 */
+const GITHUB_MIRROR_PREFIXES = ["https://gh-proxy.org/", "https://gh-proxy.com/"];
 
 /**
  * 单次下载（可续传）。网络中断**保留**已下部分（存在 `.part` 上）供下次续传；只有 SHA256 不符才删除。

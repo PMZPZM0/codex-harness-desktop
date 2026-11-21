@@ -71,10 +71,13 @@ const NINJA_URL = "https://github.com/ninja-build/ninja/releases/latest/download
 const SEVENZIP_VERSION = "26.06";
 const SEVENZIP_STEM = `7z${SEVENZIP_VERSION.replace(".", "")}`;
 const YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
-// GitHub 直连在国内经常不可达；gh-proxy.com / ghfast.top 加速前缀实测稳定（rg/cmake/uv/7zip 均可 206 分段续传）。
+// GitHub 直连在国内经常不可达；加速前缀实测（11-21 v0.0.76 资产 8MB Range）：
+//   **gh-proxy.org 0.84~1.56MB/s 且支持 206 分段** > gh-proxy.com 0.37MB/s（忽略 Range）>
+//   ghfast 超时 / hk-gh-proxy 500。⇒ 最快的排第一。
 // 自动模式（默认）= 国内优先：镜像 → 本机代理（PROXY 环境变量，默认空）→ gh 加速 → 直连兜底。
 // ⛔ 09-20 修订：GitHub 资产**加速在前、直连兜底**——直连不会"失败"只会龟速（PowerShell 7 实测 7% 爬行），
 //    排在加速前面等于永远轮不到加速。
+const GHPROXY_ORG = "https://gh-proxy.org/";
 const GHPROXY = "https://gh-proxy.com/";
 const GHFAST = "https://ghfast.top/";
 const RG_VERSION = "15.2.0";
@@ -472,7 +475,11 @@ async function download(url, file, extraSources = []) {
   const mirror = chinaMirrorUrl(url);
   const isGh = url.includes("github.com");
   const ghAccels = isGh
-    ? [["gh-proxy 加速", curlArgs.slice(), GHPROXY + url], ["ghfast 加速", curlArgs.slice(), GHFAST + url]]
+    ? [
+      ["gh-proxy.org 加速", curlArgs.slice(), GHPROXY_ORG + url],
+      ["gh-proxy 加速", curlArgs.slice(), GHPROXY + url],
+      ["ghfast 加速", curlArgs.slice(), GHFAST + url],
+    ]
     : [];
   const direct = [["直连", curlArgs.slice(), url]];
   const viaProxy = PROXY ? [[`本机代理 ${PROXY}`, [...curlArgs, "--proxy", PROXY], url]] : [];

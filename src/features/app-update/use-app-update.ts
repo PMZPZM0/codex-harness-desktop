@@ -25,12 +25,27 @@ export type UpdateSnapshot = {
 /** 主进程三个调用通道的回包形状（只声明前端用得到的字段）。 */
 type UpdateReply = { ok: boolean; state?: UpdateSnapshot; error?: string };
 
+/** 一次「检查更新」的结论（11-21 用户令：检查更新要有反馈）。
+ *  ⛔ 不能靠 phase 反推：已是最新时 phase 仍是 idle，界面否则完全看不出刚检查过。 */
+export type UpdateCheckResult = {
+  ok: boolean;
+  /** true = 已是最新（没有更新）；false 且无 error = 发现新版本 */
+  latest: boolean;
+  version?: string;
+  current?: string;
+  error?: string;
+};
+
 const INITIAL: UpdateSnapshot = { phase: "idle", currentVersion: "" };
 
 /** 订阅更新状态并提供三个动作（检查 / 下载 / 安装）。 */
 export function useAppUpdate() {
   const [state, setState] = useState<UpdateSnapshot>(INITIAL);
   const [busy, setBusy] = useState(false);
+  /** 正在检查（按钮显示「检查中…」） */
+  const [checking, setChecking] = useState(false);
+  /** 上一次检查的结论（给界面一行可读反馈） */
+  const [lastCheck, setLastCheck] = useState<UpdateCheckResult | null>(null);
 
   useEffect(() => {
     const off = window.codex.updateOnState?.((next: unknown) => {
@@ -39,14 +54,29 @@ export function useAppUpdate() {
     return () => { off?.(); };
   }, []);
 
-  /** 查最新版本（只读，不下载）。 */
+  /** 查最新版本（只读，不下载）。结论单独记一份给界面反馈（用户令：检查更新要能看到结果）。 */
   const check = useCallback(async () => {
     setBusy(true);
+    setChecking(true);
     try {
       const r = (await window.codex.updateCheck?.()) as UpdateReply | undefined;
       if (r?.state) setState((prev) => ({ ...prev, ...r.state }));
+      const nextState = r?.state;
+      /* 三种结论：失败（网络/镜像）→ 有新版（带回 version）→ 已是最新（phase 回 idle）。 */
+      const failed = !r?.ok || (nextState?.phase === "failed" && !nextState?.version);
+      setLastCheck({
+        ok: !failed,
+        latest: !failed && !nextState?.version,
+        version: nextState?.version,
+        current: nextState?.currentVersion,
+        error: failed ? (r?.error ?? nextState?.error) : undefined,
+      });
       return r;
+    } catch (error) {
+      setLastCheck({ ok: false, latest: false, error: (error as Error)?.message ?? String(error) });
+      throw error;
     } finally {
+      setChecking(false);
       setBusy(false);
     }
   }, []);
@@ -68,5 +98,5 @@ export function useAppUpdate() {
     }
   }, []);
 
-  return { state, busy, check, download, install };
+  return { state, busy, checking, lastCheck, check, download, install };
 }
