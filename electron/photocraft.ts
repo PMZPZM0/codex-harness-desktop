@@ -94,7 +94,7 @@ export function photocraftGuiPath(): string {
 }
 
 /** 生成 `[mcp_servers.photocraft]` 段（未安装返回空数组）。由 custom-model-apply 统一拼进 config.toml。 */
-export function photocraftMcpSection(): string[] {
+export function photocraftMcpSection(lazy = true): string[] {
   const cli = photocraftCliPath();
   if (!cli) return [];
   const ioRoot = photocraftPaths().ioRoot;
@@ -105,8 +105,9 @@ export function photocraftMcpSection(): string[] {
     `command = "${escape(cli)}"`,
     `args = ["mcp", "--no-gpu", "--automation-read-root", "${escape(ioRoot)}", "--automation-write-root", "${escape(ioRoot)}"]`,
     "startup_timeout_sec = 30",
-    /* 11-21：引擎侧停用（22KB schema 不进每轮前缀）；宿主 mcp_tools/mcp_call 按需启动。 */
-    "enabled = false",
+    /* 11-21：引擎侧停用（22KB schema 不进每轮前缀）；宿主 mcp_tools/mcp_call 按需启动。
+       ⛔ 有用户「ask」规则时保持直连（网关直调会绕过审批提示）。 */
+    ...(lazy ? ["enabled = false"] : []),
     "",
   ];
 }

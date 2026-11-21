@@ -501,7 +501,7 @@ function writeCraftMcpIds(ids: string[]): void {
  * ⛔ 与 PhotoCraft 同款：一个 App 一个 `[mcp_servers.<id>]`（Codex 里就是独立工具，便于区分）。
  * ⛔ 只有带 `-cli.exe` 的 App 才能注册（MCP 走无头 CLI）；PhotoCraft 用它自己的 `photocraft` 段。
  */
-export async function craftAppMcpPlan(): Promise<{ servers: string[]; previous: string[]; sections: string[] }> {
+export async function craftAppMcpPlan(lazyAllowed: (id: string) => boolean = () => true): Promise<{ servers: string[]; previous: string[]; sections: string[] }> {
   const previous = readCraftMcpIds();
   const apps = scanCraftAppDirs().filter((app) => app.id !== "photocraft" && app.cliPath);
   const escape = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -514,8 +514,9 @@ export async function craftAppMcpPlan(): Promise<{ servers: string[]; previous: 
       `command = "${escape(app.cliPath)}"`,
       'args = ["mcp"]',
       "startup_timeout_sec = 30",
-      /* 11-21：引擎侧停用（每个 App 一条 MCP 段，全开会把首回合前缀撑爆）；宿主网关按需调用。 */
-      "enabled = false",
+      /* 11-21：引擎侧停用（每个 App 一条 MCP 段，全开会把首回合前缀撑爆）；宿主网关按需调用。
+         ⛔ 该 App 有用户「ask」规则时不懒加载（保持引擎审批）。 */
+      ...(lazyAllowed(app.id) ? ["enabled = false"] : []),
       "",
     );
   }
