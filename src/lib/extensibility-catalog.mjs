@@ -12,6 +12,8 @@
  * ⛔ 10-30 校准范围：补上一年来新增的板块（组合层 / 二级弹窗 / 内嵌浮窗 / 知识库后端 / 云账号 /
  *    技能包 / CLI 智能体 / 自动更新 / 开发工具目录 / 日志与台账），并修掉过期描述（工作区技能目录、
  *    插件市场只有一家、个性化只讲应用侧等）。
+ * ⛔ 11-21 二次校准：工具面改为「画像 + thread/start 定死 + MCP 懒加载网关」；补首回合上下文预算、
+ *    外部语音引擎、Craft 全家桶、悬浮播报、主题/壁纸；修正技能索引与描述字数口径。
  */
 
 /** 分组顺序即页面展示顺序 */
@@ -103,7 +105,7 @@ export const EXTENSIBILITY_ENTRIES = [
     id: "capability",
     group: "接口与契约",
     name: "外部能力（MCP / 连接器 / 插件市场 / CLI 智能体）",
-    purpose: "把外部能力接进来：MCP 工具、连接器（OAuth）、两个插件市场、CLI 智能体，各自有注册与开关表。",
+    purpose: "把外部能力接进来：MCP（懒加载网关，按需查/调）、连接器（OAuth）、两个插件市场、CLI 智能体，各自有注册与开关表。",
     where: [
       "electron/capability-registry.ts（能力快照与「当前链路」判定）",
       "electron/features/plugins-ipc.ts（插件安装 / 启停）",
@@ -113,7 +115,7 @@ export const EXTENSIBILITY_ENTRIES = [
       "src/features/cli-agents/",
     ],
     steps: [
-      "MCP：走 mcp-servers:* 覆盖表启停；工具级权限用 mcp-servers:set-tool-permission",
+      "MCP：走 mcp-servers:* 覆盖表启停；内置服务默认写 enabled=false 交给 mcp_tools/mcp_call 网关按需拉起；带用户「ask」规则的保持直连（不绕过审批）；工具级权限用 mcp-servers:set-tool-permission",
       "插件：Gitee 源走 plugins:market-*，官方源走 official-market 通道；装完整理本地清单后由引擎暴露",
       "CLI 智能体：在「开发工具 → CLI 智能体」登记（启用 + 可执行名），之后 @ 直接派活（同 runDelegatedTask）",
       "能力现状统一在 capability-registry 汇总，界面「当前能力链路」读它（别各页自算）",
@@ -275,14 +277,14 @@ export const EXTENSIBILITY_ENTRIES = [
   {
     id: "theme",
     group: "界面与呈现",
-    name: "主题与配色",
-    purpose: "界面主题：新增一套配色 = 注册表加一行 + 一段 CSS 变量块；写死色值会在暗色下瞎掉。",
-    where: ["src/lib/themes.ts", "src/styles/01-base-and-chrome.css"],
+    name: "主题与外观（配色 / 日夜 / 壁纸）",
+    purpose: "界面外观 = 配色主题 × 日/夜模式 × 壁纸（风景日/夜成对、极光 / 流光 / 3D 星空），再叠加全局玻璃与滚动条变量；写死色值会在暗色下瞎掉。",
+    where: ["src/lib/themes.ts", "src/lib/wallpaper.mjs", "src/styles/01-base-and-chrome.css", "src/styles/28-wallpaper.css", "public/wallpapers/"],
     steps: [
-      "THEMES 加一行 { id, label, preview }",
-      "01-base-and-chrome.css 加 :root[data-theme=\"<id>\"] { …变量块… }（照抄 dark 块改色值）",
-      "暗色系新主题同步 theme:apply（标题栏与滚动条判定）",
-      "新增/修改 CSS 变量时同步 DESIGN.md 的变量表",
+      "THEMES 加一行 { id, label, preview }，01-base-and-chrome.css 加对应 :root[data-theme=\"<id>\"] 变量块",
+      "壁纸：在 wallpaper.mjs 的壁纸表加一对「日 / 夜」素材（public/wallpapers/），跟随系统时由 data-theme-mode 选边",
+      "极光 / 流光 / 3D 星空属于独立特效层（28-wallpaper.css），别塞进基础主题块",
+      "暗色系新主题同步 theme:apply（标题栏与滚动条判定）；新增/修改 CSS 变量必须同步 DESIGN.md 变量表",
     ],
     effect: "切换即时生效（data-theme + localStorage）。",
     guards: "【2】主题注册表由注册表渲染；【170】DESIGN.md 变量表真值对账",
@@ -359,7 +361,7 @@ export const EXTENSIBILITY_ENTRIES = [
     id: "skills",
     group: "智能体与能力",
     name: "技能（方法论 / 脚本包 / 技能包）",
-    purpose: "把可复用流程沉淀成技能，引擎原生发现并在需要时读取；第三方的成套技能走「精选技能包」一键装。",
+    purpose: "把可复用流程沉淀成技能：引擎只下发「索引」（名字 + ≤60 字描述），模型按需读 SKILL.md；本地技能可用 find_skills 实时扫盘，成套第三方技能走「精选技能包」一键装。",
     where: [
       "$CODEX_HOME/skills/<名>/SKILL.md（跨项目）",
       "<工作区>/.codex/skills/<名>/SKILL.md（项目级）",
@@ -368,7 +370,7 @@ export const EXTENSIBILITY_ENTRIES = [
       "electron/skill-packs-catalog.ts",
     ],
     steps: [
-      "建目录并写 SKILL.md（frontmatter 必须有 name + description，否则不进技能列表）",
+      "建目录并写 SKILL.md（frontmatter 必须有 name + description）；description 控制在 60 字内 —— 它进常驻索引，越长每轮 token 越贵",
       "项目级优先（随项目走）；跨项目才放 $CODEX_HOME/skills",
       "内置技能改 electron/builtin-skills/<NN>-skill-<名>.ts",
       "技能包：catalog 加一条（repo / license / 配套），安装走国内镜像 → skills/ 子树 → 逐个 auditSkill → 归属凭据",
@@ -411,8 +413,8 @@ export const EXTENSIBILITY_ENTRIES = [
   {
     id: "dynamic-tools",
     group: "智能体与能力",
-    name: "宿主 dynamicTools 与能力网关",
-    purpose: "宿主自己提供的工具：小的直接注册成 dynamicTool，多的收进 harness_tools 网关（引擎 0.157+ 对 MCP 工具延迟暴露）。",
+    name: "宿主工具面（dynamicTools / 工具画像 / MCP 网关）",
+    purpose: "模型能看到的工具由宿主决定：按会话画像收窄（CORE / 岗位增量），在 thread/start 定死；MCP 工具走 mcp_tools / mcp_call 懒加载，不进常驻 schema。",
     where: [
       "src/features/app-state/parts/part08/01-seg.tsx（buildDynamicTools：名字/描述/参数 schema）",
       "src/features/app-state/parts/part05/event-router/02-request.tsx（item/tool/call 分发）",
@@ -421,15 +423,18 @@ export const EXTENSIBILITY_ENTRIES = [
     steps: [
       "专用工具：buildDynamicTools 加一条（描述里把适用/禁用场景写清，模型才知道何时用）",
       "分发：part05 的 item/tool/call 分支 → IPC → 主进程执行端；⛔ 不新增渲染层业务分支",
+      "工具画像：electron/tool-profiles.ts 的 CORE_TOOLS / 岗位增量决定本会话注册哪些宿主工具；⛔ 识别不出岗位时回落 CORE，不是全量",
       "通用/冷门能力进 harness_tools：dispatch-core 的能力表加 { name, args schema }，执行端 dispatchRpcCall",
+      "MCP 能力不要逐个注册：内置 MCP 在 config 里 enabled=false，模型用 mcp_tools 查、mcp_call 调（宿主按需拉起服务）",
       "配套常驻指令一条（developer-instructions），否则模型不知道有这个工具",
-      "上线后老会话需切走再切回（dynamicTools 只在 start/resume 注入）",
+      "上线后老会话需切走再切回（dynamicTools 只在 start/resume 注入；resume 会改写 rollout 首行）",
     ],
-    effect: "新会话立即可见；老会话 resume 后可见。",
-    guards: "【11i】网关（名单 / 分发 / 身份 / 网关唯一性）、【153】能力清单技能（harness-api 生成）",
+    effect: "新会话立即可见；老会话 resume 后按新画像重建。",
+    guards: "【11i】网关（名单 / 分发 / 身份 / 网关唯一性）、【153】能力清单技能（harness-api 生成）、【12ai】工具画像（CORE ⊂ 目录 / 回滚开关 / 岗位判定）",
     pitfalls: [
       "⛔ 网关只放「没有专用工具」的能力（agent_invoke / 生图已有专用名，别重复挂）",
-      "⛔ 一次注入 19 份 schema 是常驻 token 成本 —— 用网关按需取参数说明",
+      "⛔ 一次注入几十份 schema 就是每轮常驻 token —— 冷门能力走网关按需取参数说明",
+      "⛔ 工具面变了要同步常驻指令与技能里的名字（模型会照旧名字调，然后失败）",
       "描述里不许写不存在的工具名（模型会照做然后失败）",
     ],
   },
@@ -621,6 +626,132 @@ export const EXTENSIBILITY_ENTRIES = [
       "⛔ 同一段正文只许一份（日报留一行指针，logs/ 记结论，不互相抄）",
       "⛔ 补丁式覆盖旧结论 = 断链；用 supersedes",
       "条目必须是 .md（.gitignore 有 *.log）",
+    ],
+  },
+  /* ── 11-21 校准新增：把这一年新立的能力面补进目录 ─────────────────── */
+  {
+    id: "mcp-gateway",
+    group: "接口与契约",
+    name: "MCP 懒加载网关（mcp_tools / mcp_call）",
+    purpose: "内置/第三方 MCP 默认不把工具 schema 塞进模型前缀：宿主把工具收进两个网关工具，按需拉起服务、查名字、再调用。",
+    where: [
+      "electron/mcp-gateway.ts（网关工具定义 / MCP_LAZY 开关）",
+      "electron/mcp-bridge.ts（连接器与内置懒加载服务的 tools/list / tools/call）",
+      "electron/features/custom-model-apply.ts（内置段 enabled=false / ask 规则保持直连）",
+      "electron/features/codex-ipc.ts（thread/start 注入网关工具）",
+    ],
+    steps: [
+      "接一个新 MCP：按 [mcp_servers.X] 生成配置段；重型内置段加 enabled = false（引擎不注 schema，宿主网关按需拉起同一命令）",
+      "模型侧调用：先 mcp_tools 查名字与参数（精确名字带完整 schema），再 mcp_call 调用；stdio / http 走同一条转发链",
+      "有用户「ask」审批规则的服务**不要**懒加载（保持引擎直连），否则会绕过确认提示；deny 规则由网关按 disabled_tools 过滤",
+      "装/卸/开关变化后要 invalidateMcpBridgeCache（applyCustomModel 已自动调用）",
+    ],
+    effect: "即时生效；网关清单缓存 5 分钟，配置变更会主动失效。",
+    guards: "【12ai】上下文瘦身三条（enabled=false / 网关回挂 / 指令精简）、【11z】ask 规则与合成超时，DESIGN 层级带【198】",
+    pitfalls: [
+      "⛔ 网关直调不会触发引擎审批 —— ask 规则必须保持直连",
+      "首次 mcp_tools 会并行拉起多个 MCP 服务（各 12s 上限），缓存后才快",
+      "工具名是 `<server>__<tool>`，旧文档/技能里的 mcp__x 名字要同步改",
+    ],
+  },
+  {
+    id: "context-budget",
+    group: "智能体与能力",
+    name: "首回合上下文预算（精简指令 / 按需文档）",
+    purpose: "把每轮常驻前缀压到 ~30k token 内：指令只留核心规则，完整细则落盘按需读，MCP/技能走索引与网关。",
+    where: [
+      "electron/developer-instructions.ts（leanDevInstructions / buildDevInstructions 全文）",
+      "electron/main/12-skill-discipline.ts（devInstructionsInput 的 lean 开关）",
+      "electron/features/custom-model-apply.ts（写 config + harness-dev-guide.md）",
+      "electron/features/boot.ts（leanGuideMissing 自愈）",
+      "electron/app-settings.ts（leanContext 设置）",
+    ],
+    steps: [
+      "新常驻条文先问：每轮都必须知道吗？不是就写进完整指令（落盘 guide），只留一句「需要时读它」",
+      "leanContext 默认 true；false 回完整版（排障/兼容用）",
+      "改完量体积：node 调用 buildDevInstructions({ lean:true/false }) 对比，别凭感觉",
+      "guide 文件缺失时 boot 会自动整份重写一次（幂等）",
+    ],
+    effect: "重启/新会话生效；前缀每会话固定，不破坏缓存命中。",
+    guards: "【12ai】上下文瘦身三条；语音 11z 硬超时（同为「卡住即失败」纪律）",
+    pitfalls: [
+      "⛔ 引擎自带底约 66KB（≈1.8 万 token），7k 不可能——要更小只能砍内核工具（等于阉割）",
+      "⛔ 精简不等于删安全条款：不泄密 / 破坏性操作先确认 / 改前先读 必须保留",
+      "老会话的工具面不重建，验收要用新会话",
+    ],
+  },
+  {
+    id: "voice-engines",
+    group: "智能体与能力",
+    name: "语音合成引擎与音色（外部 / MOSS / 本机）",
+    purpose: "播报与通话共用的 TTS 目录：外部引擎、MOSS 远端、本机 vits 三档；音色按引擎独立，试听与真实播报必须同链。",
+    where: [
+      "electron/voice/external-engines.ts（外部引擎启动 / 合成适配器）",
+      "electron/voice/builtin-voices.ts（随包默认音色样本）",
+      "src/lib/voice-external-engines.mjs（引擎目录：许可 / 平台 / 用法）",
+      "src/features/voice-announce/use-voice-announce.ts（播报链与队列）",
+    ],
+    steps: [
+      "新引擎：目录加一条（许可必须可商用 + platforms）+ 适配器（HTTP /speak 或原生协议）+ 端口",
+      "音色：按 engineId 存 tts.engineVoices（native / preset:<id> / builtin:<sid> / profile:<id>），没选过走开箱默认",
+      "试听必须传 engineId 强制该引擎，⛔ 不许回落 MOSS/本机（会让用户以为都一样）",
+      "worker 请求必须带超时（当前 worker 120s / 单句 20s / 渲染层 25s），卡死判坏并重建",
+    ],
+    effect: "保存即生效；切外部引擎会重启对应本机服务（模型加载 30–60s）。",
+    guards: "【11z】声音链 / 超时 / 播报层级、【12bv】外部引擎卡片",
+    pitfalls: [
+      "⛔ 非商用许可的引擎不进目录；外部引擎目前只适配 Windows，mac 只走基础模型 + MOSS",
+      "⛔ 试听与播报必须是同一条链，否则「换了模型还是旧声」",
+      "播报状态以 announce-bus 为准，组件不许另判是否在念",
+    ],
+  },
+  {
+    id: "artcraft-suite",
+    group: "智能体与能力",
+    name: "Craft 全家桶（Launcher 安装 + 本机识别）",
+    purpose: "创作 App 统一由 ArtCraft Launcher 安装/更新；宿主只负责识别「装没装、装在哪、能不能联动」，并注册对应 MCP 工具。",
+    where: [
+      "electron/artcraft.ts（扫描根 / Launcher 数据 / MCP 段生成）",
+      "electron/features/artcraft-ipc.ts（状态 / 选安装位置 / 联动）",
+      "electron/photocraft.ts（PhotoCraft 专用工具与 MCP 段）",
+      "src/features/settings-devtools/ArtCraftSuite.tsx（三级 IA 与安装位置）",
+    ],
+    steps: [
+      "新 App 接入：在识别表加 id / 名称 / 用途，补扫描根（Program Files、%LOCALAPPDATA%\\Programs、Launcher 数据、自定义根）",
+      "有 -cli.exe 的 App 生成 [mcp_servers.<id>]（默认 enabled=false 走网关）；PhotoCraft 用它自己的 photocraft 工具",
+      "安装位置只读展示 + 一键改根（写入 artcraft-root.json），⛔ 不要自己下载安装（Launcher 负责）",
+      "mac 走 .app bundle（/Applications、~/Applications）取 Contents/MacOS 与 Info.plist 版本",
+    ],
+    effect: "识别状态即时刷新；MCP 段变更下次 applyCustomModel 生效（网关缓存会失效）。",
+    guards: "【12bu】Craft 全家桶（识别 / 位置 / 联动 / mac）、【12bt】PhotoCraft",
+    pitfalls: [
+      "⛔ 不要按固定路径写死：别的机器/D盘/自定义根都可能不同",
+      "⛔ PhotoCraft 不是 craft_<id> 工具，别混进 Craft 工具清单",
+      "卸载 App 后要清掉它的 MCP 段与账本，否则引擎每次启动去连不存在的服务",
+    ],
+  },
+  {
+    id: "event-broadcast",
+    group: "界面与呈现",
+    name: "悬浮播报（群事件 / 语音 / 系统提示）",
+    purpose: "统一播报中心：事件与语音收纳成贴边把手，播完自动收起；层级属于「对话区浮件」，永远低于任何弹窗。",
+    where: [
+      "src/features/event-broadcast/（宿主 / store / 面板 / 几何）",
+      "src/voice/announce-bus.ts（语音播报状态广播）",
+      "src/styles/60-event-broadcast.css（把手 / 横幅 / 面板样式）",
+    ],
+    steps: [
+      "新增播报类型：event-broadcast/kinds 加映射（图标 / 色调 / 文案），采集端 pushBroadcast",
+      "位置：dock.ts 按聊天区矩形实测（左界 = 侧栏右缘），支持吸附边框与自由悬浮；侧栏拖动/右栏开合/缩放自动跟随",
+      "层级：把手 58 / 横幅与面板 59（低于画布 90、模态 400、轻浮层 1000）；全屏媒体预览时整组隐藏",
+      "交互：点外 + Esc 关闭；播报只作为历史记录存在，不写进对话正文",
+    ],
+    effect: "构建后即时生效；位置记忆在 localStorage（边 + 比例）。",
+    guards: "【11z】播报层级 / 锚点；DESIGN.md 层叠层级带【198】",
+    pitfalls: [
+      "⛔ 不许把 z 抬到 80+（会压在设置页/画布上）",
+      "⛔ 面板与横幅是 anchor 的兄弟节点，隐藏时要三件套一起藏",
+      "⛔ 别改回「贴按钮 top」——用户要的是与 ⋯ 按钮垂直居中/贴边把手",
     ],
   },
 ];
