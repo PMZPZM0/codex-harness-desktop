@@ -284,7 +284,17 @@ export async function checkForUpdate(): Promise<UpdateSnapshot> {
     return emit({ phase: "idle", version: undefined, size: undefined, percent: undefined, error: undefined, path: undefined });
   }
   const file = path.join(packageDir(feed.version), feed.asset);
-  if (snapshot.phase === "ready" && snapshot.version === feed.version) return snapshot;
+  /* ⛔ 11-21：ready 不能只信内存快照 —— 包可能已被磁盘清理/杀软删掉。这里便宜地验一次
+     「还在 + 字节数对」（不算 sha512，避免每次检查都读 700MB）；对不上就继续往下走，
+     重新落到 available，徽标给出可点的出口。 */
+  if (snapshot.phase === "ready" && snapshot.version === feed.version) {
+    let stillThere = false;
+    try {
+      const st = snapshot.path ? statSync(snapshot.path) : null;
+      stillThere = Boolean(st) && (!feed.size || st!.size === feed.size);
+    } catch { stillThere = false; }
+    if (stillThere) return snapshot;
+  }
   const adopted = (await isUsablePackage(file, feed)) ? file : await adoptLegacyPackage(feed);
   if (adopted) {
     persist({ phase: "ready", version: feed.version, path: adopted, size: feed.size, sha512: feed.sha512 });
@@ -366,7 +376,14 @@ export async function installUpdatePackage(): Promise<{ ok: boolean; error?: str
   const file = saved?.path ?? snapshot.path;
   const version = saved?.version ?? snapshot.version ?? "";
   if (!file || !existsSync(file)) {
-    return { ok: false, error: "没有已下载的安装包，请先点「更新」下载" };
+    /* ⛔⛔ 11-21 闭环修复：安装包被磁盘清理 / 杀软删掉是真实场景（700MB 在 userData 里）。
+       旧写法只 return，**不 emit** ⇒ 状态还停在 ready，徽标继续显示「安装」，用户点了没反应
+       （点了没反应 = 比报错更糟）。这里回落到 failed 并清掉状态文件：徽标变成「重试」，
+       点它 → check → 重新判定为 available → 可以正常下载。出口必须闭环。 */
+    const message = "没有已下载的安装包，请点「更新」重新下载";
+    emit({ phase: "failed", version: version || undefined, error: message, percent: 0, receivedBytes: 0 });
+    try { rmSync(stateFile(), { force: true }); } catch { /* 忽略 */ }
+    return { ok: false, error: message };
   }
   if (process.platform === "darwin") {
     await shell.openPath(file);

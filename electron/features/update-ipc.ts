@@ -13,7 +13,7 @@
  */
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { sendToWindow } from "./window-bus";
+import { onPrimaryWindowLoaded, sendToWindow } from "./window-bus";
 import { checkForUpdate, downloadUpdatePackage, getUpdateSnapshot, installUpdatePackage, restoreUpdateState, setUpdateNotifier } from "../update-service";
 
 /** 本域全部通道（卸载时逐个摘掉，避免热重载叠 handler）。 */
@@ -31,8 +31,17 @@ export const updateFeature = defineFeature<null>({
     setUpdateNotifier((snapshot) => sendToWindow("update:state", snapshot));
 
     /* 启动即恢复：磁盘上已有就绪包 / 上次安装没完成，都要在首屏就体现在徽标上。
-       ⛔ 失败静默：更新状态读不出来绝不能挡启动。 */
+       ⛔ 失败静默：更新状态读不出来绝不能挡启动。
+       ⛔⛔ 11-21 闭环修复：本域在组合层 `process.nextTick` 挂载，**早于窗口创建** ⇒
+          restoreUpdateState 那一刻的推送发给的是「还不存在的窗口」，静默丢失；渲染层只能
+          被动订阅、又没有主动拉取的通道 ⇒ 重启后明明有 ready 包，徽标却不显示「安装」。
+          ⇒ 订阅「主窗口加载完成」，在那时把当前快照重放一次（idle 不推，渲染层初值就是 idle）。 */
     void restoreUpdateState().catch(() => undefined);
+    const offLoaded = onPrimaryWindowLoaded(() => {
+      const state = getUpdateSnapshot();
+      if (state.phase === "idle") return;
+      sendToWindow("update:state", state);
+    });
 
     ipcHost.handle("update:check", async () => {
       try {
@@ -59,6 +68,7 @@ export const updateFeature = defineFeature<null>({
     });
 
     ctx.effect(() => {
+      offLoaded();
       for (const channel of UPDATE_CHANNELS) ipcHost.removeHandler(channel);
       setUpdateNotifier(null);
     });

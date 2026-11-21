@@ -84,5 +84,27 @@ const badge = read("src/features/app-update/UpdateBadge.tsx");
 ok(/phase === "ready"[\s\S]{0,120}install\(\)/.test(badge) && /phase === "available"[\s\S]{0,80}download\(\)/.test(badge),
   "徽标映射：ready → 安装、available → 下载（⛔ 两态不许混成一个按钮）");
 
+console.log("\n【⑥ 闭环审查（11-21）三处断点必须有出口】");
+/* ① 重启后 ready 推不到界面：本域在 nextTick 挂载，早于窗口创建 ⇒ 推送发给不存在的窗口。
+   ⇒ 必须订阅「主窗口加载完成」重放一次（idle 不推）。 */
+ok(/onPrimaryWindowLoaded\(/.test(ipc) && /sendToWindow\("update:state", state\)/.test(ipc) && /phase === "idle"[\s\S]{0,40}return/.test(ipc),
+  "① 主窗口加载完成时重放快照（idle 不推）—— 否则重启后徽标看不到已就绪的包");
+ok(/export function onPrimaryWindowLoaded/.test(read("electron/features/window-bus.ts"))
+  && /did-finish-load/.test(read("electron/features/window-bus.ts")),
+  "① 基座提供「页面加载完成」时机（window-bus，did-finish-load）");
+/* ② 安装包被磁盘清理/杀软删掉：旧写法只 return 不 emit ⇒ 徽标停在「安装」，点了没反应。
+   ⇒ 必须回落 failed（徽标变「重试」= 有出口）。 */
+ok(/没有已下载的安装包[\s\S]{0,400}emit\(\{ phase: "failed"/.test(service),
+  "② 包丢失时回落 failed（不再「点了没反应」）；徽标「重试」→ check → available 闭环");
+/* ③ ready 不能只信内存快照 —— 检查更新时要便宜地验一次文件还在且大小对。 */
+ok(/snapshot\.phase === "ready"[\s\S]{0,420}statSync\(snapshot\.path\)/.test(service),
+  "③ ready 复验磁盘文件（存在 + 字节数对），被删则重新落 available");
+/* ④ NSIS：应用内更新（--updated）必须跳过「请先卸载旧版」拦路 —— oneClick 有进度页 =
+   非静默，只判 ${Silent} 会让从应用里点的安装直接 Quit（11-20 的老问题在非静默路径复发）。 */
+const nsh = read("build/installer.nsh");
+ok(/GetOptions\} \$R9 "--updated"/.test(nsh) && /IfNot\} \$\{Errors\}/.test(nsh),
+  "④ 安装器用 --updated 识别应用内更新，跳过全机安装拦路（⛔ 不能只看 ${Silent}）");
+ok(/!include "FileFunc\.nsh"/.test(nsh), "④ installer.nsh 显式引入 FileFunc（GetParameters / GetOptions）");
+
 console.log(`\n【app-update】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

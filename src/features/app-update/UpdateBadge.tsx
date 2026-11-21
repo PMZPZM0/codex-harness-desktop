@@ -17,6 +17,9 @@ import { useAppUpdate } from "./use-app-update";
 export function UpdateBadge() {
   const { state, download, install, check } = useAppUpdate();
   const phase = state.phase;
+  /* ⛔ mac 没有覆盖安装这条路（主进程只把 zip 交给系统打开，由用户拖进「应用程序」）——
+     徽标别写「安装」，否则点完只看到 Finder 打开、什么都没发生。 */
+  const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform ?? "");
 
   /* 平时什么都不显示：⛔ 不弹卡片、不提示、不自动下载。 */
   if (phase === "idle") return null;
@@ -24,14 +27,16 @@ export function UpdateBadge() {
   const label =
     phase === "available" ? "更新"
       : phase === "downloading" ? (state.percent ? `${Math.round(state.percent * 100)}%` : "下载中")
-        : phase === "ready" ? "安装"
+        : phase === "ready" ? (isMac ? "打开包" : "安装")
           : phase === "installing" ? "安装中"
             : "重试";
 
   const title =
     phase === "available" ? `有新版本 v${state.version ?? ""}：点击下载`
       : phase === "downloading" ? `正在下载 v${state.version ?? ""}（不影响你继续使用）`
-        : phase === "ready" ? `v${state.version ?? ""} 已下载完成：点击安装并重启`
+        : phase === "ready" ? (isMac
+          ? `v${state.version ?? ""} 已下载：点击打开压缩包，把应用拖进「应用程序」`
+          : `v${state.version ?? ""} 已下载完成：点击安装并重启`)
           : phase === "installing" ? "正在安装并重启…"
             : state.error ?? "更新失败：点击重试";
 
@@ -62,7 +67,7 @@ export function UpdateMenuRow() {
   const sizeText = state.size ? `${(state.size / 1048576).toFixed(1)} MB` : "";
 
   const label =
-    phase === "ready" ? "安装并重启"
+    phase === "ready" ? (typeof navigator !== "undefined" && /Mac/i.test(navigator.platform ?? "") ? "打开安装包（拖进「应用程序」）" : "安装并重启")
       : phase === "downloading" ? (state.percent ? `下载中 ${Math.round(state.percent * 100)}%` : "下载中…")
         : phase === "installing" ? "正在重启安装…"
           : phase === "failed" ? "重试"

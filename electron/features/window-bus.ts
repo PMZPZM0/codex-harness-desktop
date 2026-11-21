@@ -40,6 +40,20 @@ export function onBusWindowListChanged(fn: () => void): () => void {
   return () => { windowListWatchers.delete(fn); };
 }
 
+/** 「主窗口页面加载完成」的订阅者（11-21）。 */
+const primaryLoadedWatchers = new Set<() => void>();
+
+/**
+ * 订阅「主窗口已加载完（渲染层已挂载，可以开始收推送）」，返回退订函数。
+ *
+ * ⛔ 用途只有一个：**重放**那些在窗口存在之前就产生、推了没人收的域状态
+ *   （目前是更新服务的 ready 包）。⛔ 别拿它当时钟轮询用 —— 每次整页加载都会触发一次。
+ */
+export function onPrimaryWindowLoaded(fn: () => void): () => void {
+  primaryLoadedWatchers.add(fn);
+  return () => { primaryLoadedWatchers.delete(fn); };
+}
+
 function notifyWindowListChanged() {
   for (const fn of windowListWatchers) {
     try { fn(); } catch { /* 单个订阅者出错不影响窗口登记 */ }
@@ -51,6 +65,20 @@ export function registerBusWindow(win: BusWindow, opts?: { primary?: boolean }) 
   const list = opts?.primary ? primaryWindows : extraWindows;
   if (!list.includes(win)) {
     list.push(win);
+    /* 主窗口**页面加载完成**时通知订阅者（11-21）。
+     * ⛔ 为什么需要这个时机：组合层在 `process.nextTick` 就挂载各域，域里的启动恢复
+     *    （例如更新服务把「已下载好、等着安装」的状态推给界面）发生得比窗口创建还早 ⇒
+     *    推给「还不存在的窗口」会被静默丢弃；渲染层又只能被动订阅，于是重启后徽标不显示。
+     *    ⇒ 域订阅这里，在渲染层真正挂载完的那一刻重放一次自己的状态。 */
+    if (opts?.primary) {
+      try {
+        win.webContents.on("did-finish-load", () => {
+          for (const fn of primaryLoadedWatchers) {
+            try { fn(); } catch { /* 单个订阅者出错不影响其它域重放 */ }
+          }
+        });
+      } catch { /* 拿不到 webContents 时退化为「不重放」，不影响窗口登记 */ }
+    }
     notifyWindowListChanged();
   }
 }
