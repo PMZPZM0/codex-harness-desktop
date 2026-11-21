@@ -204,6 +204,9 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       `command = "${escapeToml(node)}"`,
       `args = ["${escapeToml(launcher)}", "mcp"]`,
       "startup_timeout_sec = 30",
+      /* 11-21：MCP 工具不再直接进模型前缀（每段 8~22KB）。引擎侧停用，宿主 mcp_tools/mcp_call
+         按需启动同一个命令来调用 —— 能力不丢，只是从「常驻 schema」改成「用前查、用时调」。 */
+      "enabled = false",
       "",
     ];
   })();
@@ -213,6 +216,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
         `command = "${escapeToml(nuphusBinary())}"`,
         "args = []",
         "startup_timeout_sec = 20",
+        "enabled = false",
         // ⛔ 10-30 撤 `[mcp_servers.nuphus.env]` 视觉 env 段：视觉辅助插件整体移除后
         //    desktop_vision（BYOK）没有配置来源了；老 config.toml 里的残留段由 preserveUserConfig 收敛。
         "",
@@ -230,6 +234,8 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       `command = "${escapeToml(node)}"`,
       `args = ["${escapeToml(launcher)}", "mcp"]`,
       "startup_timeout_sec = 30",
+      /* 11-21：同 Computer Use / Nuphus —— 引擎侧停用，宿主网关按需调用（disabled_tools 仍生效）。 */
+      "enabled = false",
       `disabled_tools = [${agentDesktopDisabledTools().map((tool) => `"${tool}"`).join(", ")}]`,
       "",
     ];
@@ -370,6 +376,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
         `command = "${escapeToml(uiaNode)}"`,
         `args = ["${escapeToml(uiaServer)}"]`,
         "startup_timeout_sec = 20",
+        "enabled = false",
         "",
       ];
     })(),
@@ -386,6 +393,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
         `command = "${escapeToml(node)}"`,
         `args = ["${escapeToml(script)}", "mcp"]`,
         "startup_timeout_sec = 30",
+        "enabled = false",
         "",
       ];
     })(),

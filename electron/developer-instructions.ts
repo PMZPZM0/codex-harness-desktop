@@ -569,7 +569,7 @@ export type DevInstructionsInput = {
    *   被剥掉的稿子，也不要让用户"开了却永远不播"。
    */
   announceEnabled?: boolean;
-  /** 精简常驻指令（11-21，默认 true）：false = 完整版（落盘 guide 用；不再写进 config 前缀）。 */
+  /** 精简常驻指令（11-21）：true = 生产路径的常驻段（默认 false 供全文/守卫使用）。 */
   lean?: boolean;
 };
 
@@ -613,7 +613,7 @@ export function leanDevInstructions(input: DevInstructionsInput = {}): string {
 /** 按开关组装完整的 developer_instructions 文本 */
 export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   /* 11-21：默认走精简常驻段（lean !== false）；完整版用于落盘 harness-dev-guide.md。 */
-  if (input.lean !== false) return leanDevInstructions(input);
+  if (input.lean === true) return leanDevInstructions(input);
   const desktop = input.desktop !== false;
   const browser = input.browser !== false;
   const mcpBackend = effectiveMemoryBackend();

@@ -17,8 +17,12 @@
  *    只读 `readConnectors()` 里已启用、带 url 的项。
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { guardedFetch } from "./net-guard";
 import { decryptSecret, readConnectors } from "./main/07-connectors-io";
+import { parseTableHeader } from "./config-toml";
+import { codexHome } from "./runtime-refs";
 /* 10-20：工具名生成 + 「哪套后端该暴露」的判定都在 backend-routing.ts（单一真相源）。
    ⛔ 不许在本文件再写一份前缀/过滤规则 —— 那正是「指令教的名字 ≠ 工具列表里的名字」的来源。 */
 import { isConnectorBlockedByBackend, mcpToolName } from "./backend-routing";
@@ -234,6 +238,75 @@ function textOfResult(result: any): { ok: boolean; text: string } {
 let cache: { at: number; tools: McpToolSpec[] } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+/** 内置 MCP 的「懒加载」清单（11-21）：config.toml 里 `enabled = false` 的 mcp_servers 段。
+ *  引擎不再把它们的 schema 塞进每轮前缀；这里按需启动同一个命令列出/调用工具，能力不丢。
+ *  ⛔ rea 有自己的渐进网关（rea-gateway，207 个工具），不要在这里重复启动。 */
+function parseLazyBuiltinServers(): Array<{ id: string; conn: StdioConn; disabled: Set<string> }> {
+  try {
+    const text = readFileSync(path.join(codexHome, "config.toml"), "utf8");
+    const byId = new Map<string, { enabled?: boolean; command?: string; args: string[]; disabled: Set<string>; env: Record<string, string> }>();
+    const unescape = (v: string) => v.replace(/\\\\/g, "\\").replace(/\\"/g, '"');
+    let section: string[] | null = null;
+    for (const line of text.split(/\r?\n/)) {
+      const header = parseTableHeader(line);
+      if (header) {
+        section = header;
+        if (header[0] === "mcp_servers" && header[1] && !byId.has(header[1])) byId.set(header[1], { args: [], disabled: new Set(), env: {} });
+        continue;
+      }
+      if (!section || section[0] !== "mcp_servers" || !section[1]) continue;
+      const rec = byId.get(section[1]);
+      if (!rec) continue;
+      if (section.length === 2) {
+        if (/^\s*enabled\s*=\s*false\b/.test(line)) rec.enabled = false;
+        const cmd = /^\s*command\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(line);
+        if (cmd) rec.command = unescape(cmd[1]);
+        const args = /^\s*args\s*=\s*\[(.*)\]/.exec(line);
+        if (args) rec.args = [...args[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => unescape(m[1]));
+        const disabled = /^\s*disabled_tools\s*=\s*\[(.*)\]/.exec(line);
+        if (disabled) rec.disabled = new Set([...disabled[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => unescape(m[1])));
+      } else if (section[2] === "env") {
+        const envLine = /^\s*([A-Za-z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(line);
+        if (envLine) rec.env[envLine[1]] = unescape(envLine[2]);
+      }
+    }
+    return [...byId.entries()]
+      .filter(([id, rec]) => rec.enabled === false && rec.command && id !== "rea")
+      .map(([id, rec]) => ({ id, conn: { command: String(rec.command), args: rec.args, env: rec.env }, disabled: rec.disabled }));
+  } catch { return []; }
+}
+
+/** 懒加载内置 MCP 的工具清单（先查后用；失败静默 = 该服务当前不可用）。 */
+async function listLazyBuiltinTools(): Promise<McpToolSpec[]> {
+  const servers = parseLazyBuiltinServers();
+  const out: McpToolSpec[] = [];
+  await Promise.all(servers.map(async ({ id, conn, disabled }) => {
+    try {
+      const tools = await Promise.race([
+        withStdio(conn, (s) => s.call("tools/list", {}).then(normalizeTools)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 12_000)),
+      ]);
+      for (const t of tools as Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>) {
+        if (!t.name || disabled.has(t.name)) continue;
+        out.push({
+          name: mcpToolName(id, t.name),
+          description: t.description || `${id} 提供的 ${t.name}`,
+          inputSchema: t.inputSchema || { type: "object", properties: {} },
+          serverId: id,
+          transport: "stdio",
+          serverUrl: "",
+          serverToken: "",
+          command: conn.command,
+          args: conn.args,
+          env: conn.env,
+          rawName: t.name,
+        });
+      }
+    } catch { /* 单个服务启动失败不影响其它服务 */ }
+  }));
+  return out;
+}
+
 /** 清 MCP 桥的缓存（连接器配置变了之后调，否则还是旧清单）。 */
 export function invalidateMcpBridgeCache(): void { cache = null; }
 
@@ -298,6 +371,13 @@ export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]>
     } catch (error: any) {
       console.warn(`[mcp-bridge] ${id} 跳过：${error?.message || error}`);
     }
+  }
+  /* 11-21：内置 MCP（Craft 全家桶 / 桌面后端 / UIA）已从引擎前缀摘走 ——
+     这里按需启动它们并把工具挂回 dynamicTools（名字是 `<server>__<tool>`，经 mcp_tools 查、mcp_call 调）。 */
+  const builtin = await listLazyBuiltinTools();
+  if (builtin.length) {
+    const seen = new Set(out.map((t) => t.name));
+    for (const t of builtin) if (!seen.has(t.name)) { out.push(t); seen.add(t.name); }
   }
   cache = { at: Date.now(), tools: out };
   return withReaBridge(out);

@@ -105,6 +105,8 @@ export function photocraftMcpSection(): string[] {
     `command = "${escape(cli)}"`,
     `args = ["mcp", "--no-gpu", "--automation-read-root", "${escape(ioRoot)}", "--automation-write-root", "${escape(ioRoot)}"]`,
     "startup_timeout_sec = 30",
+    /* 11-21：引擎侧停用（22KB schema 不进每轮前缀）；宿主 mcp_tools/mcp_call 按需启动。 */
+    "enabled = false",
     "",
   ];
 }

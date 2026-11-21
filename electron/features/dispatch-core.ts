@@ -159,14 +159,14 @@ function dispatchMcpTools(): unknown[] {
          语义保留（谁能调、默认开不开、以哪条告知为准），只是不再用公文腔。
          ⛔ 「只有用户直接创建的主会话可以调度」这句原文保留：守卫 11f 按它判。 */
       description:
-        "派一个独立子任务给专家 / 专家团 / 子智能体 / CLI，拿回产出。"
-        + "只有用户直接创建的主会话可以调度；被调度会话 / 团队成员 / 群成员 / 子智能体 / CLI 会话没有调度权限，调用会被拒绝。"
-        + "专家、团队成员（单个专家）、子智能体、CLI 随时可以直接派，不需要用户去勾任何开关；专家团默认关着，只有 team（整团）会被拒绝（member 是单个专家，不受影响），请用户打开「专家团」而不是反复重试。"
-        + "本会话现在能派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。",
+        "派一个独立子任务给专家 / 专家团成员 / 子智能体 / CLI，返回产出。"
+        + "只有用户直接创建的主会话可调度（被调度/团队/群/CLI 会话会被拒）。"
+        + "专家、单个成员、子智能体、CLI 默认可直接派；整团（team）默认关、需用户开。"
+        + "可派对象以会话里「调度范围已更新」的告知为准。",
       inputSchema: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["expert", "team", "member", "subagent", "cli"], description: "expert=单个专家；team=专家团（主理人按 SOP 调度）；member=专家团里的某个成员；subagent=子智能体；cli=本机命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。专家、子智能体、CLI 随时可派；专家团要用户先开" },
+          kind: { type: "string", enum: ["expert", "team", "member", "subagent", "cli"], description: "expert / team / member / subagent / cli" },
           name: { type: "string", description: "对象名称（专家名 / 团名 / 子智能体名）" },
           member: { type: "string", description: "kind=member 时的成员名" },
           query: { type: "string", description: "交给它的任务（要自包含：对方看不到本会话的上下文）" },

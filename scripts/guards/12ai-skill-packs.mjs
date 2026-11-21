@@ -156,5 +156,21 @@ ok(coreTools.every((name) => catalogTools.includes(name)), "【工具画像】CO
 ok(/export const TOOL_PROFILES_ENABLED\s*=\s*(true|false)/.test(profilesSrc), "【工具画像】有 TOOL_PROFILES_ENABLED 回滚开关（置 false 即恢复全量）");
 ok(/roleKeyOf/.test(profilesSrc) && /设计|engineering|工程/.test(profilesSrc), "【工具画像】岗位判定走 roleKeyOf（识别不出岗位时回落 CORE）");
 
+/* ── 11-21 首回合瘦身（用户令：前缀压到 ~30k token，能力不阉割）────────────────────────
+   三处必须同时成立，否则「省 token」会变成「功能消失」：
+     ① 内置 MCP 段 `enabled = false`（schema 不进引擎前缀）；
+     ② 宿主网关仍能按需拉起它们（parseLazyBuiltinServers）；
+     ③ 常驻指令走精简版，全文落盘 harness-dev-guide.md 可读。 */
+const applySrc = read("electron/features/custom-model-apply.ts");
+const bridgeSrc = read("electron/mcp-bridge.ts");
+ok((applySrc.match(/enabled = false/g) ?? []).length >= 5 && /enabled = false/.test(read("electron/photocraft.ts")) && /enabled = false/.test(read("electron/artcraft.ts")),
+  "【上下文】内置 MCP 默认 enabled=false（Craft/PhotoCraft/桌面后端/UIA/REA 不再常驻 schema）");
+ok(/parseLazyBuiltinServers/.test(bridgeSrc) && /listLazyBuiltinTools/.test(bridgeSrc) && /enabled === false/.test(bridgeSrc),
+  "【上下文】宿主网关按需拉起内置 MCP（能力保留：mcp_tools 查、mcp_call 调）");
+ok(/leanDevInstructions/.test(read("electron/developer-instructions.ts"))
+  && /lean: appSettings\.leanContext !== false/.test(read("electron/main/12-skill-discipline.ts"))
+  && /harness-dev-guide\.md/.test(applySrc),
+  "【上下文】常驻指令默认精简，完整细则落盘 harness-dev-guide.md 供按需读取");
+
 console.log(`\n【skill-packs】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

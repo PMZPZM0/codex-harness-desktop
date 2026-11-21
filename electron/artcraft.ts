@@ -514,6 +514,8 @@ export async function craftAppMcpPlan(): Promise<{ servers: string[]; previous: 
       `command = "${escape(app.cliPath)}"`,
       'args = ["mcp"]',
       "startup_timeout_sec = 30",
+      /* 11-21：引擎侧停用（每个 App 一条 MCP 段，全开会把首回合前缀撑爆）；宿主网关按需调用。 */
+      "enabled = false",
       "",
     );
   }

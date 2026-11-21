@@ -1446,6 +1446,10 @@ export async function bootApp() {
          判据与 rea 段的生成条件同源（reaServerScript 三查 + 随包 node），一次重写即收敛、幂等。 */
       const reaReady = Boolean(reaServerScript() && bundledNode());
       const reaMcpBad = reaMcpDrifted(configText, reaReady);
+      /* 11-21：精简指令模式的配套文件缺失 ⇒ 整份重写一次（写 config + 落盘 harness-dev-guide.md）。
+         ⛔ 不能只靠 instructionsOutdated：那条依赖「旧 config 与新版逐字不同」，某些升级路径
+            （配置被并行改写 / 老会话复制）可能正好包含新行 ⇒ 漏写 guide，「按需读取」入口悬空。 */
+      const leanGuideMissing = devInputNow.lean === true && !existsSync(path.join(codexHome, "harness-dev-guide.md"));
       // ⛔ 安装目录漂移（09-19 用户：「还有没有绝对路径的，通通查出来了解决掉」）：
       //   上面所有检查都只问「键**在不在**」，不问「路径**还对不对**」。而 config.toml 里的
       //   PATH / PYTHON / PYTHONHOME / tools 相关绝对路径是**按当时的安装目录生成**的 ——
@@ -1465,7 +1469,7 @@ export async function bootApp() {
       // 不该因为一个损坏的 json 把整段自愈判据一起带崩。
       // ⛔ 10-30 撤 nuphus 视觉 env 漂移判据：视觉辅助插件整体移除后
       //    原 nuphus-env 纯函数已删，老 config.toml 的残留 env 段由 preserveUserConfig 收敛（与「不需要 env」分支同型）。
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactKeyResidue || reaMcpBad) {
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactKeyResidue || reaMcpBad || leanGuideMissing) {
         console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactKeyResidue=${compactKeyResidue}, reaMcpBad=${reaMcpBad}; rewriting`);
         await applyCustomModel(custom);
       }
