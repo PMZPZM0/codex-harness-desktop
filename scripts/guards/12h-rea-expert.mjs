@@ -145,8 +145,11 @@ const ok = (condition, message) => {
   ok(/if \(leadOfTeam \|\| reaSpec\)/.test(delegation),
     "⛔ 复用中的专家会话也同步工具面（装包前建的会话不会永久缺 REA）");
   const boot = read("electron/features/boot.ts");
+  /* ⛔ 11-21：判据不钉 `|| reaMcpBad)` 的字面括号位置 —— 首回合瘦身在它后面追加了
+     `|| leanGuideMissing`，条件被合法扩展，旧正则却判红（守卫钉字面量而不是钉契约）。
+     契约只有一条：reaMcpBad 必须作为 OR 条件参与 drift 判定（追加别的条件不影响）。 */
   ok(/const reaMcpBad = reaMcpDrifted\(configText, reaReady\)/.test(boot)
-    && /\|\| reaMcpBad\)/.test(boot),
+    && /\|\| reaMcpBad\b/.test(boot),
     "⛔ boot 的 config drift 判据纳入 rea 段形态（否则外部 npx 段永远不自愈）");
   ok(/reaMcpDrifted\(cleaned, Boolean\(reaServerScript\(\) && bundledNode\(\)\)\)/.test(boot),
     "⛔ 无自定义模型分支也清理外部形态 rea 段（两条启动路径都收敛）");

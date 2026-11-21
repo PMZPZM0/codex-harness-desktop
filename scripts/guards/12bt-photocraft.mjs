@@ -88,7 +88,10 @@ const MEDIA = "src/features/status/TurnMediaCards.tsx";
     "MCP roots 限 photocraft-io（读/写各一条）");
   ok(/--no-gpu/.test(core), "MCP 默认 CPU 渲染（无显示环境也能跑）");
   const apply = read("electron/features/custom-model-apply.ts");
-  ok(/import \{[^}]*photocraftMcpSection[^}]*\} from "\.\.\/photocraft"/.test(apply) && /\.\.\.photocraftMcpSection\(\)/.test(apply),
+  /* ⛔ 11-21：调用点允许带参数 —— MCP 懒加载改造后传了 `!keepNativeMcp("photocraft")`
+     （默认引擎侧停用、宿主网关按需起；有 ask 规则时仍直连）。契约是「config 生成时拼入
+     MCP 段且没装就不写」，与是否传参无关，判据不再钉空参数表。 */
+  ok(/import \{[^}]*photocraftMcpSection[^}]*\} from "\.\.\/photocraft"/.test(apply) && /\.\.\.photocraftMcpSection\(/.test(apply),
     "config 生成时拼入 MCP 段（已安装才写）");
   ok(/PHOTOCRAFT_MCP_SERVER,[^]{0,120}?\.\.\.connectors/.test(apply) && /delete mcpOverrides\[PHOTOCRAFT_MCP_SERVER\]/.test(apply),
     "photocraft 段登记为 harness 所属并清掉旧覆盖快照（卸载后不被当作用户段复活）");
