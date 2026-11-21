@@ -67,6 +67,9 @@ export type AppSettings = {
   memoryBlockOrphanRecall?: boolean;
   /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.1~0.95，默认见 DEFAULT_AUTO_COMPACT_RATIO） */
   autoCompactRatio?: number;
+  /** 精简常驻指令（11-21，默认 true）：首回合前缀只留核心规则，详细条文按需读 harness-dev-guide.md。
+   *  false = 旧行为（完整 developer_instructions 直接进 config）。 */
+  leanContext?: boolean;
   /** Codex 引擎更新用的 HTTP 代理（如 http://127.0.0.1:7890）。空 = 国内镜像直连 */
   engineProxyUrl?: string;
   /** 硬件加速模式（主进程在 app ready 前同步读取并应用，重启生效）：

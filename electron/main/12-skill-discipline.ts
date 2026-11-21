@@ -67,6 +67,8 @@ export async function devInstructionsInput() {
        它就会在回复里承诺「我会把关键结论念给你」，而真播只会静默失败（用户实测）。 */
     announceEnabled: loadVoiceSettings(app.getPath("userData")).announce.enabled !== false
       && announceEngineReadyCached(),
+    /* 11-21：默认精简常驻指令（首回合前缀 ≤ ~30k token）。完整版落盘 guide，按需读取。 */
+    lean: appSettings.leanContext !== false,
   };
 }
 

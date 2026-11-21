@@ -14,7 +14,7 @@ import { app, safeStorage } from "electron";
 import { AGENT_DESKTOP_MCP_SERVER, COMPUTER_USE_MCP_SERVER, HARNESS_UIA_MCP_SERVER, agentDesktopDisabledTools, shouldRegisterAgentDesktop, shouldRegisterComputerUse, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
 import { safeProviderId } from "../provider-id";
 import { injectMcpToolRules, injectSectionExtras, tomlBareKey, writeTextFileAtomic } from "../config-toml";
-import { developerInstructionsLine } from "../developer-instructions";
+import { buildDevInstructions, developerInstructionsLine } from "../developer-instructions";
 import { PHOTOCRAFT_MCP_SERVER, photocraftMcpSection } from "../photocraft";
 import { craftAppMcpPlan } from "../artcraft";
 import { augmentedPath, bundledNode, bundledPython, agentDesktopLauncher, computerUseLauncher, harnessUiaServer, nuphusBinary, reaServerScript } from "../toolchain";
@@ -404,6 +404,14 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     path.join(codexHome, "config.toml"),
     injectMcpToolRules(injectSectionExtras(configText, preserved.sectionExtras), mcpToolRules),
   );
+  /* 11-21：精简常驻指令模式下，完整版工作细则落盘到 harness-dev-guide.md（不进前缀）。
+     ⛔ 模型需要细节时读它；删除/改名会让「按需读取」入口失效。 */
+  try {
+    await writeTextFileAtomic(
+      path.join(codexHome, "harness-dev-guide.md"),
+      `# Codex Harness 完整工作细则\n\n> 本文件是精简常驻指令的全文版（首回合默认只下发摘要）。需要细节时按小节读取。\n\n` + buildDevInstructions({ ...devInput, lean: false }),
+    );
+  } catch { /* 落盘失败只影响按需读取，不影响主流程 */ }
   // 官方订阅绝不能带 API Key：chatgpt 后端只认 ChatGPT 登录凭据，
   // 带上陈旧 sk- key 会 401 "api_key_not_supported" → 流无限重连（实证）。
   // 顺手把存档里的陈旧密钥清掉。

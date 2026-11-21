@@ -688,9 +688,16 @@ export async function run() {
   // ⑤b 内联自动压缩不结算（11-20 用户实测「刚压缩就弹成功，下面的『等待模型回复』这行就没了」）：
   //    压缩项所在回合还有真实内容 ⇒ 回合仍在等模型回复，结算交给 turn/completed；
   //    只有「整回合仅压缩项」的独立压缩回合才调用 settle。
-  (/const inlineCompaction = Boolean\(ownerTurn[\s\S]{0,260}?!isCompactionItem\(i\)\)/.test(part05Src)
+  //    ⛔ 11-21 二修（另一台电脑实测「压缩完后『等待模型回复』行就不展示了」）：
+  //       判据必须 **fail-safe** —— `Boolean(!ownerTurn || …)`：回合找不到（压缩完成事件
+  //       早于回合归位的竞态）= 信息不足 = **不结算**。旧写法 `Boolean(ownerTurn && …)`
+  //       在找不到时照样结算，正是两台电脑同版本行为不同的根因。两处结算点同判据。
+  (/const inlineCompaction = Boolean\(!ownerTurn[\s\S]{0,300}?!isCompactionItem\(i\)\)/.test(part05Src)
     && /if \(!inlineCompaction\) bag\.settleAfterCompaction\(tid0\);/.test(part05Src) ? ok : fail)(
-    "【163】内联自动压缩不结算运行态（压缩完成但回合还在等回复时，不许打掉「等待模型回复」行）"
+    "【163】内联自动压缩不结算运行态（判据 fail-safe：ownerTurn 找不到也**不**结算）"
+  );
+  (/const inlineCompaction = Boolean\(!activeTurn[\s\S]{0,300}?!isCompactionItem\(i\)\)/.test(part05Src) ? ok : fail)(
+    "【163】thread/compacted 分支同判据（activeTurn 找到且整回合仅压缩项才结算；找不到 = 不结算）"
   );
   // ⑤c turn/completed 兜底不许在压缩项还 inProgress 时报成功（11-20 用户实测：
   //    「刚刚开始压缩，就显示了压缩成功板块」—— 触发压缩的回合紧接着 turn/completed，

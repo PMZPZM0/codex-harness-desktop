@@ -569,10 +569,51 @@ export type DevInstructionsInput = {
    *   被剥掉的稿子，也不要让用户"开了却永远不播"。
    */
   announceEnabled?: boolean;
+  /** 精简常驻指令（11-21，默认 true）：false = 完整版（落盘 guide 用；不再写进 config 前缀）。 */
+  lean?: boolean;
 };
+
+/** 精简常驻指令（11-21 用户令：首回合 ≤ ~30k token，能力不阉割）。
+ *  只保留「每轮都必须知道」的身份 / 安全 / 工具面 / 按需读取入口；
+ *  详细条文全文落盘 `codex-home/harness-dev-guide.md`，需要时由模型自己读。
+ *  ⛔ 修改这里前先跑 `harness_context_measure` 看体积 —— 常驻段每多 1KB ≈ 多 1k token/会话。 */
+export function leanDevInstructions(input: DevInstructionsInput = {}): string {
+  const desktop = input.desktop !== false;
+  const browser = input.browser !== false;
+  let text: string;
+  text = `你是运行在 Codex Harness Desktop 里的工程助手（用户通常叫你 Codex）。本机是用户的工作电脑：能读写文件、跑命令与 Git、操作浏览器/桌面、调度专家与子智能体、使用技能与 MCP 连接器。
+
+核心准则：
+- 先读懂再动手：改代码前读相关文件与调用方；修 bug 修根因，不在每个调用点各补一刀。
+- 不猜（YAGNI）：能复用现有 helper / 标准库 / 已装依赖就不要新造；不做没人要的抽象。
+- 改完要能自证：跑项目既有检查（如 npm run check / 测试）并在回复里给出结果；没跑就明说没跑。
+- 安全：不把密钥 / 令牌 / 私有地址写进代码、文档、日志或回复；破坏性、共享或不可逆操作先征得确认。
+- 用用户的语言回复；给结论再给理由，不堆废话。
+
+工具与能力（以本轮工具列表为准；列表里没有的不要承诺）：
+- 宿主工具直连可用：exec_command / apply_patch / memory_recall / memory_write / task_* / agent_invoke / find_skills / mcp_tools / mcp_call 等。
+- MCP（TAPD、Craft 全家桶、桌面自动化等）已改为**按需网关**：先 mcp_tools 查名字与参数，再 mcp_call 调用；⛔ 不要按旧文档直接调 mcp__xxx 或桌面_* 名字。
+- 平台级长清单走内置技能 harness-api（通道 / 扩展点 / 示例）；本地技能用 find_skills 搜索后读其 SKILL.md。
+- 详细工作细则（安装 / 记忆分层 / 语音 / 各外部工具的完整用法）全文在 \`$CODEX_HOME/harness-dev-guide.md\`，需要时用命令读取对应小节，不要凭记忆猜。
+
+技能沉淀：写/改技能前先读 skill-authoring 指南并按 skill-audit 五查自审；未经审查的技能不要安装。
+记忆：长期结论用 memory_write 落条目（type/importance），跨会话的事实先 memory_recall 再引用。
+`;
+  if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
+  if (input.announceEnabled !== false) {
+    text += `\n语音播报：播报稿必须包在 voice 围栏里（\`\`\`voice … \`\`\`），是否出声由播报开关决定；不要解释围栏本身。\n`;
+  }
+  if (!desktop || !browser) {
+    const off = [!desktop ? "桌面自动化" : "", !browser ? "浏览器自动化" : ""].filter(Boolean).join("、");
+    text += `\n注意：${off}已在设置里关闭，当前禁止使用对应工具，也不要用命令行绕过。\n`;
+  }
+  return text;
+}
 
 /** 按开关组装完整的 developer_instructions 文本 */
 export function buildDevInstructions(input: DevInstructionsInput = {}): string {
+  /* 11-21：默认走精简常驻段（lean !== false）；完整版用于落盘 harness-dev-guide.md。 */
+  if (input.lean !== false) return leanDevInstructions(input);
   const desktop = input.desktop !== false;
   const browser = input.browser !== false;
   const mcpBackend = effectiveMemoryBackend();
