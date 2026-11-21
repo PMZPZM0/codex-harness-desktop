@@ -24,12 +24,13 @@ import type { VoiceExternalEngine } from "../../src/lib/voice-external-engines.m
 import { toolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
 import { listBundledVoices, readBuiltinVoice, readBundledVoice } from "./builtin-voices";
+import { purgeDirWithProgress } from "./model-purge";
 
 type InstalledInfo = { dir: string; adapter: string; installedAt: number; version?: string };
 type ExternalState = { version: 1; installed: Record<string, InstalledInfo>; active: string };
 type ExternalService = { state: "stopped" | "starting" | "running" | "error"; error?: string; child: ChildProcess | null; starting: Promise<void> | null };
 
-export type ExternalProgressEvent = { id: string; kind: "download" | "downloadDone" | "service"; percent: number; message: string; ok?: boolean; error?: string; service?: string };
+export type ExternalProgressEvent = { id: string; kind: "download" | "downloadDone" | "remove" | "removeDone" | "service"; percent: number; message: string; ok?: boolean; error?: string; service?: string };
 
 const SERVICES = new Map<string, ExternalService>();
 let progressSink: ((event: ExternalProgressEvent) => void) | null = null;
@@ -709,19 +710,46 @@ async function installPythonEngine(entry: VoiceExternalEngine, install: any, sig
   saveInstalled(entry.id, { dir: appDir, adapter, installedAt: Date.now(), version: String(install.commit ?? install.version ?? "").slice(0, 12) });
 }
 
-/** 删除一个引擎（先停服务，再删目录）。 */
-export function removeExternalEngine(id: string): { ok: boolean; error?: string } {
+/**
+ * 删除一个引擎（先停服务，再删目录）。
+ *
+ * ⛔⛔ 11-22 用户实测「所有语音模型卸载都没有反馈，也没有气泡小弹窗提醒」+ 截图标题栏是
+ *   **「Codex Harness Desktop（未响应）」**。真因不是"没写提示"，而是这里原来是**同步**的：
+ *   `rmSync(recursive)` 删的是一个 8GB 级目录（GPT-SoVITS 8.2GB、CosyVoice 带 venv 几万个小文件）。
+ *   主进程被这一个调用卡住十几秒到几分钟 ⇒ 窗口「未响应」、IPC 回不去 ⇒ 前端那句
+ *   `onNotice("…已卸载")` 根本没机会执行，用户看到的就是「点了没反应」。
+ *   ⇒ 改成**异步逐文件删除 + 进度事件**（复用 model-purge：带 EBUSY 退避重试），
+ *     每删一批就推 `kind:"remove"`，前端出百分比；完成/失败再推 removeDone。
+ */
+export async function removeExternalEngine(id: string): Promise<{ ok: boolean; error?: string }> {
   const entry = externalEngineById(id);
   if (!entry) return { ok: false, error: "未知的引擎" };
   stopService(id);
   const state = loadState();
   const info = state.installed[id];
-  if (info?.dir) {
-    try { rmSync(join(enginesRoot(), id), { recursive: true, force: true }); } catch (error: any) { return { ok: false, error: String(error?.message ?? error) }; }
+  const dir = join(enginesRoot(), id);
+  if (info?.dir || existsSync(dir)) {
+    try {
+      const result = await purgeDirWithProgress(dir, (progress) =>
+        emit({ id, kind: "remove", percent: progress.percent / 100, message: progress.message }),
+      );
+      if (!result.ok) {
+        const preview = result.failed.slice(0, 2).map((item) => item.reason).join("；");
+        emit({ id, kind: "removeDone", percent: 1, message: "卸载未完成", ok: false, error: preview });
+        return { ok: false, error: `${result.failed.length} 个文件没删掉（${preview}）—— 引擎进程可能还在跑，稍后重试` };
+      }
+    } catch (error: any) {
+      const message = String(error?.message ?? error);
+      emit({ id, kind: "removeDone", percent: 1, message: "卸载失败", ok: false, error: message });
+      return { ok: false, error: message };
+    }
   }
+  /* 状态在删完之后才落盘：中途失败时「已安装」还留着，用户可以直接再点一次卸载（而不是卡在
+     「显示未安装、目录还占着 8GB」的半死状态）。 */
   delete state.installed[id];
   if (state.active === id) state.active = "";
   saveState(state);
+  emit({ id, kind: "removeDone", percent: 1, message: "已卸载", ok: true });
   return { ok: true };
 }
 

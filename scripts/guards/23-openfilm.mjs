@@ -171,8 +171,8 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
   ok(studio.includes("fs.existsSync(cwd)") && studio.includes("mkdirSync(cwd, { recursive: true })") && studio.includes("OF_E_STUDIO"),
     "Studio cwd 不存在时先创建，失败回可读错误（⛔ 不再 spawn ENOENT）");
   const bridge = code("src/features/openfilm/OpenfilmBridge.tsx");
-  ok(/phase .*!== "studio"/.test(bridge) && /openInBrowserPane\(url\)/.test(bridge),
-    "渲染层把 studio 事件开进内置浏览器（OpenfilmBridge）");
+  ok(/phase .*!== "studio"/.test(bridge) && /browserPopout\?\.\(url\)/.test(bridge),
+    "渲染层把 studio 事件开在独立预览窗口（OpenfilmBridge → browser:popout，⛔ 不再占右栏）");
   ok(/<OpenfilmBridge app=\{\{ openInBrowserPane: app\.openInBrowserPane/.test(code("src/features/app-view/AppView.tsx")),
     "OpenfilmBridge 已在 AppView 挂载（不挂 = 事件没人接）");
 }
@@ -293,10 +293,10 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
   ok(/if \(origin\) writeSession\(session\)/.test(studio),
     "拿到 URL 就落盘 session（health 竞态不许吞掉唯一一份页面地址）");
   const bridge = code("src/features/openfilm/OpenfilmBridge.tsx");
-  ok(/const alreadyShowing = url === lastUrlRef\.current/.test(bridge) && /rightTab \?\? ""\) === "browser"/.test(bridge),
-    "Studio 事件去重看「同 URL + 右栏正开着浏览器页」（⛔ 关掉右栏后再点按钮不能静默无反应）");
-  ok(/rightOpen: app\.rightOpen, rightTab: app\.rightTab/.test(code("src/features/app-view/AppView.tsx")),
-    "OpenfilmBridge 拿到右栏状态（不传就退化成老的 URL 去重）");
+  ok(/const lastOpenRef = useRef<\{ url: string; at: number \} \| null>/.test(bridge) && /Date\.now\(\) - last\.at < 1500/.test(bridge),
+    "Studio 事件 1.5s 时间去重（同 URL 立即重放只开一个窗口；关掉后再点是新事件 ⇒ 能重开）");
+  ok(/<OpenfilmBridge app=\{\{ openInBrowserPane: app\.openInBrowserPane, setNotice: app\.setNotice \}\} \/>/.test(code("src/features/app-view/AppView.tsx")),
+    "OpenfilmBridge 已在 AppView 挂载（只传通知 + 右栏兜底，不再需要右栏状态）");
 
 /* ── 10. 技能：内置一份手册，正文与工具实现一致 ───────────────────────── */
 {

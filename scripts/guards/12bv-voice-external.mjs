@@ -175,7 +175,7 @@ ok(ui.includes("voice-ext-service-error") && css.includes(".voice-ext-service-er
 
 /* ── 11-17 用户实测两连：「模型一直加载中」「每个语音模型没有音色选择」 ── */
 const builtin = read("electron/voice/builtin-voices.ts");
-ok(/kind: "download" \| "downloadDone" \| "service"/.test(main) && /function emitService/.test(main)
+ok(/kind: "download" \| "downloadDone".*"service"/.test(main) && /function emitService/.test(main)
   && /emitService\(id, service\)/.test(main) && /type === "service"/.test(ui)
   && /setInterval\(\(\) => refresh\(\), 2000\)/.test(ui),
   "服务状态 starting→running/error 主动推给界面 + 启动中 2s 轮询（不再永远停在「启动中」）");
@@ -241,6 +241,23 @@ ok((catalog.match(/platforms: \["win32"\]/g) || []).length === 4
 ok(/engine\.supported === false/.test(ui) && /当前平台不可用/.test(ui)
   && /只适配 Windows/.test(ui) && /macOS 用基础模型 \/ MOSS/.test(ui),
   "mac 适配：不支持平台的引擎不提供安装/配置入口，卡片标「当前平台不可用」并指路基础模型/MOSS");
+
+/* ── 卸载不许卡死主进程（11-22 用户实测「卸载都没有反馈，也没有气泡小弹窗」，截图标题栏「未响应」）──
+   ⛔ 旧实现 `rmSync(recursive)` 删 8GB 级目录 ⇒ 主进程被一个调用卡住几分钟：窗口未响应、
+      IPC 回不去 ⇒ 前端那句 onNotice 根本没机会执行 = 「点了没反应」。三条一起钉：
+      ① 卸载必须是 async 且逐文件删（复用 model-purge）；
+      ② 必须推 remove/removeDone 事件（否则前端没东西可画）；
+      ③ 前端必须真的渲染这个进度，且失败要把原因说清。 */
+ok(/export async function removeExternalEngine\(/.test(main)
+  && /purgeDirWithProgress\(dir/.test(main)
+  && !/rmSync\(join\(enginesRoot\(\), id\), \{ recursive: true, force: true \}\)/.test(main),
+  "外部引擎卸载异步逐文件删（⛔ 不许 rmSync 删 8GB 目录把主进程卡到「未响应」）");
+ok(/kind: "remove", percent: progress\.percent \/ 100/.test(main)
+  && /kind: "removeDone"/.test(main),
+  "卸载过程推 remove / removeDone 进度事件（含失败原因）");
+ok(/type === "remove"/.test(ui) && /removing\[configEngine\.id\]/.test(ui)
+  && /removingNow &&/.test(ui) && /卸载中…/.test(ui),
+  "界面渲染卸载进度（配置弹窗 + 卡片两处），按钮在卸载中显示「卸载中…」");
 
 ok(String(pkg.scripts?.check ?? "").includes("12bv-voice-external"), "守卫 12bv 已加入 package.json 的 check 链");
 

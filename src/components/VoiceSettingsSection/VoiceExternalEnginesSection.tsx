@@ -78,6 +78,13 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
   const [category, setCategory] = useState("all");
   const [expanded, setExpanded] = useState(false);
   const [progress, setProgress] = useState<Record<string, { percent: number; message: string }>>({});
+  /**
+   * 卸载进度（与安装分开一份）。
+   * ⛔ 11-22 用户实测「所有语音模型卸载都没有反馈，也没有气泡小弹窗提醒」，截图标题栏是
+   *    「未响应」—— 真因是主进程同步 rmSync 删 8GB 目录把整个应用卡死（见 removeExternalEngine）。
+   *    现在删除改成异步逐文件 + 推 remove 事件，这里必须**渲染出来**，否则等于没修。
+   */
+  const [removing, setRemoving] = useState<Record<string, { percent: number; message: string }>>({});
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   /* 不可安装的平台型卡片（Fish / Zonos 等）没有配置弹窗，详情就在卡内展开。 */
@@ -121,6 +128,22 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
         const percent = Number((event as { percent?: number })?.percent ?? -1);
         const message = String((event as { message?: string })?.message ?? "");
         setProgress((current) => ({ ...current, [id]: { percent, message } }));
+        return;
+      }
+      /* 卸载进度（11-22）：主进程逐文件删 8GB 级目录时每批推一次，界面必须动起来。 */
+      if (type === "remove") {
+        const percent = Number((event as { percent?: number })?.percent ?? -1);
+        const message = String((event as { message?: string })?.message ?? "");
+        setRemoving((current) => ({ ...current, [id]: { percent, message } }));
+        return;
+      }
+      if (type === "removeDone") {
+        setRemoving((current) => { const next = { ...current }; delete next[id]; return next; });
+        refresh();
+        const ok = Boolean((event as { ok?: boolean })?.ok);
+        const error = String((event as { error?: string })?.error ?? "");
+        if (ok) onNotice("已卸载（安装目录已删除）");
+        else onNotice(`卸载失败：${error || "未知错误"}`);
         return;
       }
       if (type === "downloadDone") {
@@ -179,6 +202,9 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
   const visible = category === "all" && !expanded ? recommended : filtered;
   const hiddenCount = Math.max(0, filtered.length - visible.length);
   const configEngine = configId ? engines.find((engine) => engine.id === configId) : undefined;
+  /* 弹窗顶部的进度条：安装与卸载共用一条位置（同一时刻只会有一个在进行）。 */
+  const configBusy = configEngine ? removing[configEngine.id] ?? progress[configEngine.id] : undefined;
+  const configRemoving = Boolean(configEngine && removing[configEngine.id]);
 
   /** 每个引擎自己的音色（默认音色 / 模型说话人 / 我的音色）——三组分开列，不再混在一个下拉里。 */
   const myProfiles = profiles.filter((profile) => !profile.builtIn);
@@ -315,13 +341,21 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
       return;
     }
     setConfirmRemove(null);
+    /* ⛔ 11-22：先落「正在卸载」态再 await —— 删除期间界面必须有东西在动。 */
+    setRemoving((current) => ({ ...current, [engine.id]: { percent: -1, message: "正在停止引擎并删除文件…" } }));
     try {
       const result = await window.codex.voiceExternalRemove(engine.id);
-      onNotice(result?.ok ? `${engine.name} 已卸载` : `卸载失败：${result?.error ?? "未知"}`);
-      setConfigId(null);
+      if (result?.ok) {
+        onNotice(`${engine.name} 已卸载`);
+        setConfigId(null);
+      } else {
+        onNotice(`卸载失败：${result?.error ?? "未知"}`);
+      }
       refresh();
     } catch (error) {
       onNotice(`卸载失败：${String((error as Error)?.message ?? error)}`);
+    } finally {
+      setRemoving((current) => { const next = { ...current }; delete next[engine.id]; return next; });
     }
   };
 
@@ -364,6 +398,8 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
       <div className="voice-ext-grid">
         {visible.map((engine) => {
           const running = progress[engine.id];
+          /* 卸载进度（11-22）：卡片上也要看得到 —— 用户可能已经关掉配置弹窗。 */
+          const removingNow = removing[engine.id];
           /* 11-17 mac 适配：当前平台不支持的引擎与「纯展示卡片」同一处理 —— 不提供安装/配置入口。 */
           const unsupported = engine.supported === false;
           const isExternalOnly = engine.kind !== "engine" || !engine.installable || unsupported;
@@ -401,6 +437,18 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                     <small>{running.message || "安装中…"}</small>
                     <b>{running.percent >= 0 ? `${Math.round(running.percent)}%` : "…"}</b>
                     <button type="button" className="voice-engine-cancel" onClick={() => cancelInstall(engine)}><X size={12} />取消</button>
+                  </div>
+                </div>
+              )}
+
+              {removingNow && (
+                <div className="voice-engine-progress" data-engine-removing={engine.id}>
+                  <div className="voice-engine-progress-bar">
+                    <span style={{ width: `${removingNow.percent >= 0 ? Math.min(99, removingNow.percent) : 8}%` }} />
+                  </div>
+                  <div className="voice-engine-progress-line">
+                    <small>{removingNow.message || "正在卸载…"}</small>
+                    <b>{removingNow.percent >= 0 ? `${Math.round(removingNow.percent)}%` : "…"}</b>
                   </div>
                 </div>
               )}
@@ -480,15 +528,18 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
           onClose={() => setConfigId(null)}
         >
           <div className="settings-section stack voice-ext-config">
-            {progress[configEngine.id] && (
+            {configBusy && (
               <div className="voice-engine-progress">
                 <div className="voice-engine-progress-bar">
-                  <span style={{ width: `${Math.max(0, Math.min(99, progress[configEngine.id].percent))}%` }} />
+                  <span style={{ width: `${Math.max(0, Math.min(99, configBusy.percent))}%` }} />
                 </div>
                 <div className="voice-engine-progress-line">
-                  <small>{progress[configEngine.id].message || "安装中…"}</small>
-                  <b>{progress[configEngine.id].percent >= 0 ? `${Math.round(progress[configEngine.id].percent)}%` : "…"}</b>
-                  <button type="button" className="voice-engine-cancel" onClick={() => cancelInstall(configEngine)}><X size={12} />取消</button>
+                  <small>{configBusy.message || (configRemoving ? "正在卸载…" : "安装中…")}</small>
+                  <b>{configBusy.percent >= 0 ? `${Math.round(configBusy.percent)}%` : "…"}</b>
+                  {/* 卸载不可取消（删到一半停手只会留下半残目录）；安装才给取消 */}
+                  {!configRemoving && configEngine && (
+                    <button type="button" className="voice-engine-cancel" onClick={() => cancelInstall(configEngine)}><X size={12} />取消</button>
+                  )}
                 </div>
               </div>
             )}
@@ -518,8 +569,8 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                       <button type="button" className="secondary-setting" onClick={() => void window.codex.voiceExternalReveal(configEngine.id).catch(() => undefined)}><FolderOpen size={13} />打开目录</button>
                       <button type="button" className="secondary-setting" onClick={() => open(configEngine)}><ExternalLink size={13} />打开官网</button>
                       <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(configEngine.repo).catch(() => undefined)}>项目主页</button>
-                      <button type="button" className="secondary-setting danger" onClick={() => void remove(configEngine)}>
-                        <Trash2 size={13} />{confirmRemove === configEngine.id ? "确认卸载" : "卸载"}
+                      <button type="button" className="secondary-setting danger" disabled={Boolean(removing[configEngine.id])} onClick={() => void remove(configEngine)}>
+                        <Trash2 size={13} />{removing[configEngine.id] ? "卸载中…" : confirmRemove === configEngine.id ? "确认卸载" : "卸载"}
                       </button>
                     </div>
                   </>

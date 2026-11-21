@@ -597,7 +597,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
       {/* 本机测试端口（10-29）：当前会话命令输出里出现带端口的 localhost ⇒ 自动开右栏浏览器 + 加宽 */}
       {!popoutThreadId && <DevPortBridge app={app} threadId={thread?.id ?? ""} />}
-      <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice, rightOpen: app.rightOpen, rightTab: app.rightTab }} />
+      <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} />
       {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <RightFileBridge app={app} />}
       {!popoutThreadId && <RemoteAskBridge agentAsk={agentAsk} setAgentAsk={setAgentAsk} />}

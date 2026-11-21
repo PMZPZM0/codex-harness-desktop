@@ -133,7 +133,7 @@ export function OpenfilmCard() {
     } finally { setBusy(false); }
   };
 
-  /* 「打开 Studio」= 连接与配对：主进程跑 open（幂等），事件回来时 OpenfilmBridge 会开进内置浏览器。
+  /* 「打开 Studio」= 连接与配对：主进程跑 open（幂等），事件回来时 OpenfilmBridge 会开在独立预览窗口（不再占用右栏）。
      ⛔ 不传 filmDir：不带参数是上游定义的"打开上次那部 / 当前目录那部"，正是卡片按钮的语义。 */
   const openStudio = async () => {
     setBusy(true); setNotice(null);
