@@ -40,7 +40,7 @@
     "@google/model-viewer": "^4.4.0",
     "@larksuiteoapi/node-sdk": "^1.76.0",
     "@lydell/node-pty": "^1.2.0-beta.18",
-    "@openai/codex": "^0.170.0",
+    "@openai/codex": "^0.171.0",
     "@tsparticles/engine": "^4.6.0",
     "@tsparticles/react": "^4.6.0",
     "@types/react-syntax-highlighter": "^15.5.13",

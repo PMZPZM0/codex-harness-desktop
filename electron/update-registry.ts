@@ -209,6 +209,21 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
     dynamic: false,
   },
   {
+    /* 11-21 用户令「Playwright 浏览器自动化 更新一下」：它是脚本化/批量那一条（交互仍走 Ego Lite），
+       之前只能靠用户自己 `npm i -D playwright`，装没装、新不新都没有地方看。
+       ⛔ 只有手动入口：包体 + Chromium 二进制约 300MB，不进后台自动更新名单
+          （autoUpdateItems 的 toolKeys 没给它键 ⇒ 后台循环不碰它）。 */
+    id: "playwright",
+    kind: "npm-tool",
+    label: "Playwright 浏览器自动化",
+    group: "工具",
+    pkg: "playwright",
+    channel: "npm",
+    mirror: true,
+    reason: "npm 包，走 npmmirror；浏览器二进制从 cdn.npmmirror.com/binaries/playwright 取（首次安装约 124MB）",
+    dynamic: false,
+  },
+  {
     /* ⛔ 11-21 收编：原先它是编排层（auto-update-ipc.scanAll）里**硬编码补出来的一行**，
        台账里查不到 —— 违反「清单只认 update-registry」（守卫 12l ①）。
        现在登记成 external：没有可查询的远端版本，更新 = 跑它自己的官方 updater。 */

@@ -388,9 +388,12 @@ const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shim
 
 /** 需要放行 postinstall 的包（**只放行点名的包**，⛔ 不全局放开脚本）。
  *  ⛔ 安装与**在线更新**是两条调用路径，名单必须同一份 —— 只在安装分支放行的话，
- *    更新走的就是「装出空壳」（飞书 CLI 的二进制全靠 postinstall 下载）。 */
-const NPM_ALLOW_SCRIPTS: Partial<Record<DevRuntimeId, string[]>> = {
+ *    更新走的就是「装出空壳」（飞书 CLI 的二进制全靠 postinstall 下载）。
+ *  ⛔ 键类型是 string 而不是 DevRuntimeId：playwright 只是「可更新条目」（UPDATEABLE_TOOLS），
+ *    不在开发工具页的安装清单里 —— 它靠 postinstall 把 Chromium 对齐到包版本。 */
+const NPM_ALLOW_SCRIPTS: Partial<Record<string, string[]>> = {
   "feishu-cli": ["@larksuite/cli"],
+  playwright: ["playwright"],
 };
 
 
@@ -511,6 +514,11 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
         };
         // 空串 = 不设 registry，npm 回落到官方源
         if (registry) env.npm_config_registry = registry;
+        /* Playwright 的 postinstall 要从它自己的 CDN 拉 Chromium：不换镜像在国内基本拉不动
+           （官方 azureedge 常年超时）。⛔ 显式设了 PLAYWRIGHT_DOWNLOAD_HOST 的用户优先。 */
+        if (pkg.startsWith("playwright") && !env.PLAYWRIGHT_DOWNLOAD_HOST) {
+          env.PLAYWRIGHT_DOWNLOAD_HOST = "https://cdn.npmmirror.com/binaries/playwright";
+        }
         const scriptFlags = allowScripts.map((name) => `--allow-scripts=${name}`);
         const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund", ...scriptFlags], { windowsHide: true, env });
         trackRuntimeProc(id, child);
@@ -1004,6 +1012,10 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
      会把刚装好的包装成「一启动就 exit 1」。pin = 兼容上限，理由与解除条件见 rea-gateway.ts。 */
   rea: { pkg: "rea-agents", label: "REA 逆向分析", pin: REA_PINNED_VERSION },
   "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },
+  /* 11-21：Playwright 纳入可更新（脚本化/批量那条通道）。⛔ 不进后台自动更新：
+     autoUpdateItems 的 toolKeys 没给它键，只有控制台的手动「更新」会动它
+     （npm 包 + Chromium 二进制约 300MB，不许无人值守重下）。 */
+  playwright: { pkg: "playwright", label: "Playwright 浏览器自动化" },
 };
 
 /** pip 型可更新工具（PyPI）：id → PyPI 包名 + 显示名。
