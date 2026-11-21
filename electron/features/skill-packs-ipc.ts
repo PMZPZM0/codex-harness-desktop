@@ -89,9 +89,14 @@ async function listFiles(dir: string, base = dir, depth = 0): Promise<string[]> 
 
 async function packState(pack: SkillPackDef) {
   const marker = await readMarker(pack.id);
-  /* 随包内置的包没有 marker（不是下载装的）⇒ 技能列表直接扫 resources/expert-skills/<dir>。 */
+  /* ⛔⛔ 11-21 修「别的电脑安装不了 / 装了也不更新状态」（用户实测）：
+     旧实现把 `bundledSkillsOf`（**随包源目录**的清单）直接当 `installed` ⇒ 只要安装包完整，
+     每台机器都显示「已安装」，跟用户装没装完全无关；点「更新」拷完也看不出任何变化。
+     ⇒ 源清单与装态必须分开：bundledSkills = 可装清单（源里有什么），
+       installed = 用户技能目录里真实存在且有本包凭据的那几个。 */
+  const bundledSkills = pack.bundled ? await bundledSkillsOf(pack.bundled.dir) : [];
   const present = pack.bundled
-    ? await bundledSkillsOf(pack.bundled.dir)
+    ? await installedBundledOf(pack.id, bundledSkills)
     : marker
       ? marker.skills.filter((folder) => existsSync(path.join(skillsRoot(), folder, "SKILL.md")))
       : [];
@@ -105,7 +110,9 @@ async function packState(pack: SkillPackDef) {
     bundled: Boolean(pack.bundled),
     /** 市场原位注册的内置包：界面不提供「更新」（随应用升级）。 */
     bundledMarket: Boolean(pack.bundled?.market),
-    installed: pack.bundled ? present.length > 0 : Boolean(marker) && present.length > 0,
+    /** 随包源里可装的技能（界面预览用；⛔ 它不是装态）。 */
+    bundledSkills,
+    installed: present.length > 0,
     installedSkills: present,
     installedAt: marker?.installedAt ?? "",
     /** 技能根目录（界面「打开技能目录」用；用户本来就有这个目录） */
@@ -140,11 +147,34 @@ async function skillNameFromFile(dir: string): Promise<string> {
   } catch { return ""; }
 }
 
-/** 随包内置技能：扫 resources/expert-skills/<dir>（根 SKILL.md 或 skills/<n>/SKILL.md）。 */
+/** 随包内置技能：扫 resources/expert-skills/<dir>（根 SKILL.md 或 skills/<n>/SKILL.md）。
+ *  ⛔ 这是「**源**里有哪些技能（可装清单）」，**不是**用户装没装 —— 装态见 installedBundledOf。 */
 function bundledBaseDir(dir: string): string {
   const root = path.join(process.resourcesPath ?? "", "expert-skills", dir);
   const fallback = path.join(app.getAppPath(), "resources", "expert-skills", dir);
   return existsSync(root) ? root : fallback;
+}
+
+/**
+ * 随包技能里**真正装到用户技能目录**的那几个。
+ *
+ * ⛔ 11-21 修「别的电脑安装了也不更新状态」：旧实现把 `bundledSkillsOf`（源目录清单）直接当成
+ *   `installed` ⇒ 只要安装包完整，**每台机器都显示已安装**，与用户装没装无关；界面因此只给
+ *   「更新」、点完也看不到任何变化。判据必须落在用户技能目录：目录里有 SKILL.md **且**凭据
+ *   `.skill-pack.json` 的 packId 是本包（用户自己的同名技能没有凭据，不算）。
+ */
+async function installedBundledOf(packId: string, names: string[]): Promise<string[]> {
+  const root = skillsRoot();
+  const out: string[] = [];
+  for (const name of names) {
+    const dir = path.join(root, name);
+    if (!existsSync(path.join(dir, "SKILL.md"))) continue;
+    try {
+      const stamp = JSON.parse(await fs.readFile(path.join(dir, ".skill-pack.json"), "utf8")) as { packId?: string };
+      if (String(stamp?.packId ?? "") === packId) out.push(name);
+    } catch { /* 没有凭据 ⇒ 不是本包装的（用户自己的同名技能），不认 */ }
+  }
+  return out;
 }
 
 async function bundledSkillsOf(dir: string): Promise<string[]> {
@@ -203,8 +233,24 @@ async function syncBundledPack(pack: SkillPackDef, emit: (stage: string, message
     installed.push(item.name);
   }
   if (installed.length) {
+    /* ⛔ 11-21：随包包也要写**包级凭据**（与下载型同一份文件）。
+       之前只写了每个技能目录里的 `.skill-pack.json`、没有包级 marker ⇒
+       uninstallPack 直接报「这个包不是通过本页安装的」，装完也没法卸。 */
+    const previous = await readMarker(pack.id);
+    const merged = [...new Set([...(previous?.skills ?? []), ...installed])];
+    await fs
+      .writeFile(
+        markerFile(pack.id),
+        JSON.stringify({ packId: pack.id, repo: "bundled", skills: merged, installedAt: new Date().toISOString() }, null, 2),
+        "utf8",
+      )
+      .catch(() => undefined);
     emit("restart", "正在让引擎重新扫描技能…");
-    await server.restart();
+    /* ⛔ 重启失败不许把「技能已经拷好」报成安装失败：文件已落盘，引擎下次扫描就能发现。
+       （旧实现直接 await，引擎忙/重启被拒时前端显示失败，但技能其实装了 ⇒ 状态与事实不符。） */
+    await server.restart().catch((error: Error) => {
+      emit("restart", `技能已写入，但引擎重启失败（下次启动会自动扫描）：${error?.message ?? error}`);
+    });
   }
   return { installed, skipped, rejected: [], bytes: 0 };
 }
@@ -356,11 +402,19 @@ async function installPack(id: string, signal?: AbortSignal, options: { update?:
  */
 async function uninstallPack(id: string): Promise<{ removed: string[]; remaining: string[]; kept: string[] }> {
   const marker = await readMarker(id);
-  if (!marker) throw new Error("这个包不是通过本页安装的，未做删除");
+  const pack = SKILL_PACKS.find((entry) => entry.id === id);
+  /* ⛔ 11-21：随包包早年**只写了目录级凭据**、没有包级 marker ⇒ 装完点卸载会报
+     「这个包不是通过本页安装的」。没有 marker 时按目录凭据（packId=本包）现场扫一遍。 */
+  let folders = marker?.skills ?? [];
+  if (!folders.length) {
+    if (!pack?.bundled) throw new Error("这个包不是通过本页安装的，未做删除");
+    folders = await installedBundledOf(id, await bundledSkillsOf(pack.bundled.dir));
+    if (!folders.length) throw new Error("没有找到本包装过的技能目录，未做删除");
+  }
   const root = path.resolve(skillsRoot());
   const owned: string[] = [];
   const kept: string[] = [];
-  for (const folder of marker.skills) {
+  for (const folder of folders) {
     const target = path.resolve(root, folder);
     // ⛔ 目录穿越闸：只处理技能根目录内、且是自己 marker 记下的目录
     if (!target.startsWith(root + path.sep)) continue;
@@ -378,8 +432,16 @@ async function uninstallPack(id: string): Promise<{ removed: string[]; remaining
   }
   const remaining = owned.filter((folder) => existsSync(path.join(root, folder)));
   if (remaining.length) {
-    // 有删不掉的（被占用/权限）：marker 只留剩下的，下次还能继续清
-    await fs.writeFile(markerFile(id), JSON.stringify({ ...marker, skills: remaining }, null, 2), "utf8").catch(() => undefined);
+    /* 有删不掉的（被占用/权限）：marker 只留剩下的，下次还能继续清。
+       ⛔ marker 可能本来就是空的（随包包早年只写了目录凭据）⇒ 显式补全字段，不 spread null。 */
+    const next: PackMarker = {
+      id,
+      repo: marker?.repo ?? "bundled",
+      license: marker?.license ?? "",
+      skills: remaining,
+      installedAt: marker?.installedAt ?? new Date().toISOString(),
+    };
+    await fs.writeFile(markerFile(id), JSON.stringify(next, null, 2), "utf8").catch(() => undefined);
   } else {
     await fs.rm(markerFile(id), { force: true });
   }

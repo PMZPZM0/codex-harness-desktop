@@ -31,6 +31,8 @@ type SkillPackRow = {
   description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string;
   /* 11-19：分类分组 / 包内技能（「拆开」后逐条可见）/ 配套专家 */
   category?: string; skills?: string[]; experts?: string[]; bundled?: boolean; bundledMarket?: boolean; version?: string;
+  /* 11-21：随包源里**可装**的技能清单（⛔ 不是装态；装态看 installed / installedSkills） */
+  bundledSkills?: string[];
   /* 11-20：第三方内容的使用声明（风险边界 / 署名 / 许可限制），原样展示、不在这里改写 */
   notice?: string;
 };
@@ -159,26 +161,29 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     let action = null as ReactNode;
     if (row.bundled && row.bundledMarket) action = <em className="skill-pack-state">随包内置 · 随应用更新</em>;
     else if (isBusy) action = <button type="button" className="secondary-setting skill-pack-cancel" onClick={() => void cancel(row)}>取消</button>;
-    else if (row.bundled) {
-      /* 11-19 用户令：「精选技能包都要支持更新」——随包内置也能更新：
-         把 resources 里的技能同步进技能目录（覆盖本包旧拷贝）并重启引擎。 */
+    else if (row.installed) {
+      /* 装了（不论随包还是下载）：给「更新 + 卸载」。
+         ⛔ 11-21 修「安装了也不更新状态」：旧实现把 bundled 包**一律**显示成
+         「更新 + 随包内置」，装没装一个样（后端把源目录当装态）；现在装态来自用户技能目录，
+         所以已经装了的随包包也走这一支，卸载对随包包同样有效（删本包拷贝、不动源文件）。 */
       action = (
         <span className="skill-pack-actions-pair">
-          <button type="button" className="secondary-setting" disabled={isBusy} title="把随包技能同步到技能目录（应用升级后点这里刷新）" onClick={() => void install(row, true)}>
-            <RefreshCw size={13} />更新
-          </button>
-          <em className="skill-pack-state">随包内置</em>
-        </span>
-      );
-    } else if (row.installed) {
-      action = (
-        <span className="skill-pack-actions-pair">
-          <button type="button" className="secondary-setting" disabled={isBusy} title="重新下载并覆盖本包装的技能（上游更新后点这里）" onClick={() => void install(row, true)}>
+          <button type="button" className="secondary-setting" disabled={isBusy} title="重新同步本包技能（随包包从安装目录拷，下载型走镜像）" onClick={() => void install(row, true)}>
             <RefreshCw size={13} />更新
           </button>
           <button type="button" className="secondary-setting skill-pack-remove" disabled={isBusy} onClick={() => void uninstall(row)}>
             <Trash2 size={13} />卸载
           </button>
+        </span>
+      );
+    } else if (row.bundled) {
+      /* 随包但**还没装**到技能目录 ⇒ 主按钮就是「安装」（技能源在安装包里，不需要下载）。 */
+      action = (
+        <span className="skill-pack-actions-pair">
+          <button type="button" className="primary-setting" disabled={isBusy} title="把随包技能安装到本机技能目录（不下载，直接从安装包拷贝）" onClick={() => void install(row)}>
+            安装
+          </button>
+          <em className="skill-pack-state">随包内置</em>
         </span>
       );
     } else action = <button type="button" className="primary-setting" onClick={() => void install(row)}>安装</button>;
@@ -342,7 +347,9 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
             <div className="skill-pack-preview-block">
               <div className="feishu-cli-guide-head"><strong>怎么用</strong><small>三步，不用记命令</small></div>
               <ol className="feishu-cli-guide-steps">
-                <li><b>{preview.bundled ? "已就位" : "安装"}</b><span>{preview.bundled ? "随包内置，技能已在本机目录；应用升级后点「更新」同步新拷贝。" : "点「安装」下载到本机技能目录（走国内镜像），装完自动重启引擎。"}</span></li>
+                <li><b>{preview.installed ? "已就位" : "安装"}</b><span>{preview.installed
+                  ? (preview.bundled ? "随包内置，技能已在本机技能目录；应用升级后点「更新」同步新拷贝。" : "已装在本机技能目录；上游更新后点「更新」覆盖。")
+                  : (preview.bundled ? "点「安装」从安装包直接拷贝到本机技能目录（不下载），装完自动重启引擎。" : "点「安装」下载到本机技能目录（走国内镜像），装完自动重启引擎。")}</span></li>
                 <li><b>生效</b><span>引擎重启后自动加载，不需要手动配路径或改配置。</span></li>
                 <li><b>使用</b><span>在对话里用 # 引用技能，Codex 碰到合适的任务就照它做。</span></li>
               </ol>

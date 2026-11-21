@@ -54,9 +54,12 @@ ok(/downloadThroughMirrors\(/.test(feature) && /codeload\.github\.com\/\$\{pack\
   && /expandZip\(archive, outDir\)/.test(feature)
   && /mirrorCandidates\(/.test(downloader) && /rankMirrors/.test(downloader),
   "下载走统一镜像下载器（自动选最快源 + 停滞换源；zip + 仓库自带解压器）");
-ok(/const marker = await readMarker\(id\);\s*\n\s*if \(!marker\) throw new Error\("这个包不是通过本页安装的/.test(feature)
+/* ⛔ 11-21：marker 允许为空（随包包早年只写了目录级凭据）—— 契约不是「必须有 marker」，
+   而是「只删本包凭据的目录」：有 marker 走 marker，没有就按目录凭据扫（pack 必须是随包包）。 */
+ok(/const marker = await readMarker\(id\);/.test(feature)
+  && /if \(!pack\?\.bundled\) throw new Error\("这个包不是通过本页安装的/.test(feature)
   && /target\.startsWith\(root \+ path\.sep\)/.test(feature),
-  "卸载只认自己写的 marker + 目录穿越闸（用户自建技能不会被误删）");
+  "卸载只认本包凭据（marker 或目录凭据）+ 目录穿越闸（用户自建技能不会被误删）");
 ok(/if \(installed\.length\) \{[\s\S]{0,200}?await server\.restart\(\)/.test(feature),
   "装完重启引擎（不重启模型扫不到新技能；重启前先推「正在让引擎重新扫描」阶段）");
 ok(/SKILL_SKIP_DIRS = new Set\(\["deprecated", "in-progress"/.test(feature),
@@ -171,6 +174,30 @@ ok(/leanDevInstructions/.test(read("electron/developer-instructions.ts"))
   && /lean: appSettings\.leanContext !== false/.test(read("electron/main/12-skill-discipline.ts"))
   && /harness-dev-guide\.md/.test(applySrc),
   "【上下文】常驻指令默认精简，完整细则落盘 harness-dev-guide.md 供按需读取");
+
+console.log("\n【随包包的真实装态（11-21 修「别的电脑安装不了 / 装了也不更新状态」）】");
+/* 根因：旧实现把「随包源目录里有技能」直接当 installed ⇒ 每台机器都显示已安装，
+   界面只给「更新」不给「安装」，点完也看不出变化；且随包包没写包级凭据，装完卸不掉。 */
+ok(/async function installedBundledOf/.test(feature)
+  && /installed: present\.length > 0/.test(feature)
+  && !/installed: pack\.bundled \? present\.length > 0/.test(feature),
+  "装态来自**用户技能目录**（⛔ 不再拿随包源目录当「已安装」）");
+ok(/const bundledSkills = pack\.bundled \? await bundledSkillsOf\(pack\.bundled\.dir\) : \[\]/.test(feature)
+  && /\n\s*bundledSkills,/.test(feature),
+  "源清单与装态分开下发（bundledSkills = 可装清单，installed = 真装了）");
+ok(/installedBundledOf\(pack\.id, bundledSkills\)/.test(feature)
+  && /String\(stamp\?\.packId \?\? ""\) === packId/.test(feature),
+  "随包技能认领只认本包凭据（用户自己的同名技能没有凭据，不算已装）");
+ok(/repo: "bundled", skills: merged/.test(feature),
+  "随包包安装后写**包级**凭据（否则装完点卸载会报「不是通过本页安装的」）");
+ok(/folders = await installedBundledOf/.test(feature) && /没有找到本包装过的技能目录/.test(feature),
+  "卸载支持随包包：无包级凭据时按目录凭据扫（旧安装也能卸）");
+ok(/server\.restart\(\)\.catch\(\(error: Error\)/.test(feature),
+  "引擎重启失败不把「技能已拷好」报成安装失败");
+ok(/else if \(row\.bundled\)[\s\S]{0,420}primary-setting[\s\S]{0,160}安装/.test(panel),
+  "界面：随包但**未装** ⇒ 主按钮「安装」（旧实现永远只给「更新」，用户看不出装没装）");
+ok(/else if \(row\.installed\)[\s\S]{0,420}skill-pack-remove/.test(panel),
+  "界面：已装（含随包包）⇒ 「更新 + 卸载」");
 
 console.log(`\n【skill-packs】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
