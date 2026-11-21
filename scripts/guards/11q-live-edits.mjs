@@ -93,6 +93,33 @@ ok(!/\.completed-file-chip\s*\{/.test(css), "⛔ 已删的彩色块样式不许�
 ok(/\.action-diff-head/.test(cssTurns) && /\.action-diff-stats/.test(cssTurns),
   "编辑卡行头样式在（图标 + 路径 + 徽章一行排）");
 
+/* ── 五之二、详细模式文件浮窗（11-21 用户令：「经常遮住输入框 / 没有 Diff 效果 /
+   没有自动跟随最新和出字效果」）────────────────────────────────────────────
+   落位抽成纯函数并**真跑真值表**：锚点在输入框上方时，浮窗底边绝不能越过输入框顶边。 */
+{
+  const { placeLiveFileFloat } = await import(pathToFileURL(join(ROOT, "src/lib/live-file-float-position.mjs")).href);
+  const vw = 1280, vh = 800;
+  const composer = { top: 650, bottom: 760, left: 300, width: 680 };
+  const above = placeLiveFileFloat({ vw, vh, height: 300, anchor: { top: 560, bottom: 590 }, composer });
+  ok(above.top + 300 <= composer.top - 6,
+    `锚点在输入框上方 ⇒ 浮窗不进输入框（top=${above.top} +300 ≤ ${composer.top - 6}）`);
+  const tight = placeLiveFileFloat({ vw, vh, height: 900, anchor: { top: 560, bottom: 590 }, composer });
+  ok(tight.top >= 8 && tight.maxHeight <= composer.top - 8 - 8,
+    "空间不够时收窄 maxHeight，而不是盖住输入框（不靠裁切遮住）");
+  const below = placeLiveFileFloat({ vw, vh, height: 200, anchor: { top: 780, bottom: 790 }, composer });
+  ok(below.top + 200 <= composer.top - 6, "锚点在输入框下方且下方空间不足 ⇒ 改放到输入框上方（不压输入框）");
+  const noAnchor = placeLiveFileFloat({ vw, vh, height: 200, anchor: null, composer });
+  ok(noAnchor.top + 200 <= composer.top - 6, "锚点行消失时仍以输入框为禁区（不留在旧位置压住输入框）");
+}
+const floatBlock = status.slice(status.indexOf("function LiveFileFloat"), status.indexOf("export function LiveFileRows"));
+ok(/DiffPreviewBody/.test(floatBlock) && /@@ -0,0 \+1/.test(floatBlock) && !/live-file-float-code/.test(floatBlock),
+  "新文件也拼成全新增 diff 走彩色预览（⛔ 不再显示裸文本，旧版就是这个观感）");
+ok(/useLiveReveal/.test(floatBlock) && /stickRef/.test(floatBlock) && /live-file-float-follow/.test(floatBlock),
+  "逐字揭示 + 贴底自动跟随；用户上滚后出现「最新」按钮（不抢滚动条）");
+ok(/live-file-float-typing/.test(css) && /live-file-float \.diffp/.test(css) && /live-file-float-follow/.test(css)
+  && /@keyframes live-file-line-in/.test(css),
+  "浮窗样式：写入中指示 / diff 单滚动容器 / 跟随按钮 / 新行入场动画");
+
 /* ── 六、回合状态胶囊（10-06 夜三轮重构 · 用户对照 Qoder：「步骤 0/6 · 5 个文件已修改 +177 -8」
    + 「步骤清单跟文件修改，都是可以独立居中展示的，只是多了另一方展示的时候，就拼接展示」）────────
    与排队/询问/审批卡**上下排序**、悬停分区展开清单、随运行实时刷新；弹层位置**自适应 + 居中**。

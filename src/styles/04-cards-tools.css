@@ -2914,8 +2914,23 @@
 .live-file-float-head small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 10.5px; }
 .live-file-float-close { flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
 .live-file-float-close:hover { background: var(--panel-2); color: var(--text); }
-.live-file-float-body { max-height: min(46vh, 360px); overflow: auto; }
-.live-file-float-code { margin: 0; padding: 9px 11px; color: var(--text); font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+/* 头部右侧：累计 ± / 写入中 / 回到底部（窄窗自动让位给文件名与路径） */
+.live-file-float-stats { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.live-file-float-stats b { color: var(--add); font-weight: 500; }
+.live-file-float-stats i { color: var(--del); font-style: normal; }
+.live-file-float-typing { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--link); font-size: 10px; font-style: normal; }
+.live-file-float-typing span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: live-file-pulse 1s ease-in-out infinite; }
+.live-file-float-follow { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font: 10px/1 inherit; cursor: pointer; }
+.live-file-float-follow:hover { border-color: var(--link); color: var(--link); }
+/* 单一滚动容器：外层 body 滚到底；diff 自身不再开第二根滚动条（旧版就是这样跟不到最新）。 */
+.live-file-float-body { flex: 1; min-height: 0; max-height: min(46vh, 360px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.live-file-float .diffp { max-height: none !important; border: 0; border-radius: 0; background: transparent; }
+.live-file-float .diffp-inner { padding: 3px 0 6px; }
+.live-file-float .diffp-line { animation: live-file-line-in .16s ease-out both; }
+.live-file-float-note { padding: 6px 11px 0; color: var(--faint); font-size: 10.5px; }
+.live-file-float-empty { padding: 14px 11px; color: var(--faint); font-size: 11px; }
+@keyframes live-file-line-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@keyframes live-file-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
 
 /* 10-28 用户（浅色截图）：输入框顶部拖动条改白色（深色保持原灰）。 */

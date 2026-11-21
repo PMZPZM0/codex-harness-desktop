@@ -1,7 +1,7 @@
 /** 运行状态 / 上下文用量（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { FileCode2, ChevronDown, CircleGauge, Maximize2, Minimize2, Pencil } from "lucide-react";
+import { ArrowDown, FileCode2, ChevronDown, CircleGauge, Maximize2, Minimize2, Pencil } from "lucide-react";
 import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
@@ -10,6 +10,7 @@ import { DiffPreviewBody } from "./DiffPreview";
 import { FileCardMenu, InlineFileCards, extractFilePathsFromMarkdown } from "../shared/InlineCards";
 import { itemText } from "../../lib/item-text";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { placeLiveFileFloat } from "../../lib/live-file-float-position.mjs";
 import { useCenteredPopoverLeft } from "../../lib/use-centered-popover";
 import { useRunProcessMode } from "../../lib/run-process-mode";
 import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
@@ -307,30 +308,95 @@ const LIVE_LIMIT = 8;
     数据源 = 主进程每 ~2.5s 一圈的轻量重扫（turn-file-changes-live，见 electron/turn-file-watch.ts）。 */
 export type LiveFileChange = { path: string; status: string; added: number; deleted: number; diff?: string; content?: string };
 
+/** 实时文件浮窗的逐字揭示：只在文本追加时补字；diff 被整段重算时直接定格，
+ *  避免把已经显示过的内容倒回去重播（与正文追字同一条纪律）。 */
+function useLiveReveal(text: string, key: string, active: boolean) {
+  const [shown, setShown] = useState(text);
+  const [typing, setTyping] = useState(false);
+  const shownRef = useRef(text);
+  const keyRef = useRef(key);
+  useEffect(() => {
+    if (keyRef.current !== key) {
+      keyRef.current = key;
+      shownRef.current = text;
+      setShown(text);
+      setTyping(false);
+      return;
+    }
+    let start = shownRef.current;
+    if (!text.startsWith(start)) {
+      let common = 0;
+      while (common < start.length && common < text.length && start[common] === text[common]) common++;
+      // 变化太大 = diff 重新计算过，不是「新增了几行」⇒ 直接显示，不回退重播。
+      if (common < 80 || text.length - common > 900) {
+        shownRef.current = text;
+        setShown(text);
+        setTyping(false);
+        return;
+      }
+      start = text.slice(0, common);
+      shownRef.current = start;
+      setShown(start);
+    }
+    const remaining = text.length - start.length;
+    if (remaining <= 0 || !active) {
+      shownRef.current = text;
+      setShown(text);
+      setTyping(false);
+      return;
+    }
+    setTyping(true);
+    const step = remaining > 1200 ? 12 : remaining > 300 ? 5 : 2;
+    let end = start.length;
+    const timer = window.setInterval(() => {
+      end = Math.min(text.length, end + step);
+      const next = text.slice(0, end);
+      shownRef.current = next;
+      setShown(next);
+      if (end >= text.length) {
+        window.clearInterval(timer);
+        setTyping(false);
+      }
+    }, 16);
+    return () => window.clearInterval(timer);
+  }, [active, key, text]);
+  return { shown, typing };
+}
+
 /** 运行过程「详细」档：像思考板块一样浮窗展示最新生成/修改文件，停止变化后自动收起。 */
 function LiveFileFloat({ file, anchorRef, onClose }: { file: LiveFileChange; anchorRef: { current: HTMLElement | null }; onClose: () => void }) {
   const floatRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
+  const [following, setFollowing] = useState(true);
+  const diffText = useMemo(() => {
+    if (file.diff?.trim()) return file.diff;
+    if (file.content == null) return "";
+    const lines = file.content.split(/\r?\n/);
+    if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    /* 新文件没有引擎 diff ⇒ 按「全新增」拼一份，复用同一个彩色 diff 视图（⛔ 不再显示裸文本）。
+       头里不写行数：文件还在长，行数一变前缀就断，逐字出字会退化成整段闪现。 */
+    return `@@ -0,0 +1 @@\n${lines.map((line) => `+${line}`).join("\n")}`;
+  }, [file.diff, file.content]);
+  const { shown, typing } = useLiveReveal(diffText, `${file.path}|${file.status}`, Boolean(diffText));
+
+  /* 位置：把输入框当**禁区**（纯函数在 lib/live-file-float-position.mjs，守卫有真值表）。
+     旧版只避开视口边缘，而实时编辑行就在输入框上方，于是浮窗直接盖在输入框上。 */
   const positionFloat = () => {
     const panel = floatRef.current;
+    if (!panel) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const comp = document.querySelector(".composer, .team-composer");
+    const composer = comp?.getBoundingClientRect() ?? null;
     const anchor = anchorRef.current;
-    if (!panel || !anchor || !anchor.isConnected) return;
-    const comp = document.querySelector(".composer");
-    const compRect = comp ? comp.getBoundingClientRect() : null;
-    const width = compRect ? Math.round(compRect.width) : Math.min(820, window.innerWidth - 46);
-    const left = compRect ? Math.round(compRect.left) : Math.round((window.innerWidth - width) / 2);
-    panel.style.width = width + "px";
-    panel.style.left = left + "px";
-    const rect = anchor.getBoundingClientRect();
-    const height = panel.offsetHeight || 160;
-    const spaceBelow = window.innerHeight - rect.bottom - 8;
-    const spaceAbove = rect.top - 8;
-    let top;
-    if (spaceBelow >= height) top = rect.bottom + 6;
-    else if (spaceAbove >= height) top = rect.top - 6 - height;
-    else if (spaceAbove >= spaceBelow) top = Math.max(8, rect.top - 6 - height);
-    else top = Math.min(rect.bottom + 6, window.innerHeight - 8 - height);
-    panel.style.top = Math.round(top) + "px";
+    const rect = anchor?.isConnected ? anchor.getBoundingClientRect() : null;
+    const base = placeLiveFileFloat({ vw, vh, height: 160, anchor: rect, composer });
+    panel.style.width = base.width + "px";
+    panel.style.left = base.left + "px";
+    panel.style.maxHeight = base.maxHeight + "px";
+    const placed = placeLiveFileFloat({ vw, vh, height: panel.offsetHeight || 160, anchor: rect, composer });
+    panel.style.top = placed.top + "px";
   };
   useEffect(() => {
     let raf = 0;
@@ -338,23 +404,52 @@ function LiveFileFloat({ file, anchorRef, onClose }: { file: LiveFileChange; anc
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, [file.path]);
+  /* 换文件 = 重新开始跟随；同一文件里用户主动上滚后不再抢滚动条。 */
+  useEffect(() => { stickRef.current = true; setFollowing(true); }, [file.path]);
   useEffect(() => {
     const el = bodyRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      stickRef.current = atBottom;
+      setFollowing(atBottom);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [file.path]);
+  /* 贴底才自动跟；布局阶段补 scrollTop，逐字出字时不会慢一帧。 */
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [shown]);
+  const followLatest = () => {
+    stickRef.current = true;
+    setFollowing(true);
+    const el = bodyRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [file.content, file.diff]);
+  };
   const { name } = segments(file.path);
+  const truncated = file.content != null && file.content.length >= 12_000;
   return createPortal(
     <div className="live-file-float" ref={floatRef} role="complementary" aria-label="正在生成或修改文件">
       <div className="live-file-float-head">
         <FileTypeIcon path={file.path} size={13} />
         <strong>{name}</strong>
         <small>{file.path}</small>
+        <span className="live-file-float-stats" title="本回合累计改动">
+          {file.status === "deleted" ? <i>已删除</i> : <><b>+{file.added}</b><i>-{file.deleted}</i></>}
+        </span>
+        {typing ? <em className="live-file-float-typing" title="正在写入"><span />写入中</em> : null}
+        {!following ? (
+          <button type="button" className="live-file-float-follow" title="回到最新内容" onClick={followLatest}><ArrowDown size={12} />最新</button>
+        ) : null}
         <button type="button" className="live-file-float-close" title="收起" onClick={onClose}><ChevronDown size={13} /></button>
       </div>
       <div className="live-file-float-body" ref={bodyRef}>
-        {file.content != null
-          ? <pre className="live-file-float-code">{file.content}</pre>
-          : file.diff ? <ToolCodeBlock language="diff" text={file.diff} /> : null}
+        {truncated ? <div className="live-file-float-note">内容较长，这里显示最近 1.2 万字符</div> : null}
+        {diffText
+          ? <DiffPreviewBody text={shown} maxHeight={99_999} className="live-file-float-diff" />
+          : <div className="live-file-float-empty">{file.status === "deleted" ? "文件已删除（没有可显示的差异）" : "等待文件内容…"}</div>}
       </div>
     </div>,
     document.querySelector(".reasoning-float-host") ?? document.body,
