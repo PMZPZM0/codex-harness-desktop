@@ -72,12 +72,21 @@ const ok = (condition, message) => {
     `12 个 GitHub 下载点全部经镜像候选序${missing.length ? `（缺：${missing.join(" / ")}）` : ""}`);
 }
 
-/* ── ③ PyTorch 必须走阿里云镜像（用户在 15% 卡死就是卡这里）───────────── */
+/* ── ③ 语音引擎的 Python 依赖 / torch 必须走实测最快的镜像（用户「卡在 mkl 15%」就是这里）── */
 {
   const engines = codeOnly(read("electron/voice/external-engines.ts"));
-  ok(/const TORCH_MIRROR_BASE = "https:\/\/mirrors\.aliyun\.com\/pytorch-wheels"/.test(engines)
-    && /"--find-links", `\$\{TORCH_MIRROR_BASE\}\/\$\{tag\}\/`/.test(engines),
-    "torch 走阿里云 pytorch-wheels 镜像（平铺目录只能 --find-links，⛔ 用 --index-url 会 404）");
+  ok(/const PYPI_MIRRORS = \[\s*"https:\/\/pypi\.tuna\.tsinghua\.edu\.cn\/simple"/.test(engines)
+    && /"https:\/\/mirrors\.cloud\.tencent\.com\/pypi\/simple"/.test(engines),
+    "PyPI 依赖走清华优先（11-22 实测 mkl 218MB：清华 26.9MB/s ≫ 腾讯 13.8 ＞ 阿里 7.7 ≫ 曾测到 2.8）");
+  ok(/const TORCH_INDEX_BASE = "https:\/\/mirror\.sjtu\.edu\.cn\/pytorch-wheels"/.test(engines)
+    && /"https:\/\/mirrors\.aliyun\.com\/pytorch-wheels"/.test(engines),
+    "torch 轮子走上交 pytorch-wheels 优先（11-22 实测 2.3GB cu121：上交 20.5MB/s ≫ 阿里 7.9），阿里兜底");
+  ok(/async function assertCudaTorch\(/.test(engines) && /torch\.version\.cuda/.test(engines),
+    "装完自检是 CUDA 版（CPU 版同版本号、装错不报错，只有 torch.version.cuda 能区分）");
+  ok(/async function runPip\(/.test(engines) && /for \(const index of PYPI_MIRRORS\)/.test(engines),
+    "依赖安装一次只给一个索引、失败换下一档（⛔ 多索引 + unsafe-best-match 会静默装成 CPU 版 torch）");
+  ok(!/unsafe-best-match/.test(engines) && !/"--index", /.test(engines),
+    "⛔ 不许再用「主索引 + --index」混排（11-22 实测会把 torch 解析成 CPU 版且不报错）");
   ok(!/"--index-url", "https:\/\/download\.pytorch\.org/.test(engines),
     "⛔ 不再直接让 torch 走 download.pytorch.org（国内拉不动，官方源只在镜像未命中时兜底）");
   ok(/async function installTorch\(/.test(engines)
@@ -86,6 +95,8 @@ const ok = (condition, message) => {
     "两处 torch 安装（CosyVoice 固定 cu121 / 通用引擎 cuXXX）统一走 installTorch");
   ok(/withHeartbeat\(/.test(engines) && /已用 \$\{fmtElapsed/.test(engines),
     "长时间无自然进度的步骤有心跳（每 5s 报「已用 N 分 M 秒」）—— 否则界面停在 15% 就像卡死");
+  ok(/function stepPercentOf\(/.test(engines) && /stepPercentOf\(message, 0\.15, 0\.35/.test(engines),
+    "进度条按 uv 的每文件百分比推进（15%→35% 单调不减），不是整段钉死在一个数上");
 }
 
 /* ── ④ 渲染层两处直连 GitHub 也必须走同一份候选序 ─────────────────────── */

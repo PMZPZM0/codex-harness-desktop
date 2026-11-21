@@ -298,18 +298,56 @@ function extractArchive(archive: string, dest: string, signal: AbortSignal, onPr
   });
 }
 
-/* ── 国内镜像（11-21 用户实测「CosyVoice 装到 15% 就卡死」）────────────────────────
+/* ── 国内镜像（11-21 用户实测「CosyVoice 装到 15% 就卡死」；11-22 再按实测提档）──────────
  * ⛔⛔ 卡死真因不是慢，是**两条都错**：
  *   ① `--index-url https://download.pytorch.org/whl/cu121` 是 pytorch 官方源，国内基本
  *      拉不动（2–3GB 的 torch+cu121）。而依赖走的是阿里云 pypi —— 只有 torch 一半没走镜像，
  *      用户看到的就是「一直在 15%」。
  *   ② uv 装 torch 十几分钟不吐进度，界面百分比不动 ⇒ 无论快慢都像死了。
- * 阿里云的 pytorch-wheels 是**平铺目录**（不是 PEP503 索引，没有 /torch/ 子路径）
+ * 阿里云/上交的 pytorch-wheels 都是**平铺目录**（不是 PEP503 索引，没有 /torch/ 子路径）
  * ⇒ 只能用 `--find-links`，用 `--index-url` 会 404。实测 cu121 下有
  * `torch-2.3.1+cu121-cp310-cp310-win_amd64.whl`；PEP 440 规定 `==2.3.1` 匹配该 local 版本。
+ *
+ * ⛔⛔ 11-22 实测（同一台机器、同一时段的 12MB 采样）—— 阿里云不是最快的：
+ *   mkl 218MB 轮子：**清华 26.9MB/s** ≫ 腾讯 13.8 ＞ 中科大 12.6 ＞ 华为 12.6 ＞ 阿里 7.7（曾测到 2.8）
+ *   torch 2.3GB cu121：**上交 pytorch-wheels 20.5MB/s** ≫ 阿里 7.9MB/s
+ *   用户报「装装到 mkl 15% 卡好久」正是这两处都落在慢档上 ⇒ 依赖改清华优先、torch 改上交优先。
+ *   ⛔ 每次发版前重测；顺手把两档都留着做兜底，别只剩一个。
  */
-const PYPI_MIRROR = "https://mirrors.aliyun.com/pypi/simple/";
-const TORCH_MIRROR_BASE = "https://mirrors.aliyun.com/pytorch-wheels";
+const PYPI_MIRRORS = [
+  "https://pypi.tuna.tsinghua.edu.cn/simple",     // 26.9MB/s（11-22 实测最快）
+  "https://mirrors.cloud.tencent.com/pypi/simple", // 13.8MB/s
+  "https://mirrors.aliyun.com/pypi/simple",        // 7.7MB/s（曾低到 2.8）
+] as const;
+const TORCH_INDEX_BASE = "https://mirror.sjtu.edu.cn/pytorch-wheels";
+const TORCH_MIRROR_BASES = [
+  TORCH_INDEX_BASE,                           // 20.5MB/s（11-22 实测最快）—— 它是 PEP503 索引，当索引用
+  "https://mirrors.aliyun.com/pytorch-wheels", // 7.9MB/s 兜底 —— 平铺目录，只能 --find-links
+] as const;
+
+/**
+ * 跑 `uv pip install`，索引**一次只用一档**，失败就整条换下一档（清华 → 腾讯 → 阿里）。
+ *
+ * ⛔⛔ 为什么不做「一个主索引 + 若干 --index」：11-22 实测这么写会**静默装成 CPU 版 torch**
+ *   （`--index-strategy unsafe-best-match` / `first-index` 两种都给过，解析结果都是
+ *   `torch==2.3.1` 而不是 `2.3.1+cu121`）。GPU 版与 CPU 版同版本号，装错不报错、只在
+ *   推理时慢十倍——这种坑不能靠"看着装完了"判断。
+ *   ⇒ 每次只给一个索引；缺包就让 uv 明确失败，由这里换下一档重试（uv 有缓存，重试不重下）。
+ */
+async function runPip(uv: string, py: string, args: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
+  let lastError: unknown = null;
+  for (const index of PYPI_MIRRORS) {
+    try {
+      await runCommand(uv, ["pip", "install", "--python", py, "--default-index", index, ...args], cwd, signal, onLine);
+      return;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      lastError = error;
+      onLine?.(`${new URL(index).host} 失败，换下一档镜像…`);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("依赖安装失败");
+}
 
 /** 把 `cu121` / `--torch-backend=cu121` 统一成目录名。 */
 function torchTagOf(backend: string): string {
@@ -320,6 +358,18 @@ function torchTagOf(backend: string): string {
 function fmtElapsed(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000));
   return sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
+}
+
+/**
+ * 把 uv 输出里的「每文件百分比」映射到本步骤的进度带，让进度条**真的在走**。
+ * uv 装 torch 时逐文件打 `Downloaded mkl 15%`，同一个百分比在整步里其实是 0→100 反复；
+ * 外面只知道「这一步占 15%~35%」⇒ 取**单调不减**的映射，条子不会倒退。
+ */
+function stepPercentOf(message: string, from: number, to: number, seen: number): number {
+  const match = /(\d{1,3})%/.exec(message);
+  if (!match) return seen;
+  const ratio = Math.min(100, Number(match[1])) / 100;
+  return Math.max(seen, Math.min(to, from + (to - from) * ratio));
 }
 
 /**
@@ -342,21 +392,49 @@ async function withHeartbeat(label: string, onBeat: (message: string) => void, t
 }
 
 /**
- * 装 PyTorch：**先走阿里云镜像，失败才回官方 CUDA 源**。
- * 依赖（numpy/typing-extensions 等）仍走阿里云 pypi，别让它们掉回官方源。
+ * 装完自检：必须是 **CUDA 构建**。
+ * ⛔ 11-22 实测过的坑：CPU 版与 GPU 版**同版本号**（都是 `torch==2.3.1`），装错不报任何错，
+ *   只在推理时慢十倍 —— 用户会以为是"模型就这样"。`torch.version.cuda` 为空即 CPU 版。
+ */
+async function assertCudaTorch(py: string, cwd: string, signal: AbortSignal): Promise<void> {
+  try {
+    await runCommand(py, ["-c", "import torch,sys; sys.exit(0 if torch.version.cuda else 3)"], cwd, signal);
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new Error("PyTorch 装成了 CPU 版（torch.version.cuda 为空）—— 请重试；若一直如此，说明镜像只给了 CPU 轮子");
+  }
+}
+
+/**
+ * 装 PyTorch —— 三档实测过的组合，按速度排：
+ *   ① **上交 pytorch-wheels 是标准 PEP503 索引**（`/cu121/` 下有 `torch/`、`torchaudio/` 等子目录，
+ *      依赖也收在里面）⇒ 直接当 `--default-index`，实测 20.5MB/s、解析出 `torch==2.3.1+cu121`。
+ *      ⛔ 这一档**不许**再挂别的 pypi 索引：实测会解析成 CPU 版 `torch==2.3.1`（同版本号、不报错）。
+ *   ② 阿里云是**平铺目录**（`--index-url` 会 404）⇒ 只能 `--find-links` + 清华 pypi 取依赖，
+ *      实测同样得到 `+cu121`，7.9MB/s 兜底。
+ *   ③ 最后才回官方 `--torch-backend`（国内基本拉不动，只当救命通道）。
  */
 async function installTorch(uv: string, py: string, backend: string, specs: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
   const tag = torchTagOf(backend);
-  const base = ["pip", "install", "--python", py, "--default-index", PYPI_MIRROR];
-  try {
-    await runCommand(uv, [...base, "--find-links", `${TORCH_MIRROR_BASE}/${tag}/`, ...specs], cwd, signal, onLine);
-    return;
-  } catch (error) {
-    if (signal.aborted) throw error;
-    /* 镜像没有这个 CUDA 档 / 该轮子时才回官方源，别一上来就让国内网络去啃 pytorch.org。 */
-    onLine?.(`镜像源未命中 ${tag}，回退官方 CUDA 源（会明显变慢）`);
+  const cuIndex = `${TORCH_INDEX_BASE}/${tag}`;
+  const attempts: { label: string; args: string[] }[] = [
+    { label: "上交 pytorch 索引", args: ["--default-index", cuIndex, ...specs] },
+    { label: "阿里云 torch-wheels", args: ["--default-index", PYPI_MIRRORS[0], "--find-links", `${TORCH_MIRROR_BASES[1]}/${tag}/`, ...specs] },
+    { label: "官方 CUDA 源", args: ["--default-index", PYPI_MIRRORS[0], `--torch-backend=${tag}`, ...specs] },
+  ];
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      await runCommand(uv, ["pip", "install", "--python", py, ...attempt.args], cwd, signal, onLine);
+      await assertCudaTorch(py, cwd, signal);
+      return;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      lastError = error;
+      onLine?.(`${attempt.label} 未成功，换下一档…`);
+    }
   }
-  await runCommand(uv, [...base, `--torch-backend=${tag}`, ...specs], cwd, signal, onLine);
+  throw lastError instanceof Error ? lastError : new Error("PyTorch 安装失败");
 }
 
 /** 跑一个命令并等它结束（安装步骤用；stdout/stderr 只留尾部）。 */
@@ -498,10 +576,15 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
       (note) => runCommand(uv, ["venv", "--python", "3.10", venv], root, signal, note),
     );
   }
-  emit({ id: entry.id, kind: "download", percent: 0.15, message: "安装 PyTorch（CUDA 12.1，约 2–3GB，走阿里云镜像）…" });
+  emit({ id: entry.id, kind: "download", percent: 0.15, message: "安装 PyTorch（CUDA 12.1，约 2–3GB，走上交镜像）…" });
+  /* 进度条从 15% 走到 35%：uv 逐文件报的百分比映射进来，别让条子在整段里一动不动。 */
+  let torchSeen = 0.15;
   await withHeartbeat(
     "安装 PyTorch（CUDA 12.1，约 2–3GB）",
-    (message) => emit({ id: entry.id, kind: "download", percent: 0.15, message }),
+    (message) => {
+      torchSeen = stepPercentOf(message, 0.15, 0.35, torchSeen);
+      emit({ id: entry.id, kind: "download", percent: torchSeen, message });
+    },
     (note) => installTorch(uv, py, "cu121", ["torch==2.3.1", "torchaudio==2.3.1"], root, signal, note),
   );
   emit({ id: entry.id, kind: "download", percent: 0.35, message: "安装 CosyVoice 依赖（约 5–10 分钟）…" });
@@ -517,7 +600,7 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
   await withHeartbeat(
     "安装 CosyVoice 依赖（约 5–10 分钟）",
     (message) => emit({ id: entry.id, kind: "download", percent: 0.35, message }),
-    (note) => runCommand(uv, ["pip", "install", "--python", py, "-r", localRequirements, "--index-url", PYPI_MIRROR], root, signal, note),
+    (note) => runPip(uv, py, ["-r", localRequirements], root, signal, note),
   );
   /* ⛔ frontend.py 硬 import whisper（TTS 其实不用），但 whisper 是 sdist、构建要 pkg_resources。
      setuptools 69 仍带 pkg_resources；装好后用 --no-build-isolation 现场构建一次。 */
@@ -526,8 +609,8 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
     "补装 whisper 运行时",
     (message) => emit({ id: entry.id, kind: "download", percent: 0.52, message }),
     async (note) => {
-      await runCommand(uv, ["pip", "install", "--python", py, "setuptools==69.5.1", "--index-url", PYPI_MIRROR], root, signal, note);
-      await runCommand(uv, ["pip", "install", "--python", py, "--no-build-isolation", "openai-whisper==20231117", "--index-url", PYPI_MIRROR], root, signal, note);
+      await runPip(uv, py, ["setuptools==69.5.1"], root, signal, note);
+      await runPip(uv, py, ["--no-build-isolation", "openai-whisper==20231117"], root, signal, note);
     },
   );
   const modelDir = join(root, "pretrained_models", "Fun-CosyVoice3-0.5B");
@@ -549,7 +632,9 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
 
 /** 统一走 uv pip（默认阿里云源；torch 由 --torch-backend 从官方 CUDA 源解析）。 */
 function uvPip(uv: string, py: string, args: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
-  return runCommand(uv, ["pip", "install", "--python", py, "--default-index", "https://mirrors.aliyun.com/pypi/simple/", ...args], cwd, signal, onLine);
+  /* 统一走 `runPip`（清华优先、失败换腾讯/阿里）：⛔ 别在这里另写 index 字面量，
+     否则引擎依赖又回到慢档（11-22 实测阿里云 7.7MB/s vs 清华 26.9MB/s）。 */
+  return runPip(uv, py, args, cwd, signal, onLine);
 }
 
 /** ModelScope 文件清单（递归取 blob，跳过 README/.gitattributes）。 */
@@ -670,14 +755,18 @@ async function installPythonEngine(entry: VoiceExternalEngine, install: any, sig
     if (!existsSync(py)) throw new Error("Python 环境创建失败（uv 没下载到目标版本）");
   }
   const backend = `--torch-backend=${String(install.torchBackend ?? "cu128")}`;
-  emit({ id: entry.id, kind: "download", percent: 0.1, message: "安装 PyTorch（CUDA，约 2–4GB，走阿里云镜像）…" });
+  emit({ id: entry.id, kind: "download", percent: 0.1, message: "安装 PyTorch（CUDA，约 2–4GB，走上交镜像）…" });
   /* ⛔ 版本必须按引擎来：Chatterbox 0.1.7 锁 torch==2.6.0，写死 2.8 会直接解不出依赖。 */
   const torchSpec = typeof install.torch === "string" && install.torch.trim()
     ? install.torch.trim().split(/\s+/)
     : ["torch==2.8.0", "torchaudio==2.8.0"];
+  let torchSeen = 0.1;
   await withHeartbeat(
     `安装 PyTorch（${torchTagOf(backend)}，约 2–4GB）`,
-    (message) => emit({ id: entry.id, kind: "download", percent: 0.1, message }),
+    (message) => {
+      torchSeen = stepPercentOf(message, 0.1, 0.3, torchSeen);
+      emit({ id: entry.id, kind: "download", percent: torchSeen, message });
+    },
     (note) => installTorch(uv, py, backend, torchSpec, appDir, signal, note),
   );
   /* ⛔ uv 的 venv 默认不带 setuptools：perth（Chatterbox 水印）与 whisper 构建都要 pkg_resources。 */
