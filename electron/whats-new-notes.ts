@@ -43,6 +43,15 @@ export type WhatsNewEntry = {
 /** 全部版本的要点，**最新在最前**（弹窗按数组顺序展示）。 */
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    version: "0.0.75",
+    date: "2026-11-21",
+    items: [
+      { t: "修复已知问题", d: "控制台组件更新补齐覆盖面：Agent Desktop / Ego Lite / 飞书 CLI / Playwright 都能检测与更新。" },
+      { t: "引擎升级", d: "Codex 引擎升级到 0.171.0。" },
+      { t: "更新链路保持", d: "完整包 + 安装器自带进度窗口，点击才动作，无任何自动下载或自动安装。" },
+    ],
+  },
+  {
     version: "0.0.74",
     date: "2026-11-21",
     items: [
