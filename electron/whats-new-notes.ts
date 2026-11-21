@@ -43,6 +43,15 @@ export type WhatsNewEntry = {
 /** 全部版本的要点，**最新在最前**（弹窗按数组顺序展示）。 */
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    version: "0.0.73",
+    date: "2026-11-21",
+    items: [
+      { t: "提示词可以一键复制", d: "飞书 CLI、前端与设计工具、GitHub 热门页的示例句，点一下就复制到输入框。" },
+      { t: "GitHub 热门能直接问", d: "新增 github_trending 工具：让模型查今天/本周的热门仓库，和页面上看到的口径一致。" },
+      { t: "Windows 与 macOS 同时发布", d: "从这一版起，正式发版会同时出两端安装包。" },
+    ],
+  },
+  {
     version: "0.0.72",
     date: "2026-11-20",
     items: [

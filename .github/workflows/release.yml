@@ -12,11 +12,11 @@ on:
   workflow_dispatch:
     inputs:
       with_mac:
-        # 11-20 用户令：「MAC 的也不用发包啊，这次就是测试 Windows 的」
-        # ⇒ 默认只构建 Windows（mac 两件包约 1.9GB，还会把整体时长拖到一小时）。
-        description: "同时构建 macOS 包（arm64 + x64），默认只出 Windows"
+        # 11-20 用户令：「MAC 的也不用发包啊，这次就是测试 Windows 的」⇒ 当时默认只出 Windows。
+        # 11-21 用户令：「MAC 也一起发布」⇒ 默认恢复成**带 mac**（tag 触发时根本不用这个开关）。
+        description: "同时构建 macOS 包（arm64 + x64）；由 tag 触发时一律构建"
         type: boolean
-        default: false
+        default: true
 
 # 建 Release / 传资产需要写权限（默认只读）；actions: read 供 publish 取构建 artifact
 permissions:
@@ -30,10 +30,11 @@ concurrency:
 jobs:
   mac:
     # 复用唯一的 mac 构建实现（arm64 + x64 双芯片）。
-    # ⛔ 11-20 用户令：默认**不**构建 mac —— tag 触发时 inputs 为空 ⇒ 本 job 被跳过，
-    #    publish 侧的 mac 资产挑选已全部改成 pick_soft（跳过不阻断）。
-    #    需要 mac 包时：Actions → Release → Run workflow → 勾选「同时构建 macOS」。
-    if: ${{ inputs.with_mac == true }}
+    # ⛔ 11-21 用户令「MAC 也一起发布」⇒ **tag 触发一律构建 mac**（正式发版必须带两端）；
+    #    只有手动 dispatch 时才看 with_mac 勾选（默认已改为 true，想省时间可取消）。
+    #    ⚠️ `github.event_name == 'push'` 这个分支不能省：push 事件里 inputs 为空，
+    #    只写 `inputs.with_mac == true` 会把正式发版的 mac 静默跳过（11-20 就是这样）。
+    if: ${{ github.event_name == 'push' || inputs.with_mac == true }}
     uses: ./.github/workflows/build-mac.yml
     secrets: inherit
 
@@ -114,8 +115,9 @@ jobs:
           else
             echo "::warning::没有 latest.yml（客户端已不读它，不阻断发布）"
           fi
-          # mac 两件改成 pick_soft：mac job 默认被跳过（见 jobs.mac 的 if），
-          # 硬 pick 会在 find 到 0 个时 ::error:: 退出，把已经好的 Windows 包一起挡在门外。
+          # mac 两件仍是 pick_soft：11-21 起 tag 触发**一定会构建** mac，所以走到下面
+          # 「MAC_MISSING」分支就说明是**构建失败**（而不是像 11-20 那样主动跳过）。
+          # ⛔ 但仍不阻断发布：win 已经好了，不能因为 mac 打包挂了就让 Windows 用户拿不到包。
           pick_soft artifacts/mac-arm64 '*.zip' "Codex.Harness.Desktop-${VERSION}-arm64-mac.zip"
           pick_soft artifacts/mac-x64 '*.zip' "Codex.Harness.Desktop-${VERSION}-x64-mac.zip"
           shopt -s nullglob
@@ -123,7 +125,7 @@ jobs:
           shopt -u nullglob
           if [ "${#MAC_ZIPS[@]}" -eq 0 ]; then
             echo "MAC_MISSING=1" >> "$GITHUB_ENV"
-            echo "::notice::本版未构建 macOS 包（workflow_dispatch 未勾选 with_mac）—— 只发 Windows"
+            echo "::warning::本版没有任何 macOS 包 —— 若这次是 tag 触发，说明 mac 构建失败，请去看 mac job 的日志"
           elif [ ! -f "dist-assets/Codex.Harness.Desktop-${VERSION}-x64-mac.zip" ]; then
             echo "X64_MISSING=1" >> "$GITHUB_ENV"
             echo "::warning::本版缺 Intel mac 包（x64 打包失败/超时），将只发布 win + arm64"
@@ -154,7 +156,7 @@ jobs:
             gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           fi
           if [ "${MAC_MISSING:-0}" = "1" ]; then
-            printf '\n> 本版只构建 Windows 包。macOS 用户请继续使用上一版；需要 mac 包时在 Actions 里手动运行本工作流并勾选「同时构建 macOS」。\n' >> "${NOTES}"
+            printf '\n> ⚠️ **本版未包含 macOS 包**（构建失败或手动取消）。macOS 用户请继续使用上一版。\n' >> "${NOTES}"
             gh release edit "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           fi
           if [ "${X64_MISSING:-0}" = "1" ]; then
