@@ -15,6 +15,12 @@ export /** 本地推理服务的常用端点（09-19 用户要求「做一下本
  *  哪天又需要"多条并列"再启用它 —— 改动点在 part02/…/02-approval-notice-center.tsx 的 setNotice）。 */
 const NOTICE_TTL_MS = 2600;
 
+/** 失败/警告浮层的存活时长。
+ *  ⛔ 11-22 用户实测「卸载的气泡弹窗我这没看见」：错误文案往往是「N 个文件没删掉：xxx（EBUSY）——
+ *     重启应用后再试」这种长句，2.6 秒既看不完也来不及反应（而且长操作结束那一刻用户多半没盯着顶部）。
+ *     ⇒ 错误/警告给 9 秒；普通成功提示仍是 2.6 秒（不打扰）。 */
+export const NOTICE_TTL_ERROR_MS = 9000;
+
 export const NOTICE_MAX = 4;
 
 export /** Hook 注入徽标：footer 末尾的小钩子图标，hover 展开本次注入的 hook 列表。

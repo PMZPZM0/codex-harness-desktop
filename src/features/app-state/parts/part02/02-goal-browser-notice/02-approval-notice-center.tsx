@@ -7,9 +7,9 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { basename } from "../../../../../lib/basename";
-import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_TTL_MS, QUICK_SITES } from "../../../../app-view/constants";
+import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_TTL_ERROR_MS, NOTICE_TTL_MS, QUICK_SITES } from "../../../../app-view/constants";
 import type { Bag } from "../../bag-types";
-import type { NoticeTone } from "../../../../app-view/helpers/text";
+import { noticeTone, type NoticeTone } from "../../../../app-view/helpers/text";
 
 /** bag 分片 02b2：审批策略（含完全自主模式的版本化迁移）与通知中心。 */
 export function usePart02b2(bag: Bag) {
@@ -149,7 +149,11 @@ bag.dismissNotice = dismissNotice as typeof bag.dismissNotice;
       }
     }
     bag.setNotices([{ id, text, threadId, scope, tone }]);
-    bag.noticeTimersRef.current.set(id, window.setTimeout(() => bag.dismissNotice(id), NOTICE_TTL_MS));
+    /* 语气决定停留时长：错误/警告 9s（长句要能看完），普通提示 2.6s（11-22，见 NOTICE_TTL_ERROR_MS）。
+       ⛔ 调用方多数只传 text，tone 缺省 ⇒ 必须按**推断出的**语气算，否则「卸载失败：…」还是 2.6s。 */
+    const effectiveTone = tone ?? noticeTone(text);
+    const ttl = effectiveTone === "error" || effectiveTone === "warning" ? NOTICE_TTL_ERROR_MS : NOTICE_TTL_MS;
+    bag.noticeTimersRef.current.set(id, window.setTimeout(() => bag.dismissNotice(id), ttl));
   }, [bag.dismissNotice]);
 bag.setNotice = setNotice as typeof bag.setNotice;
 

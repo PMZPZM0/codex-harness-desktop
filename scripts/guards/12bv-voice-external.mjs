@@ -258,6 +258,18 @@ ok(/kind: "remove", percent: progress\.percent \/ 100/.test(main)
 ok(/type === "remove"/.test(ui) && /removing\[configEngine\.id\]/.test(ui)
   && /removingNow &&/.test(ui) && /卸载中…/.test(ui),
   "界面渲染卸载进度（配置弹窗 + 卡片两处），按钮在卸载中显示「卸载中…」");
+/* ── 失败反馈必须看得见（11-22 用户「卸载的气泡弹窗我这没看见」）──────────────────
+   ⛔ 全局气泡默认只停 2.6 秒、位置在设置弹窗顶部，而用户盯的是二级弹窗里的按钮 ⇒
+     失败原因必须**就地**留在弹窗里；错误语气的气泡也要给足阅读时间。 */
+ok(/data-engine-remove-error/.test(ui) && /setRemoveError\(\{ id: engine\.id/.test(ui),
+  "卸载失败在二级弹窗里就地留一条（⛔ 只靠顶部气泡会看不见，且失败后弹窗不能关）");
+{
+  const labels = read("src/features/app-view/constants/01-notices-labels.tsx");
+  const center = read("src/features/app-state/parts/part02/02-goal-browser-notice/02-approval-notice-center.tsx");
+  ok(/NOTICE_TTL_ERROR_MS = 9000/.test(labels) && /noticeTone\(text\)/.test(center)
+    && /noticeTimersRef\.current\.set\(id, window\.setTimeout\(\(\) => bag\.dismissNotice\(id\), ttl\)\)/.test(center),
+    "错误/警告气泡停 9 秒（2.6s 看不完「N 个文件没删掉…」）；语气缺省按文案推断，别让「卸载失败」也走短时长");
+}
 
 ok(String(pkg.scripts?.check ?? "").includes("12bv-voice-external"), "守卫 12bv 已加入 package.json 的 check 链");
 

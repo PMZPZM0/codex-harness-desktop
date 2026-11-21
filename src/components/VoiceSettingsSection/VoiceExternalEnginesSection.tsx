@@ -85,6 +85,12 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
    *    现在删除改成异步逐文件 + 推 remove 事件，这里必须**渲染出来**，否则等于没修。
    */
   const [removing, setRemoving] = useState<Record<string, { percent: number; message: string }>>({});
+  /**
+   * 卸载失败的**就地**说明（11-22 用户「卸载的气泡弹窗我这没看见」）。
+   * ⛔ 只靠全局气泡是不够的：它出现在设置弹窗顶部、默认 2.6 秒；而用户此刻盯着的是二级弹窗里的
+   *    卸载按钮。失败原因必须留在**按钮旁边**，直到用户处理（成功才收起）。
+   */
+  const [removeError, setRemoveError] = useState<{ id: string; text: string } | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   /* 不可安装的平台型卡片（Fish / Zonos 等）没有配置弹窗，详情就在卡内展开。 */
@@ -343,17 +349,23 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
     setConfirmRemove(null);
     /* ⛔ 11-22：先落「正在卸载」态再 await —— 删除期间界面必须有东西在动。 */
     setRemoving((current) => ({ ...current, [engine.id]: { percent: -1, message: "正在停止引擎并删除文件…" } }));
+    setRemoveError(null);
     try {
       const result = await window.codex.voiceExternalRemove(engine.id);
       if (result?.ok) {
         onNotice(`${engine.name} 已卸载`);
         setConfigId(null);
       } else {
-        onNotice(`卸载失败：${result?.error ?? "未知"}`);
+        const text = result?.error ?? "未知原因";
+        /* 就地留一条，别只靠顶部气泡（用户实测没看见）。 */
+        setRemoveError({ id: engine.id, text });
+        onNotice(`卸载失败：${text}`);
       }
       refresh();
     } catch (error) {
-      onNotice(`卸载失败：${String((error as Error)?.message ?? error)}`);
+      const text = String((error as Error)?.message ?? error);
+      setRemoveError({ id: engine.id, text });
+      onNotice(`卸载失败：${text}`);
     } finally {
       setRemoving((current) => { const next = { ...current }; delete next[engine.id]; return next; });
     }
@@ -479,7 +491,7 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                       </button>
                     </>
                   ) : (
-                    <button type="button" className="primary-setting voice-ext-config-open" onClick={() => setConfigId(engine.id)}>
+                    <button type="button" className="primary-setting voice-ext-config-open" onClick={() => { setRemoveError(null); setConfigId(engine.id); }}>
                       配置{engine.installed ? "" : " · 安装"}
                     </button>
                   )}
@@ -525,9 +537,16 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
           hint={configEngine.installed ? `${statusOf(configEngine)} · 按需下载、只监听 127.0.0.1` : "按需下载 · 只监听 127.0.0.1"}
           size="md-auto"
           elevated
-          onClose={() => setConfigId(null)}
+          onClose={() => { setRemoveError(null); setConfigId(null); }}
         >
           <div className="settings-section stack voice-ext-config">
+            {removeError && configEngine && removeError.id === configEngine.id && (
+              <div className="voice-ext-error" role="alert" data-engine-remove-error={configEngine.id}>
+                <TriangleAlert size={13} />
+                <span>卸载失败：{removeError.text}</span>
+                <button type="button" className="secondary-setting" onClick={() => setRemoveError(null)}>知道了</button>
+              </div>
+            )}
             {configBusy && (
               <div className="voice-engine-progress">
                 <div className="voice-engine-progress-bar">
