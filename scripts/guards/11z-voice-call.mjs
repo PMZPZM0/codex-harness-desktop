@@ -1513,4 +1513,12 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "轻量播报音色卡列出「我的音色」参考音频（换嗓子 = 换参考音频）");
 }
 
+/* 11-21 用户实测「播报几分钟都不出声」：worker 卡死会把整条队列挂住 ⇒ 合成链必须带硬超时。 */
+const workersSrc = read("electron/voice/workers.ts");
+ok(/request\(op: string, payload: Record<string, unknown> = \{\}, timeoutMs = 120_000\)/.test(workersSrc)
+  && /setTimeout\([\s\S]{0,400}?terminate\(\)/.test(workersSrc)
+  && /\}, 20_000\);/.test(read("electron/voice/voice-service.ts"))
+  && /25_000/.test(read("src/features/voice-announce/use-voice-announce.ts")),
+  "播报合成有硬超时（worker 120s / 单句 20s / 渲染层 25s），卡死即判坏重建、不无限挂队列");
+
 process.exit(fails ? 1 : 0);

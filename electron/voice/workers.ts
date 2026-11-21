@@ -434,8 +434,11 @@ export class VoiceWorkerClient {
     return Boolean(this.child) && !this.dead;
   }
 
-  /** 串行执行一次请求。 */
-  request(op: string, payload: Record<string, unknown> = {}): Promise<any> {
+  /** 串行执行一次请求。
+   *  ⛔ 11-21 用户实测「播报几分钟都不出声」：worker 卡在 create/推理时 `pending` 永不结算，
+   *  后面的播报全排在它后面 ⇒ 状态条一直「正在播报」。这里必须带超时；超时即判该 worker
+   *  坏掉并 terminate（下次调用重建），把等待上限钉死。 */
+  request(op: string, payload: Record<string, unknown> = {}, timeoutMs = 120_000): Promise<any> {
     const run = () => {
       if (this.dead) return Promise.reject(new Error(`${this.label} 语音引擎不可用`));
       this.start();
@@ -443,12 +446,23 @@ export class VoiceWorkerClient {
       const id = this.counter++;
       const message = { id, op, ...payload };
       return new Promise<any>((resolve, reject) => {
-        this.pending.set(id, { resolve, reject });
+        const timer = setTimeout(() => {
+          if (!this.pending.has(id)) return;
+          this.pending.delete(id);
+          reject(new Error(`${this.label} ${op} 超时（${Math.round(timeoutMs / 1000)}s）`));
+          // 卡住的推理会占住串行链 ⇒ 直接让该 worker 下线，下一次请求重建
+          void this.terminate().catch(() => undefined);
+        }, Math.max(1000, timeoutMs));
+        this.pending.set(id, {
+          resolve: (value) => { clearTimeout(timer); resolve(value); },
+          reject: (error) => { clearTimeout(timer); reject(error); },
+        });
         try {
           if (this.spawned) this.child.postMessage(message);
           else this.outbox.push(message); // spawn 前缓存，spawn 后按序补发
         } catch (error: any) {
           this.pending.delete(id);
+          clearTimeout(timer);
           reject(error instanceof Error ? error : new Error(String(error)));
         }
       });

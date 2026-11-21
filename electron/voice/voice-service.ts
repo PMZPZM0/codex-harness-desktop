@@ -904,6 +904,9 @@ export class VoiceService {
     }
     const worker = await this.ensurePreviewWorker(sherpaPath, wanted, numThreads);
     try {
+      /* ⛔ 11-21：单次合成立即给上限（用户接受 ≤2s；20s 已远超正常 vits 推理时间）。
+         超时由 worker 层判坏并重建，绝不把整条播报队列无限挂住。 */
+      const speakStartedAt = Date.now();
       const result = await worker.request("speak", {
         text: String(input?.text ?? VOICE_SAMPLE_TEXT),
         sid: input?.sid ?? settings.tts.sid,
@@ -911,7 +914,8 @@ export class VoiceService {
         /* 显式回落到设置里的音质档（不传 undefined —— 那会让 worker 用写死的 4，
            与用户在设置页选的档位脱节）。 */
         numSteps: input?.numSteps ?? settings.tts.numSteps,
-      });
+      }, 20_000);
+      console.info("[voice-preview]", text.slice(0, 16), `${Date.now() - speakStartedAt}ms`);
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
     } catch (error: any) {
       // worker 出错时下次重建（坏 worker 不复用）
@@ -957,7 +961,11 @@ export class VoiceService {
       this.previewTts = worker;
       this.previewTtsKey = key;
       try {
-        await worker.request("create");
+        /* ⛔ 11-21：模型加载是首句延迟的大头 —— 记录真实耗时（日志是「为什么几分钟」的唯一证据），
+           并给 120s 上限：卡死时判坏重建，而不是永远挂住播报队列。 */
+        const createStartedAt = Date.now();
+        await worker.request("create", {}, 120_000);
+        console.info("[voice-preview] worker 就绪", `${Date.now() - createStartedAt}ms`);
       } catch (error) {
         await worker.terminate().catch(() => undefined);
         if (this.previewTts === worker) {

@@ -535,7 +535,14 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       const parts: Float32Array[] = [];
       let sampleRate = 0;
       for (const chunk of chunks) {
-        const result: any = await window.codex.voicePreviewVoice({ text: chunk, speed: opts.speed, numSteps: cfgRef.current.numSteps }).catch(() => null);
+        /* ⛔ 11-21 用户实测「几分钟都不出声」：主进程合成卡住时这里会无限等。
+           25s 是硬上限（正常 vits 单句 <1s）；超时按合成失败处理，并在控制台留下耗时。 */
+        const startedAt = Date.now();
+        const result: any = await Promise.race([
+          window.codex.voicePreviewVoice({ text: chunk, speed: opts.speed, numSteps: cfgRef.current.numSteps }).catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 25_000)),
+        ]);
+        console.info("[voice-announce] 合成", chunk.length, "字", Date.now() - startedAt, "ms", result?.ok ? "ok" : "失败/超时");
         if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
         if (mutedRef.current) return;              // 合成期间用户按了停止：这句不念
         if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
