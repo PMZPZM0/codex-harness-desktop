@@ -493,5 +493,15 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "会话菜单带归属箭头（左侧小三角指回「⋯」按钮）");
 }
 
+/* 11-21 用户实测「生图插件出的图，汇总下面没有缩略图」：宿主直接写盘不发 fileChange ⇒ 必须手动登记。 */
+{
+  const store = read("src/lib/turn-file-changes.mjs");
+  const req = read("src/features/app-state/parts/part05/event-router/02-request.tsx");
+  ok(/export function noteGeneratedFiles/.test(store) && /generatedByTurn/.test(store)
+    && /reports\.set\(turnId, mergeGenerated\(turnId, files\)\)/.test(store),
+    "宿主生成的文件单独登记，并与回合最终报告合并（⛔ 不许被后到的报告覆盖掉）");
+  ok((req.match(/noteGeneratedFiles\(/g) ?? []).length >= 2, "生图 / 修图的产物都登记进回合文件追踪（汇总里出缩略图与产物卡）");
+}
+
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

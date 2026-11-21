@@ -8,6 +8,7 @@ import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
 import { matchRpaRecipe } from "../../../../../lib/rpa-recipes.mjs";
 import { cancelRpaRun, pendingRpaRecipeId, trackRpaRun } from "../../../../../lib/rpa-run-tracker.mjs";
+import { noteGeneratedFiles } from "../../../../../lib/turn-file-changes.mjs";
 import { handleDataAccessTool } from "../../../../data-access";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
 /* 用户人格库（行业身份预设）：与任何第三方 IP 无关。 */
@@ -52,6 +53,15 @@ function applyIdentityToUi(bag: Bag, next: { assistantName?: string; userName?: 
 }
 
 /** 事件路由第 2 段：引擎向宿主要求的调用（读当前时间、工具调用等），带去重后回包。 */
+/** 从生图 / 修图的工具输出里取产物路径（两处都是「N. <绝对路径>」逐行列出）。 */
+function imageOutputPaths(output: unknown): string[] {
+  return String(output ?? "")
+    .split(/\r?\n/)
+    .map((line) => /^\s*\d+\.\s+(.+?)\s*$/.exec(line)?.[1] ?? "")
+    .filter(Boolean);
+}
+
+/** 事件路由第 2 段：模型工具调用（item/tool/call）的分发与执行；返回 true = 已处理并从回调返回。 */
 export function handleEventRouter2(bag: Bag, event: any): boolean {
         if (event.method === "currentTime/read") {
           void toolCallRespond.send(event.id, { currentTimeAt: Math.floor(Date.now() / 1000) });
@@ -1043,6 +1053,14 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: gen?.ok ? String(gen.output ?? "") : `生图失败：${gen?.error ?? "未知原因"}` }],
                   success: gen?.ok === true,
                 });
+                /* 11-21：宿主直接写盘的文件引擎不发 fileChange ⇒ 手动登记，汇总里才出缩略图/产物卡。
+                   ⛔ turnId 只认「当前会话」的活跃回合：后台/群成员会话的图不许记到前台回合上。 */
+                if (gen?.ok) {
+                  const genThread = String(event.params?.threadId ?? "");
+                  const genCurrent = String(bag.threadRef.current?.id ?? "");
+                  const genTurn = String(event.params?.turnId ?? ((!genThread || genThread === genCurrent) ? (bag.activeTurnIdRef.current ?? bag.activeTurnId ?? "") : ""));
+                  if (genTurn) noteGeneratedFiles(genTurn, imageOutputPaths(gen.output));
+                }
               } else if (event.params?.tool === "image_edit") {
                 /* ── 图像工坊 · 修图（`image-lab:edit`，零凭证、本地 jimp）──────────────────── */
                 const edited: any = await window.codex.imageEdit({
@@ -1057,6 +1075,12 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: edited?.ok ? String(edited.output ?? "") : `修图失败：${edited?.error ?? "未知原因"}` }],
                   success: edited?.ok === true,
                 });
+                if (edited?.ok) {
+                  const editThread = String(event.params?.threadId ?? "");
+                  const editCurrent = String(bag.threadRef.current?.id ?? "");
+                  const editTurn = String(event.params?.turnId ?? ((!editThread || editThread === editCurrent) ? (bag.activeTurnIdRef.current ?? bag.activeTurnId ?? "") : ""));
+                  if (editTurn) noteGeneratedFiles(editTurn, imageOutputPaths(edited.output));
+                }
               } else if (event.params?.tool === "image_info") {
                 const info: any = await window.codex.imageInfo({
                   path: args.path ? String(args.path) : undefined,

@@ -11,6 +11,19 @@
 const EMPTY_FILES = Object.freeze([]);
 const reports = new Map();
 const liveReports = new Map();
+/* 11-21 用户实测「生图插件出的图，汇总下面没有缩略图」：
+   生图/修图是**宿主行为**（image-lab 直接写盘），引擎不会为它发 fileChange，
+   回合文件追踪自然看不到 ⇒ 这里单独登记「本回合宿主生成的文件」，与最终报告合并。 */
+const generatedByTurn = new Map();
+
+function mergeGenerated(turnId, files) {
+  const extra = generatedByTurn.get(String(turnId ?? ""));
+  if (!extra?.size) return files;
+  const byPath = new Map();
+  for (const file of Array.isArray(files) ? files : []) byPath.set(String(file?.path ?? ""), file);
+  for (const [path, entry] of extra) if (!byPath.has(path)) byPath.set(path, entry);
+  return [...byPath.values()];
+}
 /* ⛔ 11-08：群聊流式卡按**线程**取实时编辑明细（群视图不知道回合 id）——
    同一条 turn-file-changes-live 同时记两份，收尾报告到达时按线程清场。 */
 const liveByThread = new Map();
@@ -28,7 +41,7 @@ if (typeof window !== "undefined" && typeof window.codex?.onHarnessEvent === "fu
     const threadId = String(payload.threadId ?? "");
     const files = Array.isArray(payload.files) ? payload.files : [];
     if (type === "turn-file-changes") {
-      reports.set(turnId, files);
+      reports.set(turnId, mergeGenerated(turnId, files));
       liveReports.delete(turnId); // 最终报告落地 = 收尾，live 清场（避免两卡并存）
       if (threadId) liveByThread.delete(threadId);
     } else if (files.length) {
@@ -54,6 +67,21 @@ export function getTurnLiveFileChanges(turnId) {
 /** 某线程**运行中**的实时累计改动（群聊流式卡用；收尾报告到达即清场） */
 export function getThreadLiveFileChanges(threadId) {
   return liveByThread.get(String(threadId ?? "")) ?? EMPTY_FILES;
+}
+
+/** 登记「宿主工具直接生成的文件」（生图 / 修图）：引擎不会为宿主写盘发 fileChange，
+ *  不进这里的话「本轮产物」与已更改文件永远看不到这些图。
+ *  ⛔ 只在渲染层记（路径来自宿主返回值）；重复登记按路径去重；最终报告到达时会与之合并。 */
+export function noteGeneratedFiles(turnId, paths) {
+  const id = String(turnId ?? "");
+  if (!id) return;
+  const list = Array.isArray(paths) ? paths.map((p) => String(p ?? "").trim()).filter(Boolean) : [];
+  if (!list.length) return;
+  const map = generatedByTurn.get(id) ?? new Map();
+  for (const path of list) map.set(path, { path, added: 0, deleted: 0, status: "added", generated: true });
+  generatedByTurn.set(id, map);
+  reports.set(id, mergeGenerated(id, reports.get(id) ?? []));
+  notify(id);
 }
 
 /** 两类事件任一到达都会通知（订阅方自己决定读哪个 getter） */
