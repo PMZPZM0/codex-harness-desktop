@@ -17,7 +17,7 @@ import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
-import { User, FileText, Film, Music2, Box, Bot } from "lucide-react";
+import { User, Film, Music2, Box, Bot } from "lucide-react";
 import { UserRefsRow } from "./InlineCards";
 import { FileRefCard } from "../../components/FileRefCard";
 import { ImportedRecordCard } from "./ImportRecords";
@@ -29,6 +29,7 @@ import { hk } from "../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "./COMPOSER_CHIP_ICON";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { LinkifiedText } from "../../components/LinkifiedText";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 
 /** 用户消息视图：头像、名字、正文与附件，支持就地编辑（名字与 Codex 走同一套 store）。 */
 export function UserMessageView({ item, turn, threadId, fallbackWindow, pending, leadingAction, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; /** 10-31：本会话 id —— 上级气泡用它查「我的上级主管是谁」（笔名快照） */ threadId?: string; fallbackWindow?: number; pending?: boolean; /** 11-06：气泡左侧的行内动作（如插队消息的「撤回」）—— 放在同一弹性行里，紧贴气泡左缘。 */ leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
@@ -514,7 +515,7 @@ export function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile
         : mediaKind === "video" ? <Film size={13} style={{ color: "var(--accent)", flex: "none" }} />
           : mediaKind === "audio" ? <Music2 size={13} style={{ color: "var(--ok, var(--accent))", flex: "none" }} />
           : mediaKind === "model" ? <Box size={13} style={{ color: "var(--orange, var(--accent))", flex: "none" }} />
-          : <FileText size={13} style={{ color: "var(--link)", flex: "none" }} />}
+          : <FileTypeIcon path={source} size={13} />}
       <span className="composer-image-chip-name">{name}</span>
       {/* 悬停小预览：只给图片。尺寸由 CSS 的 max-width/max-height + 浏览器保持原始宽高比决定，
           所以"自适应"是天然的——不用按图片比例写任何分支。 */}

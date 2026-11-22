@@ -294,6 +294,9 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     const userMsg = read("src/features/shared/UserMessageView.tsx");
     ok(/<LinkifiedText text=\{seg\.text\}/.test(userMsg) && /openRightFile\(source\)/.test(userMsg),
       "已发出的用户消息：URL 自动变链接，文件附件点击开右栏（两处都接线）");
+    ok(/<ExternalLink href=\{href\}/.test(read("src/features/harness-team/17-team-mention-text.tsx"))
+      && /<FileTypeIcon path=\{source\} size=\{13\}/.test(userMsg),
+      "群聊消息与主会话共用同一套外链组件与文件类型图标（⛔ 不各写一份）");
     ok(/HTTP_URL_RE/.test(read("src/components/LinkifiedText.tsx"))
       && /sanitizeHttpUrl/.test(read("src/components/ExternalLink.tsx"))
       && /A-Za-z0-9/.test(read("src/lib/composer-links.mjs")),

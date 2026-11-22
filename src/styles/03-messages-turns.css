@@ -48,6 +48,8 @@
 .message-attach-chip {
   position: relative;
 }
+/* 消息侧附件与正文/输入框同一套：文件名蓝色加粗，图标按类型着色。 */
+.message-attach-chip .composer-image-chip-name { color: var(--link); font-weight: 600; }
 .message-attach-chip.is-image {
   cursor: zoom-in;   /* 一眼看出可点开大图 */
 }

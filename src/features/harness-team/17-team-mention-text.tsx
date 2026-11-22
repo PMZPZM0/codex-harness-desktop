@@ -17,6 +17,7 @@
 import type { ReactNode } from "react";
 import { Markdown, MD_COMPONENTS, MentionScopeContext } from "../markdown";
 import { linkifyMentions, mentionIdOfHref } from "../../lib/team-mention-render.mjs";
+import { ExternalLink } from "../../components/ExternalLink";
 import { MemberAvatar } from "./13-team-avatar";
 
 /** 画头像用的成员形状（`03` 的 faceOf/faceOfId 产物同形）。 */
@@ -81,12 +82,8 @@ export function TeamMentionText({
     a: ({ href, children }: { href?: string; children?: ReactNode }) => {
       const id = mentionIdOfHref(href);
       if (!id) {
-        /* 普通链接保持主对话同一行为（⛔ 不要因为群聊覆盖了 a 就让外链失效）。 */
-        return (
-          <a href={href} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
-            {children}
-          </a>
-        );
+        /* 普通链接与主对话同一套：URL 截断、GitHub 标志、默认浏览器打开。 */
+        return <ExternalLink href={href}>{children}</ExternalLink>;
       }
       const name = nameOf(id) || String(children ?? "").replace(/^@/, "");
       return <TeamMentionChip id={id} name={name} faceOfId={faceOfId} onPick={onPick} />;
