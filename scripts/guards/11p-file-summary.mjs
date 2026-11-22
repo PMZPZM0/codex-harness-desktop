@@ -505,9 +505,12 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(/side === "top"/.test(bubble) && /anchor\.bottom \+ gap/.test(bubble) && /const inSidebar = anchor\.right <= 360/.test(bubble)
     && /rightBase = sidebar \? Math\.max\(anchor\.right, sidebar\.right\)/.test(bubble),
     "气泡定位：侧栏锚点贴侧栏右缘（与会话行同行对齐），主内容区上方优先、不够翻下方/左右，并夹进视口");
-  ok(/setDialogAnchor\(threadMenuTriggerRect\)/.test(rowsSrc) && /threadMenuTriggerRect = rect/.test(rowsSrc)
-    && /setDialogAnchor\(projectMenuTriggerRect\)/.test(shellSrc) && /projectMenuTriggerRect = rect/.test(shellSrc),
-    "会话/项目菜单的改名、删除都用「⋯」按钮矩形定位（⛔ 不用菜单项位置，否则飘在侧栏中间）");
+  ok(/threadMenuTriggerRect = rect/.test(rowsSrc)
+    && /const itemRect = event\.currentTarget\.getBoundingClientRect\(\)/.test(rowsSrc)
+    && /setDialogAnchor\(\{[\s\S]{0,260}?top: itemRect\.top/.test(rowsSrc)
+    && /projectDialogAnchor\(event\.currentTarget\)/.test(shellSrc) && /projectMenuTriggerRect = rect/.test(shellSrc),
+    "会话/项目菜单的改名、删除：X 用「⋯」按钮矩形贴侧栏（⛔ 不用菜单项 X，否则飘在侧栏中间）、"
+    + "Y 用**被点的菜单项**（11-22：整体用菜单打开那一刻的旧矩形，弹窗会落在别的高度上，用户得再点一次）");
   ok(/\.dialog-anchor-card\.side-top::before/.test(cardsCss) && /\.dialog-anchor-card\.side-bottom::before/.test(cardsCss) && /--arrow-x/.test(cardsCss),
     "气泡小三角 CSS 在（四个方向指回触发处）");
   ok(/\.thread-row\.menu-open > button:first-child > small[\s\S]{0,60}visibility: hidden/.test(threadsCss),

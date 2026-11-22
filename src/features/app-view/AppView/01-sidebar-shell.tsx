@@ -14,7 +14,7 @@ import { settingsNav } from "../helpers";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { getThreadRowColors, subscribeThreadRowColors } from "../../../lib/thread-row-colors.mjs";
-import { setDialogAnchor } from "../../../lib/dialog-anchor";
+import { setDialogAnchor, type DialogAnchorRect } from "../../../lib/dialog-anchor";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
 import { useShortcuts } from "../../shortcuts";
 import { bindingMatches } from "../../../lib/shortcut-catalog.mjs";
@@ -170,8 +170,27 @@ import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal"
 import { NewProjectDialog } from "./NewProjectDialog";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
-/** 项目「⋯」按钮矩形：项目改名/删除气泡贴着**项目行**弹（⛔ 不用菜单项位置，否则飘在侧栏中间）。 */
+/** 项目「⋯」按钮矩形：项目改名/删除气泡贴着**项目行**弹（⛔ 不用菜单项 X 位置，否则飘在侧栏中间）。 */
 let projectMenuTriggerRect: DOMRect | null = null;
+
+/**
+ * 项目菜单里「改名 / 删除」的确认锚点（11-22 用户实测「点了删除位置又变、还要再点一次」）。
+ * X 取「⋯」按钮矩形（贴侧栏右缘，与会话行同一条竖线）；**Y 取被点的那个菜单项**。
+ * ⛔ 别再整体用 `projectMenuTriggerRect`：菜单本身两百多像素高，用户点到最下面那项时，
+ *    用菜单打开那一刻的旧矩形会让弹窗落在别的高度上，鼠标和按钮对不上。
+ */
+function projectDialogAnchor(item: Element | null): DialogAnchorRect | null {
+  const itemRect = item?.getBoundingClientRect();
+  if (!itemRect) return projectMenuTriggerRect;
+  return {
+    left: projectMenuTriggerRect ? projectMenuTriggerRect.left : itemRect.left,
+    right: projectMenuTriggerRect ? projectMenuTriggerRect.right : itemRect.right,
+    width: projectMenuTriggerRect ? projectMenuTriggerRect.width : itemRect.width,
+    top: itemRect.top,
+    bottom: itemRect.bottom,
+    height: itemRect.height,
+  };
+}
 
 /** 侧栏壳：项目/会话树、团队条、指挥中枢入口。⛔ 中枢就是**一个普通会话**（点按钮 = openThread(bossThreadId)），不是覆盖层。 */
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
@@ -1027,12 +1046,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                               <span className="project-menu-arrow" style={{ top: projectMenuPos.arrowTop, left: projectMenuPos.left - 6 }} />
                             )}
                             <div className="project-menu" style={projectMenuPos ? { top: projectMenuPos.top, left: projectMenuPos.left } : undefined}>
-                              <button onClick={() => { setProjectMenu(null); setDialogAnchor(projectMenuTriggerRect); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                              <button onClick={(event) => { setProjectMenu(null); setDialogAnchor(projectDialogAnchor(event.currentTarget)); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
                               <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                               <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
-                              <button className="danger" onClick={async () => {
+                              <button className="danger" onClick={async (event) => {
                                 setProjectMenu(null);
-                                setDialogAnchor(projectMenuTriggerRect);
+                                /* ⛔ 11-22 同会话行那条：X 用「⋯」矩形贴侧栏、Y 用**被点的这一项**，
+                                   否则菜单高 ≈200px，点到「删除」时弹窗会落在别处、要再点一次。 */
+                                setDialogAnchor(projectDialogAnchor(event.currentTarget));
                                 if (!(await app.openAppConfirm("删除项目", `项目「${projectNameOf(cwd)}」下的全部会话与记录将被永久删除，此操作无法撤销。`, "永久删除"))) return;
                                 unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd);
                               }}><Trash2 size={14} />删除项目（含全部会话）</button>

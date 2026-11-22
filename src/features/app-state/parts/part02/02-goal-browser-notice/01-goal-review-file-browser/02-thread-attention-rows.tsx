@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { DispatchMenu, DispatchBadge } from "../../../../../../features/dispatch";
 import { getBossThreads } from "../../../../../../features/boss-group-view";
 import { getTeamTalkThreads, subscribeTeamTalkThreads } from "../../../../../../lib/team-talk-threads.mjs";
-import { setDialogAnchor } from "../../../../../../lib/dialog-anchor";
+import { setDialogAnchor, type DialogAnchorRect } from "../../../../../../lib/dialog-anchor";
 import {
   AlertTriangle,
   Archive,
@@ -154,7 +154,7 @@ import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../.
 
 /** 会话行菜单的锚点 Y（触发按钮中心，视口坐标）——菜单右弹时箭头指回「⋯」按钮。单开菜单，模块级足够。 */
 let threadMenuAnchorY = 0;
-/** 触发「⋯」按钮的矩形：改名/删除气泡要贴着**会话行**弹，⛔ 不能用菜单项位置（会飘在侧栏中间）。 */
+/** 触发「⋯」按钮的矩形：改名/删除气泡贴着**会话行**弹。⛔ X 只能用它（用菜单项的 X 会飘在侧栏中间）；Y 另取被点的菜单项（见下方 setDialogAnchor 处，11-22）。 */
 let threadMenuTriggerRect: DOMRect | null = null;
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
@@ -255,7 +255,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
      *   本地覆盖表 → threads 内存表 → 引擎会话名 → 别名记录（+ 广播）。
      *   侧栏菜单、侧栏双击标题、顶栏双击、斜杠命令走的是**同一个函数**，所以四处的名字永远一致。
      */
-    const renameSession = async (threadId: string, current: string, anchor?: DOMRect | null) => {
+    const renameSession = async (threadId: string, current: string, anchor?: DialogAnchorRect | null) => {
       /* 11-11 用户令：小窗口就近弹 ⇒ 把触发处坐标交给气泡壳（菜单项 / 标题行）。 */
       setDialogAnchor(anchor ?? null);
       const next = await bag.openAppPrompt("改名字", String(current ?? "").trim()).catch(() => null);
@@ -415,7 +415,20 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             {/* ⛔ 11-01 用户令：**只留一个改名入口**。
                 「重命名」和「改笔名」本来是同一个操作（笔名就是会话名），两个选项让人以为分工不同。
                 现在统一叫「改名字」：写别名记录 + 写引擎会话名 + 广播（子会话里的「上级：X」跟着变）。 */}
-            <button onClick={() => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText, threadMenuTriggerRect); }}><PenLine size={13} /><span>改名字</span></button>
+            <button onClick={(event) => {
+              bag.setThreadRowMenu(null);
+              /* 同「删除」那条（11-22）：锚点 Y 用**被点的菜单项**，弹窗才落在鼠标处。 */
+              const itemRect = event.currentTarget.getBoundingClientRect();
+              const rowRect = threadMenuTriggerRect;
+              void renameSession(entry.id, titleText, {
+                left: rowRect ? rowRect.left : itemRect.left,
+                right: rowRect ? rowRect.right : itemRect.right,
+                width: rowRect ? rowRect.width : itemRect.width,
+                top: itemRect.top,
+                bottom: itemRect.bottom,
+                height: itemRect.height,
+              });
+            }}><PenLine size={13} /><span>改名字</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span>{
               /* ⛔ 11-08 用户（截图）：「添加标签后面的『点标签可切换』怎么也没了」。
                  原条件是 `length > 1` —— 只有 1 枚标签的行（例如只有「专家」身份徽标）就把提示藏了，
@@ -450,9 +463,24 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             </div>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.copyThreadReferenceId(entry); }}><Copy size={13} /><span>复制会话 ID</span></button>
-            <button className="danger" onClick={async () => {
+            <button className="danger" onClick={async (event) => {
               bag.setThreadRowMenu(null);
-              setDialogAnchor(threadMenuTriggerRect);
+              /* ⛔⛔ 11-22 用户实测：「点击删除之后位置又变了，还要点一次」。
+                 旧代码锚的是**菜单打开那一刻**记下的「⋯」矩形：菜单本身高 ≈284px、行的位置还会随
+                 列表重排变化，等用户点到最下面的「删除」时，那个矩形和鼠标已经不在同一高度上
+                 ⇒ 确认气泡出现在别处，用户得重新对准「永久删除」再点一次。
+                 ⇒ 锚点 Y 取**被点的菜单项自己**的矩形（点哪就在哪弹），X 仍用行内「⋯」的右缘
+                 （贴侧栏右缘、不压进侧栏 —— 11-11 用户令那条不变）。 */
+              const itemRect = event.currentTarget.getBoundingClientRect();
+              const rowRect = threadMenuTriggerRect;
+              setDialogAnchor({
+                left: rowRect ? rowRect.left : itemRect.left,
+                right: rowRect ? rowRect.right : itemRect.right,
+                width: rowRect ? rowRect.width : itemRect.width,
+                top: itemRect.top,
+                bottom: itemRect.bottom,
+                height: itemRect.height,
+              });
               if (!(await bag.openAppConfirm(
                 "删除会话",
                 `会话「${entry.name || entry.preview || "未命名"}」及其中的消息、工具记录将被永久删除，此操作无法撤销。`,
