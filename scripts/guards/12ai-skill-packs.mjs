@@ -10,7 +10,7 @@
  *
  * ⛔ 独立守卫（不进 _ctx MODULES 计数），必须同时加进 package.json 的 check 链。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -174,6 +174,19 @@ ok(/leanDevInstructions/.test(read("electron/developer-instructions.ts"))
   && /lean: appSettings\.leanContext !== false/.test(read("electron/main/12-skill-discipline.ts"))
   && /harness-dev-guide\.md/.test(applySrc),
   "【上下文】常驻指令默认精简，完整细则落盘 harness-dev-guide.md 供按需读取");
+
+/* ── 11-22 首轮再瘦身（用户令：5.7W → 极限剩，缓存命中与能力都不能伤）──────────────
+   三处各自独立，任何一处回退都会把首轮打回 5W+，但都不会让能力消失。 */
+{
+  const ipcSrc = read("electron/features/codex-ipc.ts");
+  ok(/hostKind === "normal"[\s\S]{0,900}filterToolSurface/.test(ipcSrc)
+    && /restrictedThreadRole/.test(ipcSrc),
+    "【上下文】resume 也按 CORE 画像收窄（⛔ 只在确认 normal 时裁；否则老会话被 58 个工具整份覆盖）");
+  ok(/features\.multi_agent=false/.test(read("electron/codex-server.ts")),
+    "【上下文】引擎启动关闭 deprecated multi_agent（multi_agent_v1 schema 实测 9.8KB）");
+  ok(statSync(ROOT + "/AGENTS.md").size < 32768 && existsSync(ROOT + "/docs/AGENTS-DETAILS.md"),
+    "【上下文】AGENTS.md 压回引擎默认上限内，查阅型细则外置 docs/AGENTS-DETAILS.md");
+}
 
 console.log("\n【随包包的真实装态（11-21 修「别的电脑安装不了 / 装了也不更新状态」）】");
 /* 根因：旧实现把「随包源目录里有技能」直接当 installed ⇒ 每台机器都显示已安装，

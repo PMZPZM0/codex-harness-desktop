@@ -177,9 +177,14 @@ export const codexFeature = defineFeature<null>({
            派生会话的工具面归各自域（team-run / group-talk / delegate），宿主一律不覆盖。
            动态 import 只为避开加载环（codex-ipc ← main ← dispatch-core）。 */
         let hostOwnsSurface = true;
+        /* 11-22：普通会话在 resume 时也要按 CORE 画像收窄。
+           ⛔ 只在**确认**是 normal 时裁：中枢（hub）/派生会话的工具面由各自域负责，
+             判错会把群编排 / 团队工具裁没。拿不到 kind 就保持原样。 */
+        let hostKind: string | null = null;
         try {
-          const { sessionOwnsHostToolSurface } = await import("./dispatch-core");
+          const { sessionOwnsHostToolSurface, restrictedThreadRole } = await import("./dispatch-core");
           hostOwnsSurface = await sessionOwnsHostToolSurface(resumeThreadId);
+          try { hostKind = String((await restrictedThreadRole(resumeThreadId)).kind ?? ""); } catch { hostKind = null; }
         } catch { /* 判定失败按宿主负责（升级是锦上添花，⛔ 绝不挡住 resume） */ }
         if (!hostOwnsSurface) {
           console.log("[tool-surface] resume " + resumeThreadId.slice(0, 8) + " 是派生会话 ⇒ 跳过宿主工具面升级（由所属域负责）");
@@ -231,7 +236,17 @@ export const codexFeature = defineFeature<null>({
               if (!key) continue;
               byName.set(key, tool);
             }
-            const surface = withStepParam([...byName.values()]) as unknown[];
+            let surface = withStepParam([...byName.values()]) as unknown[];
+            /* 11-22：resume 曾把已经收窄的 17 个工具整份覆盖回 58 个（实测 rollout 首行
+               19KB → 53KB，首轮多花约 1 万 tokens）。与 thread/start 同口径再裁一次。 */
+            if (hostKind === "normal") {
+              try {
+                const { allowedToolsFor, filterToolSurface } = await import("../tool-profiles");
+                surface = withStepParam(filterToolSurface(surface as any[], allowedToolsFor("normal")) as unknown[]);
+              } catch (error: any) {
+                console.warn("[tool-profile] resume 收窄失败（按未收窄继续）：", String(error?.message ?? error).slice(0, 160));
+              }
+            }
             await syncToolSurfaceAsync(codexHome, resumeThreadId, surface);
             console.log("[tool-surface] resume 升级 " + resumeThreadId.slice(0, 8) + " → " + String(surface.length) + " 个（宿主 " + String(resumeTools.length) + " + 主进程 " + String(extras.length) + "）");
           } catch (error: any) {

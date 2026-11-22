@@ -314,7 +314,9 @@ export async function run() {
        **两处注入都必须带 step**；所以盯「surface 由 withStepParam 产生」+「同步的就是 surface」，
        不再绑实参字面（绑了的话，以后改合并逻辑就会假红，而真语义其实没动）。 */
     (/withStepParam\(\(params as any\)\.dynamicTools\)/.test(codexIpcSrc)
-      && /const surface = withStepParam\(/.test(codexIpcSrc)
+      /* 11-22：resume 那处现在会按 CORE 画像再收窄一次 ⇒ surface 是 let（先 withStepParam，
+         可能被 filterToolSurface 后重新 withStepParam）。语义没变：仍是 withStepParam 产生的。 */
+      && /(const|let) surface = withStepParam\(/.test(codexIpcSrc)
       && /syncToolSurfaceAsync\(codexHome, resumeThreadId, surface\)/.test(codexIpcSrc) ? ok : fail)(
       "【127】注入点是主进程工具面**两处**（thread/start MCP 合并后 + resume 改写 rollout 首行前）—— ⛔ 少 resume 那处，老会话 resume 一次就退回无 step 的旧形态"
     );
