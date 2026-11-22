@@ -253,7 +253,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 > **完整对照表已外置**：`docs/TOOLS-AND-CAPABILITIES.md`（内置 11 项 / 按需下载清单 / 每个 dynamicTool 的来源与用途）。
 > ⛔ 判断“某个工具现在能不能用”**只认模型工具列表**：工具面按会话画像收窄（`electron/tool-profiles.ts`），
 > 文档里写了不等于本会话注册了；没注册的能力走 `harness_tools` 网关。
-> 全部通道清单（721 条）见内置技能 `harness-api`（自动生成，别手抄）。
+> 全部通道清单见内置技能 `harness-api`（自动生成，别手抄；条数随仓而异，⛔ 不要写死）。
 
 ## 工具链清单
 
