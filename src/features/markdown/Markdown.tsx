@@ -18,6 +18,9 @@ import { codeFontStack, codeThemeStyle } from "../../lib/code-themes";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { markdownUrlTransform } from "../../lib/markdown-url";
 import { mentionIdOfHref } from "../../lib/team-mention-render.mjs";
+import { fileNameOf, looksLikeFilePath } from "../../lib/file-path-link.mjs";
+import { FileTypeIcon, fileTypeVisual } from "../../components/FileTypeIcon";
+import { openRightFile } from "../../lib/right-file.mjs";
 // 分块逻辑搬去 src/lib/markdown-blocks.mjs（纯函数 ⇒ 预检守卫可直接跑真值表）。
 // ⛔ 其中含一处容错：列表项后面顶格紧跟的结语行原先被 CommonMark 当 lazy 续行塞进最后一个
 //   <li>，渲染上缩进到 marker 之后、左侧空出 marker 宽度（用户 09-24：「最后一个总是歪的，
@@ -80,7 +83,21 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
      不写语言」的围栏 className 同样是空 ⇒ 跟着行内代码一起被提前 return：既不高亮、也没有复制
      按钮（10-14 那轮只给**带语言**的代码块补了按钮，漏的正是这一类：提交列表这类裸围栏）。
      判据与实测证据见 `src/lib/md-code-block.mjs`（纯函数，守卫 12o 跑真值表 + react-markdown 真跑）。 */
-  if (!isBlockCode(className, children)) return <code {...props}>{children}</code>;
+  if (!isBlockCode(className, children)) {
+    /* 11-21 用户对照 Qoder：「qodeR 就是在汇总消息里面展示的」——文件路径留在句子里，
+       按类型给不同图标与颜色；点一下直接开右栏，不再在文字下面另排一排芯片。 */
+    const path = code.trim();
+    if (looksLikeFilePath(path)) {
+      const visual = fileTypeVisual(path);
+      return (
+        <button type="button" className="inline-file-link" style={{ color: visual.color }} title={`在右侧栏预览：${path}`} onClick={() => openRightFile(path)}>
+          <FileTypeIcon path={path} size={14} />
+          <span>{fileNameOf(path)}</span>
+        </button>
+      );
+    }
+    return <code {...props}>{children}</code>;
+  }
   const language = String(className ?? "").replace("language-", "");
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
   /* 10-17 用户令：```flowchart 围栏 = **交互式流程图**（真实节点/连线，可拖拽缩放），

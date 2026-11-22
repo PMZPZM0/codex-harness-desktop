@@ -99,7 +99,7 @@ function wholeMessageRange(host: HTMLElement | null): Range | null {
     acceptNode: (node) => {
       const parent = (node as Text).parentElement;
       if (!parent || !parent.textContent?.trim()) return NodeFilter.FILTER_REJECT;
-      return parent.closest("button, .message-footer, .user-message-footer, .inline-file-card, .import-record-card, style, script")
+      return parent.closest("button, .message-footer, .user-message-footer, .inline-file-link, .import-record-card, style, script")
         ? NodeFilter.FILTER_REJECT
         : NodeFilter.FILTER_ACCEPT;
     },

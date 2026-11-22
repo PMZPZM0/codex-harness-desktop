@@ -80,6 +80,10 @@ ok(icon.includes("export function FileTypeIcon") && icon.includes("export functi
   "FileTypeIcon 组件 + 纯函数（扩展名 → 图标/配色，一处真相源）");
 ok(["py", "ts", "js", "md", "json", "svg", "yml"].every((ext) => icon.includes(`"${ext}"`)),
   "图标表覆盖常用扩展名（py/ts/js/md/json/svg/yml…）");
+ok(/\["tsx",\s*"jsx"\][^\n]*Icon:\s*Atom/.test(icon) && /\["js",\s*"mjs",\s*"cjs"\][^\n]*Icon:\s*Braces/.test(icon)
+  && /\["css",\s*"scss",\s*"less"\][^\n]*Icon:\s*Palette/.test(icon)
+  && /\["tsx",\s*"jsx"\][^\n]*#2f74c0/.test(icon) && /\["js",\s*"mjs",\s*"cjs"\][^\n]*#b8860b/.test(icon),
+  "前端常见类型用**不同图形 + 不同配色**（tsx=原子 / js=花括号 / css=调色板；用户对照 Qoder）");
 ok(status.includes('<FileTypeIcon path={file.path} size={15} className="completed-file-icon" />') && !status.includes("fileChip"),
   "汇总卡行用 FileTypeIcon（旧的文字彩色块已删，别回来）");
 ok(itemView.includes('<FileTypeIcon path={path} size={12} />') && itemView.includes('className="action-diff-head"') && itemView.includes('className="action-diff-stats"'),

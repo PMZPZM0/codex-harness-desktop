@@ -1,8 +1,8 @@
 /** 内联文件卡片 / 引用行（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
-import { useMemo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { resolveFilePath, lookupKnownFile, openImageLightbox, openFileTextEditor, notifyToast, openMediaPreview } from "../../lib/ui-channels";
+import { resolveFilePath, openImageLightbox, openFileTextEditor, notifyToast, openMediaPreview } from "../../lib/ui-channels";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
 import { mediaKindOf } from "../../lib/media-kind.mjs";
@@ -11,8 +11,6 @@ import type { ParsedUserRefs } from "../../lib/user-refs";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { openRightFile } from "../../lib/right-file.mjs";
 import { craftOpeners, openPathInCraft, useInstalledCraftIds } from "./craft-open";
 
 /** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
@@ -89,181 +87,6 @@ export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuStat
       ))}
     </div>
   ), document.body);
-}
-
-function looksLikeFilePath(candidate: string): boolean {
-  const trimmed = candidate.replace(/^[`"'\s]+|[`"'\s]+$/g, "");
-  if (!trimmed || trimmed.length > 4096) return false;
-  // Windows 盘符单独走规则；非盘符路径禁掉明显非法字符
-  const hasDrive = /^[A-Za-z]:[\\/]/.test(trimmed);
-  if (!hasDrive && /[<>:"|?*\u0000-\u001f]/.test(trimmed)) return false;
-  // 版本号 / 纯数字 token（2.55.0、v24.19.0、11.17.0、384.4）不是文件
-  if (/^[vV]?\d[\d.,]*\d$/.test(trimmed)) return false;
-  // 中文描述末尾的小数（累计升值超0.4、增长3.5）不是“.4/.5 文件”。
-  if (/\.\d{1,5}$/.test(trimmed)) return false;
-  if (hasDrive) return /\.[A-Za-z0-9]{1,5}$/.test(trimmed);
-  if (trimmed.startsWith("~/") || trimmed.startsWith("./") || trimmed.startsWith("../")) return true;
-  if (/[\\/]/.test(trimmed) && /\.[A-Za-z0-9]{1,5}$/.test(trimmed)) return true;
-  // 裸路径：单词或连续中文，不带空格、不带引号
-  if (/\s/.test(trimmed)) return false;
-  if (/^[A-Za-z0-9_.\u4e00-\u9fa5-]+\.[A-Za-z0-9]{1,5}$/.test(trimmed)) return true;
-  return false;
-}
-
-/** 从 markdown 正文里抽出文件路径（含反引号 / 裸路径两种写法），去重后交给内联文件卡解析。 */
-export function extractFilePathsFromMarkdown(text: string): { path: string; prefix: string }[] {
-  const seen = new Set<string>();
-  const out: { path: string; prefix: string }[] = [];
-  const push = (raw: string, prefix: string) => {
-    const trimmed = raw.replace(/^[`"'\s]+|[`"'\s]+$/g, "").replace(/[\\/]+$/, "");
-    if (!looksLikeFilePath(trimmed)) return;
-    if (seen.has(trimmed)) return;
-    seen.add(trimmed);
-    out.push({ path: trimmed, prefix });
-  };
-  const parts = text.split(/```/);
-  for (let i = 0; i < parts.length; i += 2) {
-    const part = parts[i];
-    if (part == null) break;
-    for (const line of part.split(/\r?\n/)) {
-      // 1) 路径 / Path / 文件 / 位置 关键字前缀（行级，整行就是「keyword: path」）
-      const kw = line.match(/^[ \t]*(?:路径|Path|路径名|文件|位置|File|path)[:：][ \t]*(.+?)[ \t]*$/i);
-      if (kw) {
-        push(kw[1], kw[1].replace(/\s+/g, " ").trim());
-        continue;
-      }
-      // 2) 反引号包裹：本行所有反引号块都收；整行就是单个反引号路径时才把整行也算上
-      const bt = line.match(/`([^`\n]+)`/g);
-      if (bt) {
-        for (const piece of bt) push(piece.slice(1, -1), piece);
-        const trimmedLine = line.trim();
-        if (trimmedLine.startsWith("`") && trimmedLine.endsWith("`") && bt.length === 1) {
-          push(trimmedLine.slice(1, -1), trimmedLine);
-        }
-        continue;
-      }
-      // 3) 全行就是 Windows 绝对路径（含盘符）；Chinese 字符非 word-boundary，直接定位
-      const abs = line.match(/([A-Za-z]:[\\/][^\s<>:"|?*\n]+\.[A-Za-z0-9]{1,5})/);
-      if (abs) {
-        push(abs[1], abs[1]);
-        continue;
-      }
-      // 4) 任意裸文件路径（含扩展名的 token），可在一行里出现多次
-      const bareMatches = line.match(/([^\s<>:"|?*()<>\[\]{}]+\.[A-Za-z0-9]{1,5})/g);
-      if (bareMatches) {
-        for (const m of bareMatches) push(m, m);
-      }
-    }
-  }
-  return out;
-}
-
-/** 正文里的紧凑文件行：从 markdown 抽路径，解析成真实位置后渲染可点文件项（点击开右栏）。 */
-export function InlineFileCards({ text }: { text: string }) {
-  const matches = useMemo(() => extractFilePathsFromMarkdown(text), [text]);
-  const [resolvedPaths, setResolvedPaths] = useState<Record<string, string>>({});
-  const [menu, setMenu] = useState<FileCardMenuState | null>(null);
-  // 探测两步走（全程只 stat，不扫磁盘）：① 按解析路径直查；② 裸文件名查会话路径台账
-  // （工具调用等消息项里出现过的真实路径）。都找不到才灰显，点击只弹提示、不再炸读取错误。
-  useEffect(() => {
-    let cancelled = false;
-    setResolvedPaths({});
-    for (const m of matches) {
-      const abs = resolveFilePath(m.path) ?? m.path;
-      window.codex.fileExists(abs)
-        .then(async (r) => {
-          if (cancelled) return;
-          if (r?.exists) {
-            setResolvedPaths((prev) => ({ ...prev, [m.path]: abs }));
-            return;
-          }
-          const known = lookupKnownFile(m.path) ?? null;
-          if (cancelled) return;
-          if (!known) return;
-          try {
-            const check = await window.codex.fileExists(known);
-            if (cancelled) return;
-            if (check?.exists) setResolvedPaths((prev) => ({ ...prev, [m.path]: known }));
-          } catch { /* 无真实文件就不渲染卡片 */ }
-        })
-        .catch(() => { /* 探测失败不渲染，避免制造点不开的假卡片 */ });
-    }
-    return () => { cancelled = true; };
-  }, [matches]);
-  /* 11-11 用户截图：图片的正文引用要跟普通文件一样是**整行文件卡**（点击开右栏/预览），
-     ⛔ 不要再画小缩略芯片（会和回合预览卡、已更改文件行重复成三份）。
-     视频仍不出正文芯片：回合预览卡（TurnMediaCards）负责播放；音频 / 3D 保留缩略芯片。 */
-  const confirmed: Array<{ path: string; prefix: string; resolved: string }> = [];
-  const seenResolved = new Set<string>();
-  for (const match of matches) {
-    const resolved = resolvedPaths[match.path];
-    if (!resolved) continue;
-    if (mediaKindOf(resolved) === "video") continue;
-    /* 同一文件可能先以裸文件名、后以绝对路径各出现一次：按**解析后的真实路径**去重，
-       ⛔ 只按原文去重会出两张卡。 */
-    const key = resolved.replaceAll("\\", "/");
-    if (seenResolved.has(key)) continue;
-    seenResolved.add(key);
-    confirmed.push({ ...match, resolved });
-  }
-  if (confirmed.length === 0) return null;
-  return (
-    <>
-    <div className="inline-file-cards" aria-label="涉及到的文件">
-      {confirmed.map((m, index) => {
-        const name = basename(m.path) || m.path;
-        const openPath = m.resolved;
-        const mediaKind = mediaKindOf(openPath);
-        const mediaTitle = mediaKind === "video" ? "点击播放" : mediaKind === "audio" ? "点击播放音频" : mediaKind === "model" ? "点击预览 3D" : "";
-        /* 11-21 用户对照 Qoder 截图：「这种文件点击后也可以联动右侧栏吧，你看我框住的那一排文件展示」
-           ⇒ 普通文件也收成一排紧凑芯片（不再逐个整行卡），点一下直接开右栏预览。 */
-        if (!mediaKind) {
-          return (
-            <button
-              type="button"
-              className="inline-file-card"
-              key={`${m.path}-${index}`}
-              title={`在右侧栏预览：${openPath}`}
-              onClick={() => openRightFile(openPath)}
-              onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
-            >
-              <FileTypeIcon path={openPath} size={14} />
-              <span className="inline-file-name">{name}</span>
-            </button>
-          );
-        }
-        return (
-          <button
-            type="button"
-            className="inline-file-card is-media"
-            key={`${m.path}-${index}`}
-            title={`${mediaTitle}：${openPath}`}
-            onClick={() => openMediaPreview({ source: openPath, kind: mediaKind, title: name })}
-            onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
-          >
-            {mediaKind === "video" ? <Film size={14} />
-              : mediaKind === "audio" ? <Music2 size={14} />
-              : <Box size={14} />}
-            <span className="inline-file-name">{name}</span>
-          </button>
-        );
-      })}
-    </div>
-    {menu && (
-      <FileCardMenu
-        menu={menu}
-        onOpen={() => {
-          const openPath = resolvedPaths[menu.path] ?? menu.path;
-          const mediaKind = mediaKindOf(openPath);
-          if (isImagePath(openPath)) openImageLightbox(openPath, menu.name);
-          else if (mediaKind) openMediaPreview({ source: openPath, kind: mediaKind, title: menu.name });
-          else openRightFile(openPath);
-        }}
-        onClose={() => setMenu(null)}
-      />
-    )}
-    </>
-  );
 }
 
 /** 用户消息的引用行：文件 / 技能 / 上下文三类 chip，文件可点开。 */

@@ -68,8 +68,8 @@ ok(/isBlockCode\(className, children\)/.test(mdSrc) && /from "\.\.\/\.\.\/lib\/m
   "判据走**纯函数模块** `lib/md-code-block.mjs`（组件内不许再内联同名表达式 —— 改一处漏一处）");
 ok(!/Boolean\(className\) \|\|/.test(codeOnly(mdSrc)),
   "⛔ 负向：组件里不许内联 `Boolean(className) || …`（判据只此一份）");
-ok(/if \(!isBlockCode\(className, children\)\) return <code \{\.\.\.props\}>\{children\}<\/code>;/.test(mdSrc),
-  "提前 return 由 `isBlockCode` 把关 —— 不再是 `!className`（那会把裸围栏与行内 code 一起放走）");
+ok(/if \(!isBlockCode\(className, children\)\) \{[\s\S]{0,900}?return <code \{\.\.\.props\}>\{children\}<\/code>;/.test(mdSrc),
+  "行内 code 的提前 return 仍由 `isBlockCode` 把关（行内文件链接分支不得把裸围栏一起放走）");
 ok(!/if \(!className\) return <code \{\.\.\.props\}/.test(codeOnly(mdSrc)),
   "⛔ 负向：`if (!className) return <code …` 不许复活（它就是把裸围栏的按钮漏掉的那一行；过 codeOnly 剥注释防假红）");
 ok(/if \(!language\) \{[\s\S]{0,220}withCopy\(/.test(mdSrc) && /data-plain-code="1"/.test(mdSrc),

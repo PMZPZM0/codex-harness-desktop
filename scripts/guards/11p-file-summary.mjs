@@ -246,20 +246,17 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     && !/isInsideOrEqualTrustedRoots\(target\)/.test(shell),
     "「默认应用」走 shell:open，且**不再判可信根**（10-29 用户令：任意位置的文件都要能打开）");
 
-  /* 10-22 用户截图：「我没改嘛，还是这种旧的」——消息末尾的内联文件引用原来还是小芯片。
-     普通文件与图片都用同一张 FileRefCard（默认右栏预览）；只有音视频 / 3D 保留缩略芯片。 */
+  /* 11-21 用户对照 Qoder：「qodeR 就是在汇总消息里面展示的」——文件直接渲染在正文句子里，
+     按类型给不同图标/颜色，点击开右栏；⛔ 正文下面不再另排一排芯片。 */
   const inlineCards = read("src/features/shared/InlineCards.tsx");
   const fileRefCard = read("src/components/FileRefCard.tsx");
-  ok(/className="inline-file-card"/.test(inlineCards) && /onClick=\{\(\) => openRightFile\(openPath\)\}/.test(inlineCards)
-    && !/<FileRefCard/.test(inlineCards),
-    "正文文件引用 = 一排紧凑文件项，点击**直接开右栏**（⛔ 不再逐个整行卡片）");
-  /* 11-11 用户：图片已有预览卡 + 已更改文件行，正文再出海缩略芯片就是三重展示；视频同理（预览卡负责播放）。 */
-  ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) continue;/.test(inlineCards),
-    "视频不再出正文缩略芯片（图片走右栏预览）");
-  ok(/const seenResolved = new Set<string>\(\)/.test(inlineCards) && /const openPath = m\.resolved;/.test(inlineCards),
-    "同一文件（裸名 + 绝对路径各出现一次）按解析后的真实路径只出一张卡");
+  const markdown = read("src/features/markdown/Markdown.tsx");
+  ok(/looksLikeFilePath/.test(markdown) && /className="inline-file-link"/.test(markdown)
+    && /openRightFile\(path\)/.test(markdown) && /FileTypeIcon path=\{path\}/.test(markdown),
+    "正文行内文件路径 = 可点文件链接（按类型图标/配色，点击直接开右栏）");
+  ok(!/InlineFileCards/.test(inlineCards), "⛔ 旧的「正文下方一排芯片」已删除（避免同一批文件重复展示）");
   /* 11-21 用户截图：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」。
-     ⇒ 正文画一排紧凑文件项；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */
+     ⇒ 文件只在正文行内出现；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */
   {
     const statusSrc = read("src/features/status/Status.tsx");
     const mediaCss = read("src/styles/39-media-preview.css");
@@ -269,8 +266,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     ok(/<details className="completed-changes">\s*\n\s*<summary>[\s\S]{0,200}已编辑 \{files\.length\} 个文件/.test(statusSrc)
       && !/className="turn-outputs"/.test(statusSrc),
       "回合底部只留一条「已编辑 N 个文件」汇总条（默认收起；⛔ 不再套第二层本轮产物折叠）");
-    ok(/<InlineFileCards text=\{text\} \/>/.test(itemView) && !/<InlineFileCards/.test(statusSrc),
-      "正文末尾渲染紧凑文件行（底部汇总不再重复画文件引用）");
+    ok(!/InlineFileCards/.test(itemView) && !/InlineFileCards/.test(statusSrc) && /className="inline-file-link"/.test(markdown),
+      "文件只在正文行内展示一次（底部汇总不再重复画文件引用）");
     ok(/\{files\.length > 0 && \(\s*\n\s*<details className="completed-changes">/.test(statusSrc)
       && !/outputFiles|extractFilePathsFromMarkdown\(assistantText\)/.test(statusSrc),
       "没有文件改动时不画空汇总条（逐个产物卡的 outputFiles 逻辑已删除）");

@@ -795,55 +795,6 @@
   text-overflow: ellipsis;
 }
 /* Assistant 正文里识别到的文件路径卡片（同 .ref-file-card 视觉族，紧凑 + 默认展开路径） */
-.inline-file-cards {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  margin: 6px 0 2px 0;
-}
-.inline-file-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 300px;
-  min-width: 0;
-  padding: 2px 5px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-  transition: background 0.12s, color 0.12s;
-}
-.inline-file-card:hover {
-  background: var(--panel-2);
-  color: var(--link);
-}
-.inline-file-card svg {
-  flex: none;
-}
-.inline-file-card.is-media svg {
-  color: var(--link);
-}
-.inline-file-card--missing {
-  opacity: 0.55;
-}
-.inline-file-card--missing svg {
-  color: var(--faint);
-}
-.inline-file-card--missing {
-  cursor: default;
-}
-.inline-file-card--missing:hover {
-  border-color: var(--line);
-  background: var(--panel-2);
-  translate: none;
-}
-
 /* 动态执行流程拓扑图（FlowDiagram）：节点按状态点亮，进行中连线有流动动画 */
 .flow-diagram {
   display: flex;
@@ -938,6 +889,27 @@
   height: 100%;
   border-radius: 1px;
   background: var(--link);
+}
+.inline-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.inline-file-link:hover {
+  background: var(--panel-2);
+  text-decoration: underline;
+}
+.inline-file-link .file-type-icon {
+  display: inline-flex;
 }
 .inline-file-name {
   font-size: 12px;

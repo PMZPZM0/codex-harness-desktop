@@ -3023,27 +3023,27 @@ const CHECKS = [
   },
   {
     id: "inline-file-row",
-    name: "正文文件行：一排紧凑文件项，点击打开右栏（11-21）",
+    name: "正文行内文件链接：按类型图标/配色，点击打开右栏（11-21）",
     run: async (h) => {
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 12000 });
       await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("任务")); b?.click(); return 1; })()`);
       await h.waitFor(`!!document.querySelector(".thread-row button")`, { label: "会话行", timeoutMs: 10000 });
-      let found = Number(await h.eval(`document.querySelectorAll(".inline-file-card").length`)) || 0;
+      let found = Number(await h.eval(`document.querySelectorAll(".inline-file-link").length`)) || 0;
       /* 历史会话越多越可能带文件引用；逐个点开前 6 个，直到出现正文文件行。 */
       for (let i = 0; i < 6 && !found; i += 1) {
         await h.eval(`(function(){ const row=document.querySelectorAll(".thread-row")[${i}]; row?.querySelector("button")?.click(); return 1; })()`);
         await wait(1400);
-        found = Number(await h.eval(`document.querySelectorAll(".inline-file-card").length`)) || 0;
+        found = Number(await h.eval(`document.querySelectorAll(".inline-file-link").length`)) || 0;
       }
       /* 历史里没有带文件引用的消息时无法验证（新装/干净 profile）——明确跳过，不伪造通过。 */
       if (!found) {
         console.log("  （跳过：本 profile 的历史会话里没有带文件引用的消息）");
         return;
       }
-      h.check("① 前提：某个会话正文出现紧凑文件行", found > 0, String(found));
-      const first = await h.eval(`(function(){ const b=document.querySelector(".inline-file-card"); return b ? { text:(b.textContent||"").trim(), title:b.getAttribute("title")||"" } : null; })()`);
-      h.check("② 文件行是「图标 + 文件名」的紧凑项（不是整行卡）", Boolean(first && first.text && /预览/.test(first.title)), JSON.stringify(first));
-      await h.eval(`(function(){ document.querySelector(".inline-file-card")?.click(); return 1; })()`);
+      h.check("① 前提：某个会话正文出现行内文件链接", found > 0, String(found));
+      const first = await h.eval(`(function(){ const b=document.querySelector(".inline-file-link"); return b ? { text:(b.textContent||"").trim(), title:b.getAttribute("title")||"" } : null; })()`);
+      h.check("② 文件链接是「类型图标 + 文件名」，带右栏预览提示", Boolean(first && first.text && /预览/.test(first.title)), JSON.stringify(first));
+      await h.eval(`(function(){ document.querySelector(".inline-file-link")?.click(); return 1; })()`);
       await wait(900);
       const right = await h.eval(`(function(){
         const panel=document.querySelector(".context-panel");

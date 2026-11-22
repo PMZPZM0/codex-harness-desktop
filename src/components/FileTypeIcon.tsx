@@ -3,19 +3,22 @@
  * 扩展名 → 图标 + 配色，一处真相源；运行中「正在编辑文件」板块、编辑卡行、回合汇报卡
  * 三处消费同一张表（⛔ 别各写一份映射 —— 新增类型只改这里）。
  */
-import { FileArchive, FileAudio, FileCode, FileCog, FileImage, FileJson, FileSpreadsheet, FileText, FileVideo } from "lucide-react";
+import { Atom, Braces, CodeXml, FileArchive, FileAudio, FileCode, FileCog, FileImage, FileJson, FileSpreadsheet, FileText, FileVideo, Palette, Terminal } from "lucide-react";
 
 type TypeRow = { exts: string[]; color: string; Icon: typeof FileCode };
 
-/** ⛔ 顺序即匹配顺序（同名扩展名不许出现在两行）。守卫【11q】逐行对账这张表。 */
+/** ⛔ 顺序即匹配顺序（同名扩展名不许出现在两行）。守卫【11q】逐行对账这张表。
+ *  11-21 用户对照 Qoder：「每种文件类型出来的效果和颜色还不一样」——常见前端类型用不同图形，
+ *  不只换颜色（tsx=React 原子、js=花括号、css=调色板、html=标签、shell=终端）。 */
 export const FILE_TYPE_TABLE: TypeRow[] = [
-  { exts: ["ts", "tsx"], color: "#2f74c0", Icon: FileCode },
-  { exts: ["js", "jsx", "mjs", "cjs"], color: "#b8860b", Icon: FileCode },
+  { exts: ["tsx", "jsx"], color: "#2f74c0", Icon: Atom },
+  { exts: ["ts"], color: "#2f74c0", Icon: FileCode },
+  { exts: ["js", "mjs", "cjs"], color: "#b8860b", Icon: Braces },
   { exts: ["py", "rb", "php", "lua"], color: "#2e8b6e", Icon: FileCode },
   { exts: ["rs", "go", "java", "kt", "swift", "c", "cc", "cpp", "h", "hpp", "cs"], color: "#b4633a", Icon: FileCode },
-  { exts: ["css", "scss", "less"], color: "#2965c8", Icon: FileCode },
-  { exts: ["html", "htm", "xml", "vue", "svelte"], color: "#c86a28", Icon: FileCode },
-  { exts: ["sh", "bash", "zsh", "ps1", "bat", "cmd"], color: "#4e9a54", Icon: FileCode },
+  { exts: ["css", "scss", "less"], color: "#2965c8", Icon: Palette },
+  { exts: ["html", "htm", "xml", "vue", "svelte"], color: "#c86a28", Icon: CodeXml },
+  { exts: ["sh", "bash", "zsh", "ps1", "bat", "cmd"], color: "#4e9a54", Icon: Terminal },
   { exts: ["json", "jsonc"], color: "#8a8a84", Icon: FileJson },
   { exts: ["md", "mdx"], color: "#5a79b8", Icon: FileText },
   { exts: ["txt", "log", "text"], color: "#8a8a84", Icon: FileText },
