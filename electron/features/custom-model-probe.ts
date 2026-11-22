@@ -18,7 +18,8 @@ import path from "node:path";
 
 import { existsSync } from "node:fs";
 
-import { net, safeStorage } from "electron";
+import { net, session, app, safeStorage } from "electron";
+import dns from "node:dns/promises";
 import { bridgeDial } from "../bridge-dial";
 
 
@@ -281,7 +282,9 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
   try {
 
-    const response = await probeFetch(`${baseUrl}/models`, { headers: { ...authHeaders, Accept: "application/json" } }, 8_000);
+    /* ⛔ 11-22 mac 实测：8s 不够 Chromium 做 IPv6→IPv4 回落（Windows 87ms、mac 一直超时）。
+       20s 由两条传输栈分摊（70% Chromium + 30% Node），总等待仍有上限。 */
+    const response = await probeFetch(`${baseUrl}/models`, { headers: { ...authHeaders, Accept: "application/json" } }, 20_000);
 
     if (response.ok) {
 
@@ -373,7 +376,21 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
     }
 
-    throw new Error(modelsError ? `该网关不提供 /models 列表接口：${modelsError.message}。可用下方「添加模型」手动输入模型 ID` : "该网关不提供 /models，且未指定要测试的模型。可用下方「添加模型」手动输入模型 ID");
+    /* ⛔ 11-22：超时 ≠ 网关没有 /models。旧文案把网络问题说成「不提供列表」，用户会去换
+       网关/找模型，方向全错。网络层失败单独报，并给出 macOS 最常见的三个原因。 */
+    if (modelsError) {
+      const networkIssue = /连接超时|域名解析|连接被拒绝|网络|TLS|certificate|ECONN|ENOTFOUND|EAI_AGAIN/i.test(modelsError.message);
+      if (networkIssue) {
+        throw new Error(
+          `连接不上供应商网关：${modelsError.message}。\n`
+          + `macOS：请检查系统代理 / VPN / 防火墙（Clash / Surge 等需开启系统代理并允许本应用）；`
+          + `也可先在终端执行 \`curl -I ${baseUrl}/models\` 验证（返回 401/200 都说明网络是通的）。\n`
+          + `网络恢复后重试「自动检测并获取模型」，或手动输入模型 ID 继续。`,
+        );
+      }
+      throw new Error(`该网关不提供 /models 列表接口：${modelsError.message}。可用下方「添加模型」手动输入模型 ID`);
+    }
+    throw new Error("该网关不提供 /models，且未指定要测试的模型。可用下方「添加模型」手动输入模型 ID");
 
   }
 
@@ -496,13 +513,86 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
 // ── 09-21 同域补充搬迁（内容逐字未改）──
 
-export function probeFetch(url: string, init: RequestInit, timeoutMs: number) {
+/** 探测用的 HTTP 请求：优先走 Electron net（Chromium 栈，遵循系统代理）；失败再用 Node fetch
+ *  以 IPv4 优先补一次。⛔ macOS 实测：Chromium 在 IPv6 不可达时 Happy Eyeballs 回落可能超过
+ *  短超时，表现为「Windows 能连、mac 连接超时」；两条栈都试过才算失败。
+ *  ⛔ 只在网络层失败时兜底；HTTP 4xx/5xx 是正常响应，不重试（避免重复推理）。 */
+export async function probeFetch(url: string, init: RequestInit, timeoutMs: number) {
 
-  return net.fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }).catch((error: any) => {
+  const firstMs = Math.max(5_000, Math.floor(timeoutMs * 0.7));
 
-    throw new Error(classifyProbeError(error));
+  const secondMs = Math.max(3_000, timeoutMs - firstMs);
 
-  });
+  try {
+
+    return await net.fetch(url, { ...init, signal: AbortSignal.timeout(firstMs) });
+
+  } catch (firstError: any) {
+
+    const firstReason = classifyProbeError(firstError);
+
+    /* ⛔ Node fetch 不走系统代理；它只覆盖「Chromium 栈卡住 / IPv6 不通」的场景。
+       darwin 上切成 IPv4 优先，避免 AAAA 无路由时再等一轮。 */
+    try {
+
+      if (process.platform === "darwin") dns.setDefaultResultOrder("ipv4first");
+
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(secondMs) });
+
+    } catch (secondError: any) {
+
+      void logProbeFailure(url, firstError, secondError);
+
+      throw new Error(classifyProbeError(secondError) || firstReason);
+
+    }
+
+  }
+
+}
+
+/** 探测失败留一行可诊断记录（⛔ 不写 URL 路径 / Key / IP，只写 host、平台、代理模式、地址族）。 */
+async function logProbeFailure(url: string, netError: any, nodeError: any) {
+
+  try {
+
+    const host = new URL(url).host;
+
+    const mode = await session.defaultSession.resolveProxy(url).then(
+
+      (proxy: string) => (/DIRECT/i.test(proxy) ? "DIRECT" : proxy ? "PROXY" : "NONE"),
+
+      () => "UNKNOWN",
+
+    );
+
+    let families = "?";
+
+    try {
+
+      const addrs = await dns.lookup(host.split(":")[0], { all: true });
+
+      families = [...new Set(addrs.map((entry) => entry.family))].join(",") || "none";
+
+    } catch { families = "dns-fail"; }
+
+    const brief = (error: any) => String(error?.name || error?.code || error?.message || "").slice(0, 80).replace(/\s+/g, " ");
+
+    const dir = path.join(app.getPath("userData"), "logs");
+
+    await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
+
+    await fs.appendFile(
+
+      path.join(dir, "probe.log"),
+
+      `${new Date().toISOString()} [probe] ${process.platform} host=${host} net=${brief(netError)} node=${brief(nodeError)} proxy=${mode} families=${families}\n`,
+
+      "utf8",
+
+    );
+
+  } catch { /* 诊断失败不影响探测 */ }
 
 }
 
