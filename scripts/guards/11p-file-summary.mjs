@@ -297,6 +297,13 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     ok(/<ExternalLink href=\{href\}/.test(read("src/features/harness-team/17-team-mention-text.tsx"))
       && /<FileTypeIcon path=\{source\} size=\{13\}/.test(userMsg),
       "群聊消息与主会话共用同一套外链组件与文件类型图标（⛔ 不各写一份）");
+    const menuHost = read("src/features/shared/FileContextMenuHost.tsx");
+    ok(/在右侧栏预览/.test(menuHost) && /用默认应用打开/.test(menuHost) && /复制文件名/.test(menuHost)
+      && /在文件夹中显示/.test(menuHost) && /查看大图/.test(menuHost) && /另存为/.test(menuHost),
+      "统一文件右键菜单：右栏预览 / 编辑器 / 默认应用 / 大图 / 复制路径·文件名 / 文件夹 / 编辑 / 另存为");
+    ok(/openFileContextMenu/.test(markdown) && /openFileContextMenu/.test(userMsg)
+      && /openFileContextMenu/.test(viewDom) && /openFileContextMenu/.test(teamComposer),
+      "正文文件链接 / 消息附件 / 主输入框芯片 / 群输入框芯片都接同一个右键菜单");
     ok(/HTTP_URL_RE/.test(read("src/components/LinkifiedText.tsx"))
       && /sanitizeHttpUrl/.test(read("src/components/ExternalLink.tsx"))
       && /A-Za-z0-9/.test(read("src/lib/composer-links.mjs")),

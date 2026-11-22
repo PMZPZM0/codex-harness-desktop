@@ -11,6 +11,7 @@ import { basename } from "../../../lib/basename";
 import { sendAnimStore } from "../../../lib/send-anim-store";
 import { COMPOSER_FILE_CHIP_ICON } from "../constants";
 import { imageDisplaySrc } from "../../../lib/image-src.mjs";
+import { openFileContextMenu } from "../../../lib/file-context-menu.mjs";
 
 
 
@@ -35,6 +36,11 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
     : COMPOSER_FILE_CHIP_ICON;
   chip.innerHTML = `<span class="composer-image-chip-icon">${iconHtml}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
   chip.querySelector(".composer-image-chip-name")!.textContent = basename(path);
+  chip.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openFileContextMenu({ x: event.clientX, y: event.clientY, path, name: basename(path), image });
+  });
   let moved = false;
   chip.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;

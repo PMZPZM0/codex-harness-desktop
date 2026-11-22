@@ -3074,6 +3074,32 @@ const CHECKS = [
     },
   },
   {
+    id: "file-context-menu",
+    name: "文件芯右键菜单：统一动作（11-21）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 12000 });
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("任务")); b?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".thread-row button")`, { label: "会话行", timeoutMs: 10000 });
+      let found = Number(await h.eval(`document.querySelectorAll(".inline-file-link").length`)) || 0;
+      for (let i = 0; i < 6 && !found; i += 1) {
+        await h.eval(`(function(){ document.querySelectorAll(".thread-row")[${i}]?.querySelector("button")?.click(); return 1; })()`);
+        await wait(1200);
+        found = Number(await h.eval(`document.querySelectorAll(".inline-file-link").length`)) || 0;
+      }
+      if (!found) { console.log("  （跳过：本 profile 的历史里没有文件链接）"); return; }
+      await h.eval(`(function(){
+        const el=document.querySelector(".inline-file-link");
+        const r=el.getBoundingClientRect();
+        el.dispatchEvent(new MouseEvent("contextmenu",{ bubbles:true, cancelable:true, clientX:Math.round(r.left+8), clientY:Math.round(r.top+8) }));
+        return 1;
+      })()`);
+      await h.waitFor(`!!document.querySelector(".file-card-menu")`, { label: "文件右键菜单", timeoutMs: 5000 });
+      const text = await h.eval(`document.querySelector(".file-card-menu")?.textContent||""`);
+      h.check("① 文件芯右键弹出统一菜单", /在右侧栏预览/.test(text) && /用默认应用打开/.test(text) && /复制文件路径/.test(text) && /复制文件名/.test(text) && /在文件夹中显示/.test(text) && /另存为/.test(text), text.slice(0, 200));
+      await h.eval(`(function(){ document.dispatchEvent(new KeyboardEvent("keydown",{ key:"Escape", bubbles:true })); return 1; })()`);
+    },
+  },
+  {
     id: "inline-file-row",
     name: "正文行内文件链接：图标按类型着色、文件名蓝色加粗，点击打开右栏（11-21）",
     run: async (h) => {

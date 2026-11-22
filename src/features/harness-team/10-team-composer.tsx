@@ -30,6 +30,7 @@ import type { HarnessAppApi } from "../app-state";
 import { useAnchoredPopover } from "../../lib/use-centered-popover";
 import { insertComposerUrlChip, isSingleHttpUrl } from "../../lib/composer-url-chip";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
+import { openFileContextMenu } from "../../lib/file-context-menu.mjs";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
@@ -380,6 +381,11 @@ export function TeamComposer({
     const name = path.split(/[\\/]/).pop() || path;
     chip.innerHTML = `<span class="composer-image-chip-icon">${image ? `<img class="composer-image-chip-thumb" src="${imageDisplaySrc(path)}" alt="" draggable="false">` : FILE_CHIP_ICON}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
     chip.querySelector(".composer-image-chip-name")!.textContent = name;
+    chip.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openFileContextMenu({ x: event.clientX, y: event.clientY, path, name, image });
+    });
     chip.querySelector(".composer-image-chip-close")!.addEventListener("click", (event) => {
       event.stopPropagation();
       chip.remove();

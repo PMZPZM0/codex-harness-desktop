@@ -35,6 +35,8 @@ const GraphCanvas = lazy(() => import("../graph/GraphCanvas"));
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Globe2, Copy, Check, FileDown } from "lucide-react";
 import { ExternalLink } from "../../components/ExternalLink";
+import { openFileContextMenu } from "../../lib/file-context-menu.mjs";
+import { isImagePath } from "../../lib/is-image-path";
 import { FeedbackIconButton } from "../shared/FeedbackIconButton";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -95,7 +97,8 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
     const path = code.trim();
     if (looksLikeFilePath(path)) {
       return (
-        <button type="button" className="inline-file-link" title={`在右侧栏预览：${path}`} onClick={() => openRightFile(path)}>
+        <button type="button" className="inline-file-link" title={`在右侧栏预览：${path}`} onClick={() => openRightFile(path)}
+          onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openFileContextMenu({ x: event.clientX, y: event.clientY, path, name: fileNameOf(path), image: isImagePath(path) }); }}>
           <FileTypeIcon path={path} size={14} />
           <span>{fileNameOf(path)}</span>
         </button>
