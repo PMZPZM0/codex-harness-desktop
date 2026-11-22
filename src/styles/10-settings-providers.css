@@ -881,6 +881,18 @@
   left: 0;
   box-shadow: var(--shadow);
 }
+/* 11-22 用户实测「鼠标挪开一点点弹窗就没了」：弹层与徽标之间有 8px 空隙（bottom: 100% + 8px），
+   指针穿过这 8px 时既不在徽标也不在弹层里 ⇒ 容器的 mouseleave 立刻触发。
+   ⇒ 给弹层加一段**透明但接指针**的接缝，指针始终落在弹层（=容器后代）内。
+   ⛔ 光靠 JS 的宽限定时器不够：慢慢挪动仍会超时；两者一起才稳。 */
+.ctx-pop::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
 .ctx-pop-head {
   color: var(--text);
   font-size: 12.5px;

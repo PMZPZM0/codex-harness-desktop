@@ -335,6 +335,19 @@ console.log("\n【live-edits】⑱ 回合用量落账");
       && /\.ctx-pop-compact-btn:hover:not\(:disabled\)/.test(css),
       "压缩按钮的禁用态有自己的样式（灰底 + not-allowed，hover 不再高亮）");
   }
+  /* 11-22 用户实测两条弹层毛病：「鼠标挪开一点点弹窗就没了」+「鼠标挪上去点一下它反而消失」。
+     ① 徽标与弹层之间有 8px 空隙，指针穿过时容器 mouseleave 立刻触发 ⇒ 需要透明接缝 + 关延迟；
+     ② 旧 onClick 是 `setOpen(v => !v)`，而 onMouseEnter 已经打开 ⇒ 点击等于关掉。 */
+  ok(/\.ctx-pop::after\s*\{[^}]*top:\s*100%/.test(read("src/styles/10-settings-providers.css")),
+    "上下文弹层下方有透明接缝（指针从徽标移到弹层不会「离开」容器）");
+  ok(/closeTimerRef/.test(status)
+    && /onMouseEnter=\{keep\} onMouseLeave=\{scheduleClose\}/.test(status)
+    && /setTimeout\(\(\) => \{\s*\n?\s*closeTimerRef\.current = null;/.test(status),
+    "弹层开合带 260ms 宽限（进入即取消），不再「挪一点点就消失」");
+  ok(!/setOpen\(\(currentOpen\) => !currentOpen\)/.test(status)
+    && /pinnedRef/.test(status) && /if \(!pinnedRef\.current\) setOpen\(false\)/.test(status)
+    && /aria-pressed=\{pinned\}/.test(status),
+    "⛔ 点击 = 常驻开关（悬停打开后点一下不再关掉）；常驻时移开鼠标不关，点外面/Esc 才关");
 }
 
 /* ── 九、提问卡「先选中、再确认」（10-11 用户：点击选项只是选中，提交按钮才生效）────────

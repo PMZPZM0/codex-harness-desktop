@@ -526,13 +526,43 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
+  /**
+   * 开合模型（11-22 用户三次口径，最终定稿）：
+   *   · 悬停 → 弹出，**指针可以移进弹层**（徽标与弹层之间有 8px 空隙，穿过时不关）；
+   *   · 指针离开徽标与弹层 → 自动消失（260ms 宽限，进弹层即取消）；
+   *   · **点击图标 → 常驻**（此时移开鼠标也不关），点外面 / 按 Esc 关闭；再点图标收起。
+   * ⛔ 旧实现两个 bug：`onMouseLeave` 立即关（空隙里就关掉）；`onClick` 直接取反 ——
+   *    而 onMouseEnter 已经把弹层打开了，于是"鼠标挪上去点一下反而消失"。
+   */
+  const [pinned, setPinned] = useState(false);
+  const pinnedRef = useRef(false);
+  const closeTimerRef = useRef<number | null>(null);
+  const keep = () => {
+    if (closeTimerRef.current != null) { window.clearTimeout(closeTimerRef.current); closeTimerRef.current = null; }
+  };
+  const scheduleClose = () => {
+    keep();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      /* 常驻态不因鼠标离开而关（用户：点击图标就让它留着）。 */
+      if (!pinnedRef.current) setOpen(false);
+    }, 260);
+  };
+  const closeAll = () => {
+    keep();
+    pinnedRef.current = false;
+    setPinned(false);
+    setOpen(false);
+  };
+  useEffect(() => () => keep(), []);
   useEffect(() => {
     if (!open) return;
-    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) closeAll(); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") closeAll(); };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
   const lastUsage = usageBucket(tokenUsage, "last");
@@ -563,12 +593,20 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
   ].filter((entry) => entry.value != null) as { label: string; value: number }[];
   const rows = details.length ? details : [{ label: "已用", value: Math.round(percent * 10) / 10 }];
   return (
-    <div className="ctx-badge" ref={wrapRef} onMouseLeave={() => setOpen(false)}>
-      <button ref={triggerRef} type="button" className="ctx-badge-btn" title={used != null ? `上下文 ${Math.round(percent)}%` : `上下文窗口 ${contextWindow.toLocaleString()} Token · 用量待同步`} aria-label="上下文容量" onClick={() => setOpen((currentOpen) => !currentOpen)} onMouseEnter={() => setOpen(true)}>
+    <div className="ctx-badge" ref={wrapRef} onMouseEnter={keep} onMouseLeave={scheduleClose}>
+      <button ref={triggerRef} type="button" className="ctx-badge-btn" aria-pressed={pinned} title={used != null ? `上下文 ${Math.round(percent)}%（点击${pinned ? "收起" : "常驻"}）` : `上下文窗口 ${contextWindow.toLocaleString()} Token · 用量待同步`} aria-label="上下文容量" onClick={() => {
+        /* 点击 = 常驻开关（用户：「点击图标弹窗常驻，点击外面/Esc 关闭」）。
+           悬停已经打开时不取反 —— 那正是「点一下反而消失」的老毛病。 */
+        if (pinnedRef.current) { closeAll(); return; }
+        keep();
+        pinnedRef.current = true;
+        setPinned(true);
+        setOpen(true);
+      }} onMouseEnter={() => { keep(); setOpen(true); }}>
         <ContextRing tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} />
       </button>
       {open && (
-        <div ref={popRef} className="ctx-pop" role="dialog" aria-label="上下文容量明细" style={popLeft != null ? { left: popLeft } : undefined}>
+        <div ref={popRef} className="ctx-pop" role="dialog" aria-label="上下文容量明细" style={popLeft != null ? { left: popLeft } : undefined} onMouseEnter={keep} onMouseLeave={scheduleClose}>
           <div className="ctx-pop-head"><strong>上下文容量</strong></div>
           <div className="ctx-pop-sub">{used != null ? (used / 10000).toLocaleString(undefined, { maximumFractionDigits: 1 }) : "0.0"}万/{(contextWindow / 10000).toLocaleString()}万（{used != null ? Math.round(percent * 10) / 10 : "—"}%{summaryCacheRate != null ? ` · 累计 ${summaryCacheRate}% 缓存` : ""}）</div>
           {/* ⛔ 分子超过配置窗口时必须解释，不能只显示一个封顶的 100%：09-30 用户看到
@@ -604,7 +642,7 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
                 className="ctx-pop-compact-btn"
                 disabled={blocked || tooLow}
                 title={reason}
-                onClick={() => { setOpen(false); onCompact(); }}
+                onClick={() => { closeAll(); onCompact(); }}
               >
                 <Minimize2 size={13} />
                 {compacting ? "正在压缩…" : running ? "压缩上下文（运行中不可用）" : `压缩上下文（已用 ${Math.round(percent)}%${tooLow ? " · 30% 后可点" : ""}）`}
