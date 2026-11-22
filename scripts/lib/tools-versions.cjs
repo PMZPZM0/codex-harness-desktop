@@ -19,7 +19,7 @@ const TOOLS_VERSIONS = {
    * npm 包已内置四平台二进制（解包 13MB），postinstall 只打印安装提示 ⇒ CI 用 --ignore-scripts 也装得动。
    * Windows 不用它（那边是 nuphus + 我们自己的 UIA 控件清单通道）。
    */
-  computerUse: "1.1.4",
+  computerUse: "1.1.5",
   /**
    * agent-desktop（Vercel Labs，Apache-2.0）：默认桌面后端，无障碍树 + @ref。
    * npm 包 32MB 自带上六套平台二进制（darwin/win32/linux × x64/arm64）⇒ 按 50MB 口径随包内置。
