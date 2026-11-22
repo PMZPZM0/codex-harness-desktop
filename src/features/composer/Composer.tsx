@@ -163,9 +163,8 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
           if (el) {
             event.preventDefault();
             insertComposerUrlChip(el, event.clipboardData.getData("text/plain").trim(), true);
-            const next = serializeComposerDom(el);
-            domValueRef.current = next;
-            onValueInput(next);
+            /* ⛔ 必须走 syncFromDom：它会清掉 data-empty，否则占位提示会一直挂在芯片上面。 */
+            syncFromDom(el);
             return;
           }
         } else {

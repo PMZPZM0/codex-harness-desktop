@@ -424,6 +424,16 @@ html[data-theme-mode="dark"] .import-record-card.thread-reference .import-record
   vertical-align: baseline;
 }
 .markdown a.is-github .markdown-link-icon { flex: none; }
+/* 正文与用户消息共用的外链样式（GitHub 带标志）。 */
+.external-link {
+  color: var(--link);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.external-link:hover { text-decoration: underline; }
+.external-link.is-github { display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; }
+.external-link-icon { flex: none; }
 .link-card {
   border: 1px solid var(--line);
   background: var(--panel);

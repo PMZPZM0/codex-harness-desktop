@@ -269,7 +269,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     const msgCss = read("src/styles/03-messages-turns.css");
     const composerCss = read("src/styles/04-cards-tools.css");
     const teamCss = read("src/styles/61-team-mode.css");
-    ok(/githubLinkLabel/.test(markdown) && /GitHubMark/.test(markdown) && /window\.codex\.openExternal\(href\)/.test(markdown),
+    ok(/githubLinkLabel/.test(read("src/components/ExternalLink.tsx")) && /GitHubMark/.test(read("src/components/ExternalLink.tsx"))
+      && /openExternal\(href\)/.test(read("src/components/ExternalLink.tsx")) && /<ExternalLink href=\{href\}/.test(markdown),
       "正文 GitHub 链接自动识别 + GitHub 标志 + 默认浏览器打开");
     ok(/\.markdown a \{[\s\S]{0,220}color:\s*var\(--link\)[\s\S]{0,120}font-size:\s*13\.5px/.test(msgCss),
       "正文链接统一蓝色（13.5px、500 字重）");
@@ -290,6 +291,9 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     ok(/<FileTypeIcon path=\{p\} size=\{13\}/.test(teamComposer)
       && /\.team-composer__chip\.is-file > span[\s\S]{0,100}color:\s*var\(--link\)/.test(teamCss),
       "群聊附件芯片同款「类型图标 + 蓝色文件名」");
+    const userMsg = read("src/features/shared/UserMessageView.tsx");
+    ok(/<LinkifiedText text=\{seg\.text\}/.test(userMsg) && /openRightFile\(source\)/.test(userMsg),
+      "已发出的用户消息：URL 自动变链接，文件附件点击开右栏（两处都接线）");
   }
   /* 11-21 用户截图：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」。
      ⇒ 文件只在正文行内出现；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */

@@ -22,11 +22,13 @@ import { UserRefsRow } from "./InlineCards";
 import { FileRefCard } from "../../components/FileRefCard";
 import { ImportedRecordCard } from "./ImportRecords";
 import { openImageLightbox, openMediaPreview } from "../../lib/ui-channels";
+import { openRightFile } from "../../lib/right-file.mjs";
 import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { MessageFooter } from "./MessageFooter";
 import { hk } from "../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "./COMPOSER_CHIP_ICON";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
+import { LinkifiedText } from "../../components/LinkifiedText";
 
 /** 用户消息视图：头像、名字、正文与附件，支持就地编辑（名字与 Codex 走同一套 store）。 */
 export function UserMessageView({ item, turn, threadId, fallbackWindow, pending, leadingAction, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; /** 10-31：本会话 id —— 上级气泡用它查「我的上级主管是谁」（笔名快照） */ threadId?: string; fallbackWindow?: number; pending?: boolean; /** 11-06：气泡左侧的行内动作（如插队消息的「撤回」）—— 放在同一弹性行里，紧贴气泡左缘。 */ leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
@@ -235,7 +237,7 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
                 ? splitAttachmentSegments(annotatedText)
                 : splitPromptSegments(refs.cleanText ?? "")
               ).map((seg: any, index: number) => seg.kind === "text"
-                ? <span key={index}>{seg.text}</span>
+                ? <span key={index}><LinkifiedText text={seg.text} /></span>
                 : <MessageAttachChip
                     key={index}
                     name={attachChipName({ path: seg.path }, seg.path)}
@@ -502,7 +504,7 @@ export function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile
         if (event.detail > 0) event.currentTarget.blur();
         if (image) onOpenImage?.(source, name);
         else if (mediaKind) openMediaPreview({ source, kind: mediaKind, title: name });
-        else onOpenFile?.(source);
+        else openRightFile(source);
       }}
       onMouseEnter={(event) => decideDirection(event.currentTarget)}
       onFocus={(event) => decideDirection(event.currentTarget)}

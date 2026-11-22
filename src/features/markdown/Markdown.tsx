@@ -34,8 +34,7 @@ import { lazy, Suspense } from "react";
 const GraphCanvas = lazy(() => import("../graph/GraphCanvas"));
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Globe2, Copy, Check, FileDown } from "lucide-react";
-import { GitHubMark } from "../../components/GitHubMark";
-import { githubLinkLabel } from "../../lib/composer-links.mjs";
+import { ExternalLink } from "../../components/ExternalLink";
 import { FeedbackIconButton } from "../shared/FeedbackIconButton";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -60,18 +59,9 @@ function LinkCard({ href }: { href: string }) {
   );
 }
 
-/** 正文链接：统一蓝色；GitHub 链接自动识别并带 GitHub 图标（显示名去掉协议与前缀）。 */
+/** 正文链接：统一蓝色；GitHub 链接自动识别并带图标（共用 ExternalLink）。 */
 function MarkdownAnchor({ href, children }: { href?: string; children?: React.ReactNode }) {
-  const raw = String(href ?? "");
-  const github = /^https?:\/\/(?:www\.)?github\.com\//i.test(raw);
-  const text = typeof children === "string" ? children.trim() : "";
-  const label = github && /^https?:\/\//i.test(text) ? githubLinkLabel(raw) : children;
-  return (
-    <a href={href} className={`markdown-link${github ? " is-github" : ""}`} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
-      {github ? <GitHubMark size={14} className="markdown-link-icon" /> : null}
-      {label}
-    </a>
-  );
+  return <ExternalLink href={href}>{children}</ExternalLink>;
 }
 
 const MD_REMARK_PLUGINS = [remarkGfm, remarkBreaks, remarkMath];
