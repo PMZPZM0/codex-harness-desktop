@@ -363,6 +363,15 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     /* ③ 行前缀带分类标记 */
     const line = buildLessonLine({ userContent: "不对，你把 A 改成了 B", assistantContent: "已改回 A。根因：判断顺序写反。", date: "2026-09-22" });
     (line && line.category === CORRECTION_CATEGORY && /纠错/.test(line.line) ? ok : fail)("【105】纠错行前缀 = ⚠️ 纠错（不再一律叫「坑」）");
+
+    /* ④ 群任务消息不是用户纠错（11-22 实测：某工作区 5.3k 字纪律段 98% 是这种噪声） */
+    const noisy = "# 纪律与记忆\n\n## 用户纠错\n- 2026-11-11 ⚠️ 纠错：[SYSTEM TASK · 工作伙伴消息] …\n- 2026-09-01 ⚠️ 纠错：真的纠错\n";
+    const cleaned = lessonsMod.stripSystemTaskNoise(noisy);
+    (cleaned && !cleaned.includes("[SYSTEM TASK") && cleaned.includes("真的纠错") ? ok : fail)(
+      "【105】注入前剔除误记的群任务消息（磁盘原文不动）");
+    const mlSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
+    (/stripSystemTaskNoise\(lessonsRaw\)/.test(mlSrc) && mlSrc.includes("[SYSTEM TASK/.test(text)) return false") ? ok : fail)(
+      "【105】写入侧拦截 + 注入侧兜底（两处都接线）");
   }
 
   if (lessonsMod && layersMod2) {

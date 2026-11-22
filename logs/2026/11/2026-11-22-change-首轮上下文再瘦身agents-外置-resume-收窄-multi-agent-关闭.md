@@ -46,6 +46,15 @@ importance: normal
   全局个性化 `codex-home/AGENTS.md` 10.4KB（用户数据）。`instructions_file` / `compact_prompt`
   在本引擎版本对基础指令无效（`compact_prompt` 要求字符串，按布尔传会拒载）。
 
+## 三轮（同日实测 41,399 后）
+- 真实会话按段落拆开：developer 指令 9,821 字符 + 个性化 7,071 字符 + **常驻记忆 7,801 字符**
+  （其中「踩坑与纪律」5,327 字符，**98% 是 `[SYSTEM TASK · 工作伙伴消息]` 被误记成「用户纠错」**）
+  + 引擎基础/工具。前两轮只盯引擎前缀，漏了这三段宿主注入。
+- 记忆卫生修复：注入前 `stripSystemTaskNoise` 剔除该噪声（原文还在磁盘）；写入侧也拒绝
+  `[SYSTEM TASK` 进 corrections.md。实测该工作区 5,327 → 66 字符（省 ~5.2k tokens）。
+- 个性化基础段（emoji/语言）压缩：生成结果 1,829 字符；连技能纪律块合计约 3.35k，原 6.25k（省 ~2.9k）。
+- `image_generate` / `memory_write` 描述收紧（守卫要求的短语保留）。
+
 ## 影响面
 - 新会话与老会话（resume）的首轮输入 token 都下降；普通会话工具面与 thread/start 完全同口径。
 - 中枢 / 群 / 团队 / 委派会话**不受** resume 收窄影响（kind 判定）。

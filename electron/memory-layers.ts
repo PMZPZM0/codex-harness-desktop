@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   CORRECTION_CATEGORY, PITFALL_CATEGORY, PREFERENCE_CATEGORY, SOP_CATEGORY,
-  appendLessonLine, groupLessonSections, lessonSectionTitle, sortLessonSections, splitLessonSections, shouldRememberLine,
+  appendLessonLine, groupLessonSections, lessonSectionTitle, sortLessonSections, splitLessonSections, shouldRememberLine, stripSystemTaskNoise,
 } from "./memory-lessons";
 import { effectiveMemoryBackend } from "./memory-backend";
 /* 记忆原子（11-10 用户令「按豆包那套全面改造，但要比他的更好」）：
@@ -290,6 +290,9 @@ export class MemoryLayers {
        非贪婪成对正则在它内部提前闭合 ⇒ 只剥前半段、后半段铺进 L4「需求」/L2「现象」，并继续喂出新的垃圾行。
        在**写入这一刻**拦住，而不是事后靠自检发现。 */
     if (/\[Harness\s*(?:常驻记忆|相关记忆)|\[(?:常驻记忆结束|记忆结束)\]/.test(text)) return false;
+    /* ⛔ 11-22：群任务消息不是「用户纠错」。捕获链曾把它们整段写进 corrections.md，
+       既污染纪律又让每个会话多背几 k token。写入这一刻就拦（注入侧另有 strip 兜底）。 */
+    if (/\[SYSTEM TASK/.test(text)) return false;
     /* ⛔ 10-17 新增写入判据：这是一条**可以改变未来行为**的纪律，还是一条流水？
        本方法此前只去重、不做价值判断（自动捕获链有 buildLessonLine 把门，但收藏 / 引擎手写 /
        记忆工具这些**直接调用方**绕过了它）。判据本体在 memory-lessons（与分类同源，⛔ 不另起一套）。
@@ -627,7 +630,10 @@ export class MemoryLayers {
     const background = clamp(backgroundRaw, budget.background);
     const project = clamp(projectRaw, budget.project);
     /* 注入前按分类重排（**纠错最前**）；⛔ 只重排注入文本，磁盘上的顺序不动（用户的手工组织不被覆盖） */
-    const lessons = clamp(includeWorkspace && lessonsRaw ? sortLessonSections(lessonsRaw) : "", budget.lessons);
+    /* ⛔ 11-22：捕获链曾把群任务消息（`[SYSTEM TASK …]`）误记成「用户纠错」——
+       实测一处工作区 5.3k 字的纪律段 98% 是噪声。注入前剔除，原文仍留在磁盘。 */
+    const lessonsClean = includeWorkspace && lessonsRaw ? stripSystemTaskNoise(lessonsRaw) : "";
+    const lessons = clamp(includeWorkspace && lessonsClean ? sortLessonSections(lessonsClean) : "", budget.lessons);
     const logs = includeWorkspace ? await this.recentLogs(workspace) : [];
 
     const blocks: string[] = [];

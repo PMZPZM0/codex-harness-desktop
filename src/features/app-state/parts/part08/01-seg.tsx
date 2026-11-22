@@ -86,14 +86,9 @@ function imageToolDefs(): any[] {
       type: "function",
       name: "image_generate",
       description:
-        "生成一张**全新的**图片（凭空造内容），落盘并返回本地文件路径。"
-        + "【适用场景】用户说「画一张 / 生成图片 / 配图 / 出图」，或需要一张**原本不存在**的画面。"
-        + "【使用时机】只在需要**新内容**时用 —— 换主体（狗换猫）、换风格、换构图、换姿势，都归这类。"
-        + "【职责边界】⛔ 若用户是**对已有图片做局部修改**（裁剪/缩放/调色/加水印/打码），用 image_edit，"
-        + "不要重新生成 —— 重画会换掉整张图，还白花一次额度。"
-        + "⛔ 刚生成过一张图、用户只想改个局部时，**先用 agent_ask 问一句**：「修图（保留这张，只改局部）」"
-        + "还是「重新生成」—— 不要自己替用户决定。"
-        + "【怎么用】返回的路径展示给用户请用 markdown 图片语法 ![描述](路径)。",
+        "生成一张**全新的**图片（凭空造内容），落盘并返回本地文件路径。只在需要**新内容**时用（换主体 / 风格 / 构图 / 姿势）；"
+        + "⛔ 对已有图做局部修改（裁剪/调色/加水印/打码）用 image_edit，不要重画；刚生成过且只想改局部时先用 agent_ask 问「修图（保留这张只改局部）还是重新生成」。"
+        + "展示给用户用 markdown 图片语法 ![描述](路径)。",
       inputSchema: {
         type: "object",
         properties: {
@@ -507,7 +502,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
            agent_invoke 与 subagent_invoke 并存 ⇒ 专家团被绕过）。
            ⛔ 旧名 `memory_save` 仍可调用（主进程同一 handler），只是**不再出现在工具面里** ——
               留着的唯一理由是老会话的上下文里记着它。 */
-        { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：private（默认）= 只属于本会话 / 本执行体的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。⛔「你叫什么名字 / 该怎么称呼用户」不属于记忆，必须调 identity_update（写这里界面与称呼都不会变）。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["private", "project"], description: "记忆作用域：private=本会话/本执行体私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
+        { type: "function", name: "memory_write", description: "保存一条记忆。scope=private（默认，本会话/本执行体私有）或 project（全项目共享，子智能体/专家都能读到；⛔ 别写一次性中间结论）。category 用五类，别自造；相同内容自动去重。⛔「你叫什么名字 / 该怎么称呼用户」不属于记忆，必须调 identity_update。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["private", "project"], description: "private=本会话私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略按分类默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
       ] : []),
       /* Laya 局部判断工具：**装了才出现**（用户 10-18 明确要求；未装时连 schema 都不占工具面）。
          它是短文本多选一分类器（本地 ~几十 ms、零生成），不是生成/核查模型：

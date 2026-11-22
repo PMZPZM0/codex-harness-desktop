@@ -465,6 +465,18 @@ export function sortLessonSections(text: string): string {
 }
 
 /**
+ * 注入前剔除误记的群任务消息：捕获链曾把 `[SYSTEM TASK · 工作伙伴消息] …` 当成「用户纠错」
+ * （2026-11-22 实测一处工作区 5.3k 字的纪律段里 98% 是这种噪声，既烧 token 又误导模型）。
+ * ⛔ 只影响注入文本；磁盘原文不动（用户仍可在记忆面板看到与整理）。
+ */
+export function stripSystemTaskNoise(text: string): string {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .filter((line) => !line.includes("[SYSTEM TASK"))
+    .join("\n");
+}
+
+/**
  * 分节内追加一行（**不改动其它分节**）：找不到该分类的节就在文件末尾新建一节。
  * 「用户纠错」节由 appendLesson 调用方保证排在最前 —— 这里只保证**不破坏**已有内容。
  */

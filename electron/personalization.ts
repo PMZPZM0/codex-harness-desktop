@@ -231,16 +231,9 @@ export async function migrateGreetedForExistingUsers(codexHome: string): Promise
  */
 const EMOJI_GUIDELINES = [
   "- Emoji usage guidelines (apply to replies; user custom instructions take precedence):",
-  "  - Use emoji naturally to improve scannability, but keep them unobtrusive: roughly one emoji per heading/list-item/status line, never inside code blocks, code identifiers, URLs, or file paths.",
-  "  - Headings & section titles: pair with a topical emoji (🚀 deployment · 🎨 UI/styling · 🐛 bug fixes · ⚙️ configuration · 📊 data/reports · 🔍 investigation · 🧪 testing · 📦 dependencies/build · 🔒 security · 💡 suggestions/ideas · 📌 important notes).",
-  "  - Status markers: ✅ success/completed · ⚠️ warning/caveat · ❌ error/failed · 🚧 in progress · ⏭️ next step · ℹ️ FYI note.",
-  "  - Progress narration: 🔄 while working (e.g. \"🔄 正在安装依赖…\"); report a finished pipeline as ✅ done, skipped as ⏭️, blocked as ⚠️.",
-  "  - Lists: a leading emoji is fine when all sibling items have one (keep the same family for parallel items); otherwise plain bullets — do not mix emoji bullets with plain ones in the same list.",
-  "  - Moderation: no emoji runs (🚀🚀🚀), no emoji in every sentence of long prose; short chat replies may use at most 1–2. When the user's message is formal/serious (errors, incidents, data loss), drop decorative emoji and keep only status markers.",
-  "  - Consistency: pick one emoji per recurring concept and reuse it throughout the reply (e.g. if ✅ marks completed steps, do not switch to ✔️ midway).",
-  /* 10-27：输入框左侧竖条的「心情表情」只插 emoji（用户：「选择到输入框不要带文字，一个表情就行了」）
-     ⇒ 含义只能靠这张表让模型认得。⛔ 只列应用内置的那 14 个，别扩成通用 emoji 词典（占预算且会误导）。 */
-  "  - Mood bar emoji (the user may send ONE of these alone): 👍认可 · 🎉搞定 · 🚀继续冲 · 🙏拜托 · 💡有想法 · 😤不满 · 🤔存疑 · 😑又来了 · 🫠出事了 · ⏳太慢 · 👀看到了 · 🤝成交 · 🧪先验证 · 📌记下来. Other sentiment emoji in the same family (😡🤦🙃🥲🔥👏✅🕐📊…) mean what they look like — these 14 are just the most common. Read all of them as the user's sentiment about the current work, not as decoration; when one arrives alone, adjust your tone/pace accordingly (e.g. 😤 → say what went wrong and fix it; 🧪 → smallest verification first).",
+  "  - 自然、克制：标题/列表项/状态行约一个 emoji；代码块、代码标识、URL、文件路径里不用；同级列表要么都有要么都没有；不堆叠（🚀🚀🚀），长文不要句句带；正式/事故场景只留状态标记。",
+  "  - 主题：🚀部署 · 🎨UI · 🐛修复 · ⚙️配置 · 📊数据 · 🔍排查 · 🧪测试 · 📦依赖 · 🔒安全 · 💡建议 · 📌要点；状态：✅完成 · ⚠️注意 · ❌失败 · 🚧进行中 · ⏭️下一步 · ℹ️备忘；进度 🔄。同一概念固定同一个 emoji。",
+  "  - 心情条（用户可能只发一个）：👍认可 · 🎉搞定 · 🚀继续冲 · 🙏拜托 · 💡有想法 · 😤不满 · 🤔存疑 · 😑又来了 · 🫠出事了 · ⏳太慢 · 👀看到了 · 🤝成交 · 🧪先验证 · 📌记下来 —— 按用户对当前工作的情绪理解并调整语气/节奏，不当装饰。",
 ].join("\n");
 
 /** 中文语言指令（内置基础段，随 AGENTS.md 注入所有会话）。
@@ -248,10 +241,8 @@ const EMOJI_GUIDELINES = [
  *  仅在用户明确要求英文、或涉及专有名词/代码/文件名时保留原文。 */
 const LANGUAGE_GUIDELINES = [
   "- Language guidelines (apply to both reasoning and replies; user custom instructions take precedence):",
-  "  - Reply in Simplified Chinese by default. The user is a Chinese speaker; even if the user types in English or code-switches, prefer natural Simplified Chinese replies unless they explicitly ask for English.",
-  "  - Internal reasoning / deep thinking (the 'reasoning' steps before the answer) must also be produced in Simplified Chinese by default, not English. Think in the same language as the user's request.",
-  "  - Keep technical terms, identifiers, code, file paths, and CLI output in their original form (do not translate them).",
-  "  - If the user explicitly asks for English output, follow that request.",
+  "  - 默认简体中文（回复与思考都是）；用户用英文/中英混说时仍优先自然中文，除非明确要求英文。",
+  "  - 术语、标识符、代码、路径、CLI 输出保留原文，不翻译。",
 ].join("\n");
 
 /** 身份基线（10-22 用户：「codex 连自我介绍都不会写吗，这么基础的」）。
