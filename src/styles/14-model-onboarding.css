@@ -900,6 +900,8 @@
   border-radius: 5px;
   background: transparent;
   font: inherit;
+  font-weight: 600;
+  color: var(--link);
   line-height: inherit;
   cursor: pointer;
   vertical-align: baseline;

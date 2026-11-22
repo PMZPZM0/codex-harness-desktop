@@ -253,7 +253,10 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   const markdown = read("src/features/markdown/Markdown.tsx");
   ok(/looksLikeFilePath/.test(markdown) && /className="inline-file-link"/.test(markdown)
     && /openRightFile\(path\)/.test(markdown) && /FileTypeIcon path=\{path\}/.test(markdown),
-    "正文行内文件路径 = 可点文件链接（按类型图标/配色，点击直接开右栏）");
+    "正文行内文件路径 = 可点文件链接（图标按类型着色，点击直接开右栏）");
+  ok(!/style=\{\{ color: visual\.color \}\}/.test(markdown)
+    && /\.inline-file-link \{[\s\S]{0,400}?font-weight:\s*600;[\s\S]{0,80}?color:\s*var\(--link\)/.test(read("src/styles/14-model-onboarding.css")),
+    "文件名统一蓝色加粗（⛔ 只有图标按文件类型变色；用户 11-21 对照 Qoder）");
   ok(!/InlineFileCards/.test(inlineCards), "⛔ 旧的「正文下方一排芯片」已删除（避免同一批文件重复展示）");
   /* 11-21 用户截图：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」。
      ⇒ 文件只在正文行内出现；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */

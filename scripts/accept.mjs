@@ -3042,7 +3042,7 @@ const CHECKS = [
   },
   {
     id: "inline-file-row",
-    name: "正文行内文件链接：按类型图标/配色，点击打开右栏（11-21）",
+    name: "正文行内文件链接：图标按类型着色、文件名蓝色加粗，点击打开右栏（11-21）",
     run: async (h) => {
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 12000 });
       await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("任务")); b?.click(); return 1; })()`);
@@ -3070,6 +3070,14 @@ const CHECKS = [
         return { state: panel?.getAttribute("data-state")||"", tab:(tab?.textContent||"").trim(), width: panel ? Math.round(panel.getBoundingClientRect().width) : 0 };
       })()`);
       h.check("③ 点击文件项直接打开右侧栏的「文件」页", right.state === "open" && /文件/.test(right.tab) && right.width >= 400, JSON.stringify(right));
+      const linkStyle = await h.eval(`(function(){
+        const b=document.querySelector(".inline-file-link");
+        if(!b) return null;
+        const s=getComputedStyle(b);
+        const icon=b.querySelector(".file-type-icon");
+        return { color:s.color, weight:Number(s.fontWeight)||0, iconColor: icon ? getComputedStyle(icon).color : "" };
+      })()`);
+      h.check("④ 文件名统一蓝色加粗，图标保留类型色", Boolean(linkStyle) && linkStyle.weight >= 600 && /rgb\(/.test(linkStyle.color) && linkStyle.color !== linkStyle.iconColor, JSON.stringify(linkStyle));
     },
   },
 ];

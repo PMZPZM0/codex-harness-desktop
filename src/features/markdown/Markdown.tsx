@@ -19,7 +19,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { markdownUrlTransform } from "../../lib/markdown-url";
 import { mentionIdOfHref } from "../../lib/team-mention-render.mjs";
 import { fileNameOf, looksLikeFilePath } from "../../lib/file-path-link.mjs";
-import { FileTypeIcon, fileTypeVisual } from "../../components/FileTypeIcon";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { openRightFile } from "../../lib/right-file.mjs";
 // 分块逻辑搬去 src/lib/markdown-blocks.mjs（纯函数 ⇒ 预检守卫可直接跑真值表）。
 // ⛔ 其中含一处容错：列表项后面顶格紧跟的结语行原先被 CommonMark 当 lazy 续行塞进最后一个
@@ -88,9 +88,8 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
        按类型给不同图标与颜色；点一下直接开右栏，不再在文字下面另排一排芯片。 */
     const path = code.trim();
     if (looksLikeFilePath(path)) {
-      const visual = fileTypeVisual(path);
       return (
-        <button type="button" className="inline-file-link" style={{ color: visual.color }} title={`在右侧栏预览：${path}`} onClick={() => openRightFile(path)}>
+        <button type="button" className="inline-file-link" title={`在右侧栏预览：${path}`} onClick={() => openRightFile(path)}>
           <FileTypeIcon path={path} size={14} />
           <span>{fileNameOf(path)}</span>
         </button>
