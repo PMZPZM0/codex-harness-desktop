@@ -437,16 +437,37 @@ async function installTorch(uv: string, py: string, backend: string, specs: stri
   throw lastError instanceof Error ? lastError : new Error("PyTorch 安装失败");
 }
 
-/** 跑一个命令并等它结束（安装步骤用；stdout/stderr 只留尾部）。 */
+/** 跑一个命令并等它结束（安装步骤用；stdout/stderr 只留尾部）。
+ *  ⛔⛔ 11-22 与 OpenMAIC 同源事故：等 `close` 会被**孙进程继承的管道**挂住（pg_ctl→postgres 就是
+ *    这么卡半小时）。装依赖时 pip/uv 会拉起构建子进程，同样可能拖着管道不放 ⇒ 改成等 `exit`，
+ *    再加一条「10 分钟没有任何输出就杀掉」的看门狗，宁可报错也不无限等。 */
 function runCommand(command: string, args: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+    const child = spawn(command, args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
     let tail = "";
-    const onData = (chunk: Buffer) => { tail = (tail + String(chunk)).slice(-4000); onLine?.(String(chunk).trim().split(/\r?\n/).pop() ?? ""); };
+    let lastOutput = Date.now();
+    const onData = (chunk: Buffer) => {
+      tail = (tail + String(chunk)).slice(-4000);
+      lastOutput = Date.now();
+      onLine?.(String(chunk).trim().split(/\r?\n/).pop() ?? "");
+    };
     child.stdout?.on("data", onData);
     child.stderr?.on("data", onData);
-    child.on("error", reject);
-    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`命令失败（${code}）：${tail.slice(-400)}`))));
+    const stall = setInterval(() => {
+      if (Date.now() - lastOutput > 10 * 60_000) {
+        try { child.kill(); } catch { /* 已退出 */ }
+      }
+    }, 5000);
+    (stall as unknown as { unref?: () => void }).unref?.();
+    child.on("error", (error) => { clearInterval(stall); reject(error); });
+    child.on("exit", (code) => {
+      clearInterval(stall);
+      if (code === 0) { resolve(); return; }
+      const stalled = Date.now() - lastOutput > 10 * 60_000;
+      reject(new Error(stalled
+        ? `命令超过 10 分钟没有任何输出，已中止：${tail.slice(-400)}`
+        : `命令失败（${code}）：${tail.slice(-400)}`));
+    });
     const onAbort = () => { try { child.kill(); } catch { /* 忽略 */ } reject(new Error("已取消")); };
     signal.addEventListener("abort", onAbort, { once: true });
   });
