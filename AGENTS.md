@@ -134,7 +134,7 @@ node scripts/logs.mjs verify / dedupe / reindex
 
 ## ⛔ 本文件有注入上限（守卫【172】）
 
-引擎读 AGENTS.md 有字节上限，超了**静默截断**（不报错）。本应用已在启动参数把 `project_doc_max_bytes` 抬到 **524288**（`electron/codex-server.ts`，守卫【172】校验值 > 本文件大小且留 2× 余量）。⛔ 引擎会从 cwd 向上拼接多级 AGENTS.md（项目级 + `codex-home` 全局），上限卡的是拼接总量 ⇒ **查阅型内容一律外置 `docs/`**，关键规则往文件前部放。自查：`wc -c AGENTS.md`。
+引擎读 AGENTS.md 有字节上限（**官方默认仅 32768 字节**），超了**静默截断**（不报错）。本应用已在启动参数把 `project_doc_max_bytes` 抬到 **524288**（`electron/codex-server.ts`，守卫【172】校验值 > 本文件大小且留 2× 余量）。⛔ 引擎会从 cwd 向上拼接多级 AGENTS.md（项目级 + `codex-home` 全局），上限卡的是拼接总量 ⇒ **查阅型内容一律外置 `docs/`**，关键规则往文件前部放。自查：`wc -c AGENTS.md`。
 
 ## 🔑 不变量速查（改这些地方前必读）
 
@@ -211,7 +211,7 @@ Electron 桌面应用，把 OpenAI Codex 引擎（app-server，stdio JSON-RPC）
 
 ## 近期功能性变更（索引）
 
-> 全量流水（含每轮用户原话 → 改了什么 → 判据）→ `docs/CHANGELOG-INDEX.md`。
+> 全量流水（含每轮用户原话 → 改了什么 → 判据）→ `docs/CHANGELOG-INDEX.md`。⛔ 只增不回改：搬走的条目不再改写。
 
 - 11-22 首轮上下文再瘦身（AGENTS 查阅型内容外置、resume 工具面回归画像、multi_agent_v1 关闭、技能索引只给名字+路径）
 - 11-19 记忆金字塔删除 + 技能清单变索引 + 工具面按会话画像 + MCP 懒加载网关
