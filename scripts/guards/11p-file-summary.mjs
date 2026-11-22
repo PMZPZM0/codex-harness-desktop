@@ -270,7 +270,7 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     const composerCss = read("src/styles/04-cards-tools.css");
     const teamCss = read("src/styles/61-team-mode.css");
     ok(/githubLinkLabel/.test(read("src/components/ExternalLink.tsx")) && /GitHubMark/.test(read("src/components/ExternalLink.tsx"))
-      && /openExternal\(href\)/.test(read("src/components/ExternalLink.tsx")) && /<ExternalLink href=\{href\}/.test(markdown),
+      && /openExternal\(safeHref\)/.test(read("src/components/ExternalLink.tsx")) && /<ExternalLink href=\{href\}/.test(markdown),
       "正文 GitHub 链接自动识别 + GitHub 标志 + 默认浏览器打开");
     ok(/\.markdown a \{[\s\S]{0,220}color:\s*var\(--link\)[\s\S]{0,120}font-size:\s*13\.5px/.test(msgCss),
       "正文链接统一蓝色（13.5px、500 字重）");
@@ -294,6 +294,10 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     const userMsg = read("src/features/shared/UserMessageView.tsx");
     ok(/<LinkifiedText text=\{seg\.text\}/.test(userMsg) && /openRightFile\(source\)/.test(userMsg),
       "已发出的用户消息：URL 自动变链接，文件附件点击开右栏（两处都接线）");
+    ok(/HTTP_URL_RE/.test(read("src/components/LinkifiedText.tsx"))
+      && /sanitizeHttpUrl/.test(read("src/components/ExternalLink.tsx"))
+      && /A-Za-z0-9/.test(read("src/lib/composer-links.mjs")),
+      "URL 只识别合法字符（⛔ URL 后面紧跟的中文不许被吞进链接）");
   }
   /* 11-21 用户截图：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」。
      ⇒ 文件只在正文行内出现；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */
