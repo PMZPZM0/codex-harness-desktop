@@ -25,6 +25,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { threadCwd } from "./runtime-refs";
+import { imagesDir } from "./user-data-paths";
 
 /** 单次查找的总时间预算（超时返回已找到的最好结果）。 */
 const BUDGET_MS = 2600;
@@ -153,6 +154,8 @@ function buildRoots(abs: string): Array<{ dir: string; depth: number; budgetMs: 
     if (root) push(root, 6, 1200, 12_000);
   }
   for (const cwd of threadCwd.values()) if (cwd) push(cwd, 10, 500, 6_000);
+  /* 粘贴的图片落在 userData/images（clipboard:image）；消息里可能只剩文件名 ⇒ 必须来这里找。 */
+  try { push(imagesDir(), 1, 900, 20); } catch { /* 目录尚未初始化 */ }
   const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
   if (home) push(home, 4, 600, 6_000);
   return out;
