@@ -202,6 +202,31 @@ ok(/readdir\(staging, \{ withFileTypes: true \}\)/.test(installSrc)
   && !/\(await fs\.readdir\(staging\)\)\.find/.test(installSrc),
   "解压后只认目录（⛔ 不许把 .tar.gz 归档当目录读 package.json）");
 
+/* ── 安装不许「卡住半小时」（11-22 用户实测）────────────────────────────────
+   ⛔ 实测根因：`pg_ctl start` 会拉起 postgres.exe 并让它继承父进程管道 ⇒ 父进程 exit 了但
+     `close` 永不触发（本机实测 exit 326ms、close 6 秒内不来），旧代码 `on("close", resolve)`
+     就永远悬着，界面停在上一句「正在下载 pnpm…」的 20%。三条一起钉：
+     ① 拉起常驻服务的命令必须 stdio:"ignore" + 等 exit；
+     ② 每个安装步骤都要有卡死看门狗（N 分钟无输出即中止），不许无限等；
+     ③ 每个阶段都要报 stage/progress，别让界面停在上一句。 */
+{
+  const install = codeOnly(read(INSTALL));
+  ok(/function waitChildExit\(/.test(install)
+    && /pg_ctl\.exe"\), \["-D", pgData, "status"\], \{ windowsHide: true, stdio: "ignore" \}\)/.test(install)
+    && /stdio: "ignore" \}\);?\s*\n\s*trackRuntimeProc\(id, child\)/.test(install),
+    "pg_ctl 一律 stdio:ignore + 等 exit（⛔ on(\"close\") 会被 postgres 继承的管道挂死）");
+  ok(!/child\.on\("close", \(\) => resolve\(\)\)/.test(install),
+    "⛔ 不再用 child.on(\"close\") 等起服务的命令");
+  ok(/const STEP_STALL_MS = \d+_000/.test(install) && /STEP_STALL_MS\)/.test(install)
+    && /没有任何输出/.test(install),
+    "安装步骤有卡死看门狗（3 分钟无输出即中止并带出最后几行，不许无限等）");
+  ok(/stdio: \["ignore", "pipe", "pipe"\]/.test(install),
+    "步骤的 stdin 关掉（initdb/pnpm 若等读 stdin 会永远挂住）");
+  ok(/@@STAGE 初始化本地数据库/.test(install) && /@@STAGE 启动本地数据库/.test(install)
+    && /@@PROGRESS 25/.test(install),
+    "每个阶段都上报 stage/progress（界面不会停在上一句的 20%）");
+}
+
 console.log("");
 console.log(fails === 0
   ? `【openmaic】通过（${checks} 条）`

@@ -122,26 +122,63 @@ export async function waitLocalPort(port: number, timeoutMs = 40_000): Promise<b
 
 type StepResult = { code: number; out: string };
 
+/** 一个步骤多久没有任何输出就判卡死（毫秒）。
+ *  ⛔ 11-22 用户实测「卡了半小时」：安装步骤原来**没有超时也没有进度**，一旦卡住就是无限等。 */
+const STEP_STALL_MS = 180_000;
+
+/**
+ * 等子进程**自己退出**（`exit`），不等 `close`。
+ *
+ * ⛔⛔ 11-22 实测事故（OpenMAIC 卡在 20% 半小时）：`pg_ctl start` 会拉起 postgres.exe，而
+ *   子进程**继承了父进程的 stdio 管道** ⇒ 父进程（pg_ctl）早就退出，但管道还挂在 postgres 上，
+ *   `close` 事件**永远不触发** ⇒ 整个安装悬在这一句 await 上，界面停在上一句提示。
+ *   ⇒ 凡是「会拉起常驻服务的命令」一律 `stdio: "ignore"` + 等 `exit`。
+ */
+function waitChildExit(child: ReturnType<typeof spawn>): Promise<number | null> {
+  return new Promise((resolve) => {
+    child.once("exit", (code) => resolve(code));
+    child.once("error", () => resolve(null));
+  });
+}
+
 /** 跑一个安装步骤（参数数组、不进 shell；输出留尾部给报错；受取消开关控制）。 */
 function runOpenMaicStep(id: DevRuntimeId, bin: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; label: string }): Promise<StepResult> {
   return new Promise<StepResult>((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(bin, args, { cwd: opts.cwd, env: { ...process.env, ...opts.env }, windowsHide: true });
+      /* stdin 关掉：某些工具（initdb / pnpm 的确认提示）会等着读 stdin，接了控制台就等于永远等。 */
+      child = spawn(bin, args, { cwd: opts.cwd, env: { ...process.env, ...opts.env }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     } catch (error) {
       reject(error); return;
     }
     trackRuntimeProc(id, child);
     let tail = "";
-    const grab = (chunk: unknown) => { tail = `${tail}\n${String(chunk)}`.slice(-4000); };
+    let lastOutput = Date.now();
+    const grab = (chunk: unknown) => {
+      tail = `${tail}\n${String(chunk)}`.slice(-4000);
+      lastOutput = Date.now();
+    };
     child.stdout?.on("data", grab);
     child.stderr?.on("data", grab);
-    const timer = setInterval(() => { if (isCancelRequested(id)) { try { child.kill(); } catch { /* 已退出 */ } } }, 1000);
+    const timer = setInterval(() => {
+      if (isCancelRequested(id)) { try { child.kill(); } catch { /* 已退出 */ } return; }
+      /* 卡死看门狗：3 分钟没有任何输出就中止，并把最后几行带出去（总比无限挂着好）。 */
+      if (Date.now() - lastOutput > STEP_STALL_MS) {
+        try { child.kill(); } catch { /* 已退出 */ }
+      }
+    }, 1000);
     child.on("error", (error) => { clearInterval(timer); reject(error); });
-    child.on("close", (code) => {
+    /* ⛔ 等 exit 而不是 close：子进程若把 stdio 传给孙进程（pg_ctl → postgres），close 永不触发。 */
+    child.on("exit", (code) => {
       clearInterval(timer);
       if (isCancelRequested(id)) { reject(new Error("已取消")); return; }
-      if (code !== 0) { reject(new Error(`${opts.label}失败（${code}）：${tail.trim().slice(-1200)}`)); return; }
+      if (code !== 0) {
+        const stalled = Date.now() - lastOutput > STEP_STALL_MS;
+        reject(new Error(stalled
+          ? `${opts.label}超时（${Math.round(STEP_STALL_MS / 60000)} 分钟没有任何输出）：${tail.trim().slice(-600)}`
+          : `${opts.label}失败（${code}）：${tail.trim().slice(-1200)}`));
+        return;
+      }
       resolve({ code: code ?? 0, out: tail });
     });
   });
@@ -185,9 +222,8 @@ export async function stopOpenMaicProcesses(): Promise<void> {
   if (pgInitialized(pgData)) {
     await new Promise<void>((resolve) => {
       try {
-        const child = spawn(path.join(openMaicPaths().pgBin, "pg_ctl.exe"), ["-D", pgData, "stop", "-m", "fast"], { windowsHide: true });
-        child.on("close", () => resolve());
-        child.on("error", () => resolve());
+        const child = spawn(path.join(openMaicPaths().pgBin, "pg_ctl.exe"), ["-D", pgData, "stop", "-m", "fast"], { windowsHide: true, stdio: "ignore" });
+        void waitChildExit(child).then(() => resolve());
         setTimeout(resolve, 15_000);
       } catch { resolve(); }
     });
@@ -303,29 +339,34 @@ export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: strin
       "--registry", OPENMAIC_NPM, `pnpm@${OPENMAIC_PNPM}`, `@embedded-postgres/windows-x64@${OPENMAIC_PG}`,
     ], { label: "安装运行时组件" });
     await writePnpmShim(paths.runtime, nodeExe);
+    emitRuntimeProgress(id, "@@PROGRESS 25");
     if (!pgInitialized(pgData)) {
       await fs.mkdir(pgData, { recursive: true });
-      emitRuntimeProgress(id, "正在初始化本地 PostgreSQL…");
+      emitRuntimeProgress(id, "@@STAGE 初始化本地数据库");
+      emitRuntimeProgress(id, "正在初始化本地 PostgreSQL（约 10–30 秒）…");
       await runOpenMaicStep(id, path.join(paths.pgBin, "initdb.exe"),
         ["-D", pgData, "-U", "openmaic", "-A", "trust", "-E", "UTF8", "--locale=C"], { label: "初始化 PostgreSQL" });
     }
     // 构建期 Next 可能连库：先把 PG 起在配置端口
     const pgRunning = await new Promise<boolean>((resolve) => {
-      const check = spawn(path.join(paths.pgBin, "pg_ctl.exe"), ["-D", pgData, "status"], { windowsHide: true });
-      check.on("close", (code) => resolve(code === 0));
-      check.on("error", () => resolve(false));
+      const check = spawn(path.join(paths.pgBin, "pg_ctl.exe"), ["-D", pgData, "status"], { windowsHide: true, stdio: "ignore" });
+      void waitChildExit(check).then((code) => resolve(code === 0));
     });
     if (!pgRunning) {
+      emitRuntimeProgress(id, "@@STAGE 启动本地数据库");
+      emitRuntimeProgress(id, "正在启动本地 PostgreSQL…");
       const freePg = await freePort(cfg.pgPort).catch(() => cfg.pgPort);
       if (freePg !== cfg.pgPort) { cfg.pgPort = freePg; saveOpenMaicConfig(cfg); }
       // ⛔ 不看 pg_ctl 退出码（Windows 控制台下「server started」也可能是非零），以端口可连为准
       await new Promise<void>((resolve) => {
         const child = spawn(path.join(paths.pgBin, "pg_ctl.exe"),
           ["-D", pgData, "-o", `-p ${cfg.pgPort} -c listen_addresses=127.0.0.1`, "-l", path.join(paths.data, "pg.log"), "start"],
-          { windowsHide: true });
+          /* ⛔⛔ stdio 必须 ignore：pg_ctl 会拉起 postgres.exe 并让它继承管道，
+             用默认 stdio 时 `close` 永远不触发（11-22 用户「卡了半小时」就是卡在这句 await）。
+             改成等 pg_ctl 自己 exit，再用端口探活判定是否真的起来了。 */
+          { windowsHide: true, stdio: "ignore" });
         trackRuntimeProc(id, child);
-        child.on("close", () => resolve());
-        child.on("error", () => resolve());
+        void waitChildExit(child).then(() => resolve());
       });
       if (!(await waitLocalPort(cfg.pgPort, 30_000))) throw new Error("PostgreSQL 没能在 30 秒内就绪（看 userData/openmaic-data/pg.log）");
     }
