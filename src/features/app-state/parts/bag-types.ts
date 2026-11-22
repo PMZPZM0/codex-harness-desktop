@@ -1368,7 +1368,8 @@ export interface Bag {
   deleteThreadCore: (id: string) => Promise<void>;
   /* ⛔ 11-22：调用方**已经弹过确认**时必须传 { confirmed: true }，否则会再弹一次（用户实测「点了永久删除又出来一次」）。 */
   deleteThread: (id: string, options?: { confirmed?: boolean }) => Promise<void>;
-  deleteThreadsByCwd: (cwd: string) => Promise<void>;
+  /* ⛔ 11-22：调用方**已经弹过确认**时必须传 { confirmed: true }，否则会再弹一次（用户实测「删除项目又出来一次」）。 */
+  deleteThreadsByCwd: (cwd: string, options?: { confirmed?: boolean }) => Promise<void>;
   /* 11-01 笔名体系（会话名即笔名）：
      · aliasState —— 主进程 `session-alias:snapshot` 的只读快照，store 在 `src/lib/alias-store.mjs`；
      · aliasRefreshKey —— 快照代次，用来让依赖它的 memo 失效；

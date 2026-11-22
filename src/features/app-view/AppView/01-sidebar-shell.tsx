@@ -1047,7 +1047,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                                    跟菜单项会飘到行下面；用打开菜单那一刻的旧矩形会因重排错位。 */
                                 setDialogAnchor(projectDialogAnchor(cwd));
                                 if (!(await app.openAppConfirm("删除项目", `项目「${projectNameOf(cwd)}」下的全部会话与记录将被永久删除，此操作无法撤销。`, "永久删除"))) return;
-                                unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd);
+                                unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd, { confirmed: true });   /* 上面已确认过，别再弹第二个 */
                               }}><Trash2 size={14} />删除项目（含全部会话）</button>
                             </div>
                           </>,

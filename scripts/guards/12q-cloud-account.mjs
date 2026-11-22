@@ -526,6 +526,17 @@ ok(/SessionSyncDialog/.test(manageSrc) && /ResultDialog/.test(manageSrc) && /选
 const threadRowsSrc = codeOnly(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"));
 ok(/openAppConfirm/.test(threadRowsSrc) && /deleteThread\(entry\.id, \{ confirmed: true \}\)/.test(threadRowsSrc),
   "侧栏本地删除会话：菜单里确认一次即可（⛔ 传 confirmed:true 走内核，否则 deleteThread 会再弹第二个确认 —— 11-22 用户实测）");
+{
+  /* 11-22 用户实测第二例（项目）：侧栏项目菜单弹「删除项目」→ 调 deleteThreadsByCwd → 它内部**又**弹
+     「删除整个项目」。第二个气泡没有锚点，直接飘到主区中间，用户以为「修了个寂寞」。
+     ⇒ 判据：调用方传 confirmed:true + 内核按 options.confirmed 跳过确认，两处缺一即红。 */
+  const shellDelSrc = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+  const segDelSrc = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
+  ok(/deleteThreadsByCwd\(cwd, \{ confirmed: true \}\)/.test(shellDelSrc)
+    && /async function deleteThreadsByCwd\(cwd: string, options\?: \{ confirmed\?: boolean \}\)/.test(segDelSrc)
+    && /!options\?\.confirmed && !\(await bag\.openAppConfirm\("删除整个项目"/.test(segDelSrc),
+    "侧栏删除项目：菜单里确认一次即可（⛔ 内核 deleteThreadsByCwd 认 options.confirmed，否则再弹「删除整个项目」）");
+}
 const bridgeSrc2 = codeOnly(read("electron/cloud-bridge.ts"));
 ok(/\/api\/sync-sessions/.test(bridgeSrc2) && /listSessions/.test(bridgeSrc2) && /syncNow: \(ids\?/.test(bridgeSrc2),
   "本机桥暴露本地会话列表，sync-now 支持只传勾选的 ids");

@@ -433,7 +433,7 @@ bag.deleteThread = deleteThread as typeof bag.deleteThread;
   /* ⛔ 10-29：`releaseDispatchHolder`（一键释放调度会话）已删除 —— 它服务的「全局唯一调度权」
      随用户令「每个会话都可以调度它们」一起下线；没有锁就不需要释放，也就不需要为解锁而删会话。 */
 
-  async function deleteThreadsByCwd(cwd: string) {
+  async function deleteThreadsByCwd(cwd: string, options?: { confirmed?: boolean }) {
     /* ⛔ 必须按**有效 cwd**（侧栏项目视图的归组口径）取目标 —— 09-25 加「被调度会话跟随主对话
        项目地址」后，一个项目组里含 own cwd 不同的被调度会话。仍按 entry.cwd 过滤会有两个错：
        ① 组里看得见的被调度会话删不掉（留在原地变孤儿行）② 反把 own cwd 命中但已归到**别的**
@@ -443,7 +443,10 @@ bag.deleteThread = deleteThread as typeof bag.deleteThread;
     const cwdMap = bag.dispatchCwdMap ?? {};
     const ids = bag.threads.filter((entry) => (cwdMap[entry.id] ?? entry.cwd) === cwd).map((entry) => entry.id);
     if (!ids.length) { bag.setNotice("该项目下已无对话"); return; }
-    if (!(await bag.openAppConfirm("删除整个项目", `项目「${basename(cwd)}」下的 ${ids.length} 条任务将被永久删除，此操作无法撤销。`, "永久删除"))) return;
+    /* ⛔⛔ 11-22 用户实测（项目那条同会话那条）：「点删除又出来一次」—— 侧栏项目菜单**自己已经确认过**
+       （那条贴着项目行、位置正确），这里再弹一次就是第二个气泡，而且它没有锚点 ⇒ 飘到主区中间。
+       ⇒ 调用方传 confirmed:true 时直接执行。 */
+    if (!options?.confirmed && !(await bag.openAppConfirm("删除整个项目", `项目「${basename(cwd)}」下的 ${ids.length} 条任务将被永久删除，此操作无法撤销。`, "永久删除"))) return;
     for (const id of ids) {
       try {
         await window.codex.request("thread/delete", { threadId: id });
