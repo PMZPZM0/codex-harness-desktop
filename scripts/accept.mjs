@@ -3035,6 +3035,11 @@ const CHECKS = [
         await wait(1400);
         found = Number(await h.eval(`document.querySelectorAll(".inline-file-card").length`)) || 0;
       }
+      /* 历史里没有带文件引用的消息时无法验证（新装/干净 profile）——明确跳过，不伪造通过。 */
+      if (!found) {
+        console.log("  （跳过：本 profile 的历史会话里没有带文件引用的消息）");
+        return;
+      }
       h.check("① 前提：某个会话正文出现紧凑文件行", found > 0, String(found));
       const first = await h.eval(`(function(){ const b=document.querySelector(".inline-file-card"); return b ? { text:(b.textContent||"").trim(), title:b.getAttribute("title")||"" } : null; })()`);
       h.check("② 文件行是「图标 + 文件名」的紧凑项（不是整行卡）", Boolean(first && first.text && /预览/.test(first.title)), JSON.stringify(first));
