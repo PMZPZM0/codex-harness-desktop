@@ -213,6 +213,6 @@ Electron 桌面应用，把 OpenAI Codex 引擎（app-server，stdio JSON-RPC）
 
 > 全量流水（含每轮用户原话 → 改了什么 → 判据）→ `docs/CHANGELOG-INDEX.md`。
 
-- 11-22 首轮上下文再瘦身（AGENTS 查阅型内容外置、resume 工具面回归画像、multi_agent_v1 关闭）
-- 11-19 记忆金字塔删除 + 技能清单变索引（描述 60 字）+ 工具面按会话画像 + MCP 懒加载网关
+- 11-22 首轮上下文再瘦身（AGENTS 查阅型内容外置、resume 工具面回归画像、multi_agent_v1 关闭、技能索引只给名字+路径）
+- 11-19 记忆金字塔删除 + 技能清单变索引 + 工具面按会话画像 + MCP 懒加载网关
 - 11-19 `find_skills` 工具：实时扫盘检索本地技能

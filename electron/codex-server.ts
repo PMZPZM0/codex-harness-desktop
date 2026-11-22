@@ -574,8 +574,15 @@ export class CodexServer extends EventEmitter {
     //   留出继续增长的余量；⛔ 这只是"读得到"，文档仍应克制增长（关键规则往前放）。
     // ⛔ 11-22：关掉引擎自带的 multi_agent（deprecated）—— 它的 multi_agent_v1 schema 实测 9,846 字节，
     //   而宿主的调度（agent_invoke / 专家团）走 dynamicTools，与它不共用。首轮省约 2.5k tokens。
-    //   回滚：删掉这一项即可（不需要改 config.toml）。
-    const child = spawn(binary, ["-c", "project_doc_max_bytes=524288", "-c", "features.multi_agent=false", "app-server", "--listen", "stdio://"], {
+    //   同时把技能索引压成「名字 + 路径」：实测 116 个技能（含第三方包）描述共 29,158 字符，
+    //   占首轮约 1/3；模型仍可读任一 SKILL.md，按用途找技能走宿主 find_skills。
+    //   回滚：删掉对应 -c 项即可（不需要改 config.toml）。
+    const child = spawn(binary, [
+      "-c", "project_doc_max_bytes=524288",
+      "-c", "features.multi_agent=false",
+      "-c", "features.omit_skill_descriptions=true",
+      "app-server", "--listen", "stdio://",
+    ], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       // toolchainEnv：PATH 里带内置 node/pwsh/npm-global，NODE_PATH 指向 npm 全局

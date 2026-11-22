@@ -594,6 +594,7 @@ export function leanDevInstructions(input: DevInstructionsInput = {}): string {
 - 宿主工具直连可用：exec_command / apply_patch / memory_recall / memory_write / task_* / agent_invoke / find_skills / mcp_tools / mcp_call 等。
 - MCP（TAPD、Craft 全家桶、桌面自动化等）已改为**按需网关**：先 mcp_tools 查名字与参数，再 mcp_call 调用；⛔ 不要按旧文档直接调 mcp__xxx 或桌面_* 名字。
 - 平台级长清单走内置技能 harness-api（通道 / 扩展点 / 示例）；本地技能用 find_skills 搜索后读其 SKILL.md。
+- 技能清单常驻只给名字与 SKILL.md 路径（省 token）：按用途找技能先 \`find_skills\`（返回描述与路径），已确定名字就直接读它的 SKILL.md 再照做；⛔ 不要因为清单里没有描述就说没有这个技能。
 - 详细工作细则（安装 / 记忆分层 / 语音 / 各外部工具的完整用法）全文在 \`$CODEX_HOME/harness-dev-guide.md\`，需要时用命令读取对应小节，不要凭记忆猜。
 
 技能沉淀：写/改技能前先读 skill-authoring 指南并按 skill-audit 五查自审；未经审查的技能不要安装。

@@ -261,8 +261,9 @@ export function dispatchToolDescription(
   const line = (target: DispatchTarget) => {
     const who = target.kind === "member" && target.teamId ? `${target.teamId} / ${target.memberId}` : target.key;
     const title = [target.name, target.profession].filter(Boolean).join(" · ");
-    const desc = String(target.description ?? "").replace(/\s+/g, " ").slice(0, 40);
-    return `  - ${title} → name=${JSON.stringify(who)}（kind="${target.kind}"）${desc ? `：${desc}` : ""}`;
+    /* 11-22：目标行不再带 40 字简介（专家多时这一段整块 4KB+，每轮常驻且专家一改就失效缓存）。
+       名称 + 职业 + kind 足够派活；需要细节用 agent_list_children / 调度面板看。 */
+    return `  - ${title} → name=${JSON.stringify(who)}（kind="${target.kind}"）`;
   };
   /* ⛔⛔ 2026-10-04 用户报「提示词写错了」——
      原版把三类**平铺在一个无分节的列表**里，只在每行前缀写「专家」「专家团」「子智能体」，

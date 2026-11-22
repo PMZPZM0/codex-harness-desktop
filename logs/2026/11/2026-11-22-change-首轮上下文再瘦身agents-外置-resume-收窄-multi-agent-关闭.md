@@ -34,12 +34,25 @@ importance: normal
 - 缓存：所有改动都发生在会话/回合开始前，首轮之后前缀稳定；调度描述变短反而减少了
   「专家目录一变就整段前缀失效」的概率。
 
+## 二轮（同日实测「新会话仍 5.1W」之后）
+- 真实新会话（cwd `D:\测试`）首个 `token_count` = 49,145：项目 AGENTS 不参与，说明大头是
+  **技能索引 29,158 字符**（116 个技能；第三方包 / `~/.agents/skills` 的描述很长）。
+- 引擎启动加 `features.omit_skill_descriptions=true`：索引 → **8,931 字符**（只留名字 + SKILL.md 路径），
+  模型仍可读任一 SKILL.md；按用途找技能走宿主 `find_skills`。
+- ⛔ 配套修复：`find_skills` 原来只扫 `codex-home/skills` + 项目目录 —— 补扫 `.system` 与
+  `~/.agents/skills`（否则省掉描述的那批技能不可检索）；技能纪律文案同步改成「只给名字 + 路径」。
+- `agent_invoke` 目标行去掉 40 字简介（专家多时这段 4KB+，且专家目录一变就整段前缀缓存失效）。
+- 实测不可动的地板：引擎基础指令 17–21k 字符（`multi_agent` 关闭本身就让它从 21,026 → 17,174）、
+  全局个性化 `codex-home/AGENTS.md` 10.4KB（用户数据）。`instructions_file` / `compact_prompt`
+  在本引擎版本对基础指令无效（`compact_prompt` 要求字符串，按布尔传会拒载）。
+
 ## 影响面
 - 新会话与老会话（resume）的首轮输入 token 都下降；普通会话工具面与 thread/start 完全同口径。
 - 中枢 / 群 / 团队 / 委派会话**不受** resume 收窄影响（kind 判定）。
 - `AGENTS.md` 规则本体没删，正文都在 `docs/AGENTS-DETAILS.md`；两仓逐字镜像。
+- 技能索引不再带描述（全局行为）；`find_skills` 检索面扩大，技能文件本身未改。
 
 ## 回滚
 - AGENTS：从 git 取回旧版即可（`docs/AGENTS-DETAILS.md` 可保留）。
 - resume 收窄：删掉 `hostKind === "normal"` 那段（回到旧行为：整份覆盖）。
-- multi_agent：删掉 spawn 参数 `-c features.multi_agent=false`。
+- multi_agent / 技能描述：删掉 spawn 参数对应 `-c` 项；`find_skills` 多扫的根可保留（只读）。

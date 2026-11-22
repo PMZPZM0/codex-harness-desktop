@@ -186,6 +186,14 @@ ok(/leanDevInstructions/.test(read("electron/developer-instructions.ts"))
     "【上下文】引擎启动关闭 deprecated multi_agent（multi_agent_v1 schema 实测 9.8KB）");
   ok(statSync(ROOT + "/AGENTS.md").size < 32768 && existsSync(ROOT + "/docs/AGENTS-DETAILS.md"),
     "【上下文】AGENTS.md 压回引擎默认上限内，查阅型细则外置 docs/AGENTS-DETAILS.md");
+  /* 11-22 二轮：真实会话实测技能索引 29,158 字符（116 个技能，第三方包描述很长）⇒ 只下发名字 + 路径。
+     ⛔ 省 token 的前提是**检索补齐**：find_skills 必须覆盖引擎实际暴露的全部根。 */
+  const serverSrc = read("electron/codex-server.ts");
+  const skillsIpcSrc = read("electron/features/skills-ipc.ts");
+  ok(/features\.omit_skill_descriptions=true/.test(serverSrc),
+    "【上下文】技能索引只下发名字 + 路径（omit_skill_descriptions）");
+  ok(/\.system/.test(skillsIpcSrc) && /\.agents["'],\s*"skills"/.test(skillsIpcSrc),
+    "【上下文】find_skills 覆盖 codex-home/skills、.system 与 ~/.agents/skills（省描述后仍可按用途检索）");
 }
 
 console.log("\n【随包包的真实装态（11-21 修「别的电脑安装不了 / 装了也不更新状态」）】");

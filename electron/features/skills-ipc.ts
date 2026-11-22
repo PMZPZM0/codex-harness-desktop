@@ -334,7 +334,14 @@ export const skillsFeature = defineFeature<null>({
     ipcHost.handle("skills:find", async (_event, input: { query?: string; limit?: number; cwd?: string } = {}) => {
       const query = String(input?.query ?? "").trim();
       if (!query) return [];
-      const roots: Array<{ dir: string; scope: "user" | "repo" }> = [{ dir: userSkillsDir, scope: "user" }];
+      /* 11-22：技能清单常驻只给名字（`features.omit_skill_descriptions`）⇒ 检索必须覆盖引擎实际
+         暴露的全部根：codex-home/skills、其中的 .system、以及 ~/.agents/skills（Qoder 共享技能，
+         描述很长，正是清单里被省略的那批）。 */
+      const roots: Array<{ dir: string; scope: "user" | "repo" }> = [
+        { dir: userSkillsDir, scope: "user" },
+        { dir: path.join(userSkillsDir, ".system"), scope: "user" },
+        { dir: path.join(app.getPath("home"), ".agents", "skills"), scope: "user" },
+      ];
       const cwd = String(input?.cwd ?? "").trim();
       if (cwd) roots.push({ dir: path.join(cwd, ".codex", "skills"), scope: "repo" });
       const limit = Number(input?.limit ?? 5);
