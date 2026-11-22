@@ -41,6 +41,22 @@ export function resolveCompactionAnchor(visible, boundaryTurnId, options = {}) {
   const id = String(boundaryTurnId ?? "");
   const at = id ? list.findIndex((turn) => String(turn?.id ?? "") === id) : -1;
   if (at >= 0) return at; // ① 压缩所在回合在窗口 ⇒ 插在它自己之前
+  /* ② 结构定位（11-22）：压缩所在回合不在窗口里，但它**在完整回合列表 ordered 里** —— 取它之前
+     最近一个出现在窗口里的回合，插在其之后。⛔ 手动压缩跑成的独立回合永远不在 visible（整组不渲染），
+     而引擎 item 又只有 {type,id}、没有任何时间字段 ⇒ 旧代码落到 ④「有 id 无时间 ⇒ 0」= 窗口顶部，
+     用户看到的就是「刚压缩完，线没了」（其实跑到顶上去了）。
+     结构定位不依赖时钟，也不受「秒/毫秒」单位坑影响。 */
+  if (id && Array.isArray(options?.ordered) && options.ordered.length) {
+    const order = options.ordered;
+    const atOrdered = order.findIndex((turn) => String(turn?.id ?? "") === id);
+    if (atOrdered >= 0) {
+      for (let i = atOrdered - 1; i >= 0; i -= 1) {
+        const pos = list.findIndex((turn) => String(turn?.id ?? "") === String(order[i]?.id ?? ""));
+        if (pos >= 0) return pos + 1;
+      }
+      return 0;
+    }
+  }
   const when = toMs(options?.compactionAt);
   if (when > 0) {
     // ② 不在窗口（或被过滤）⇒ 按时间落在最后一个「先于压缩」的回合之后

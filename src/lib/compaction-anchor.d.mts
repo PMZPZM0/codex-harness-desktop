@@ -6,5 +6,5 @@
 export declare function resolveCompactionAnchor(
   visible: unknown,
   boundaryTurnId: unknown,
-  options?: { compactionAt?: number },
+  options?: { compactionAt?: number; ordered?: unknown },
 ): number;

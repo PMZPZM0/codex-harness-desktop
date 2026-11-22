@@ -591,11 +591,17 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     //    与 pruneSupersededCompactions 同口径：只渲染最新一条。
                     let compactionLine: ReactNode = null;
                     let insertBefore = -1;
+                    /* 11-22：本轮「压缩刚完成」时该由**哪个回合**把压缩项让出来（空串 = 谁也不让）。 */
+                    let suppressCompactionTurnId = "";
                     if (thread) {
                       /* ⛔ 压缩状态统一由 compaction-state.mjs 推导（10-17 用户令：四态可观测）。
                          之前这里自己扫一遍 item 判 in-progress，与 ItemView / compactToast 三处各写一份 ⇒
                          形状一变只有一处断（症状：没有压缩线、只剩通用工具卡）。 */
                       const cs = compactionStateOf(ordered, threadCompactToast?.state);
+                      /* ⛔⛔ 11-22（用户：「压缩完成后，反馈成功的那个没了」）：刚完成那一刻，压缩项在回合内
+                         跟着过程组一起折叠 ⇒ 看不见。⇒ 这个窗口内改由时间线画（常驻、带 × 关闭），
+                         同时把该回合的压缩项交给 suppressCompaction 剔除，同屏只留一条。 */
+                      const justCompacted = Boolean(threadCompactToast && threadCompactToast.state === "success");
                       reportCompactionState(thread.id, cs);
                       const lastCompaction: any = cs.state === "done" ? cs.item : null;
                       const lastCompactionTurnId = cs.state === "done" ? cs.turnId : "";
@@ -622,7 +628,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                          ⇒ 用**记录时间**定位：落在最后一个「先于压缩」的回合之后（压缩发生处；
                          再来新消息也不会把线拽下去）。 */
                       const compactionAt = Number(hostCompaction?.at ?? 0);
-                      insertBefore = resolveCompactionAnchor(visible, boundaryTurnId, { compactionAt });
+                      /* 11-22：把完整回合列表一起传进去 —— 手动压缩跑成的独立回合永远不在 visible
+                         （整组不渲染），只能靠结构定位找「它之前最近一个可见回合」；旧代码在这种
+                         情况（有 id、无时间）回落 ③ ⇒ 返回 0 ⇒ 线跑到窗口**顶部**，用户同样看不见。 */
+                      insertBefore = resolveCompactionAnchor(visible, boundaryTurnId, { compactionAt, ordered });
                       /* ⛔⛔ 11-03 用户令（两次澄清后定稿，原话：「运行过程的压缩线留在它产生的位置，
                          等压缩完成后，再放到回合消息上面」/「运行过程中，压缩线跟着历史消息往上走，
                          压缩先就是一个历史记录」）：
@@ -653,8 +662,11 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                             `ItemView` 会画成「正在压缩」——让位就等于显示错状态，还把真正的
                             「已取消 / 失败」那条挡掉；⇒ 终态为 cancelled / error 时不让位。 */
                       const toastAborted = compactToast?.state === "cancelled" || compactToast?.state === "error";
+                      /* 11-22：刚压缩完成 ⇒ 线由时间线画（常驻可关），该回合的压缩项先剔除（同屏只一条）。 */
+                      if (justCompacted) suppressCompactionTurnId = compactionOwnerTurnId;
                       const compactionRenderedInTurn = !runningCompactionTurnId
                         && !toastAborted
+                        && !justCompacted
                         && Boolean(lastCompaction)
                         && Boolean(compactionOwnerTurn
                           && ((compactionOwnerTurn as { items?: unknown[] }).items ?? []).some((i) => !isCompactionItem(i)));
@@ -678,7 +690,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                             <i className="compact-divider-line" aria-hidden />
                           </div>
                         );
-                      } else if (lastCompaction && insertBefore >= 0) {
+                      } else if (!justCompacted && lastCompaction && insertBefore >= 0) {
+                        /* ⛔ 刚压缩完成时**跳过**这条（引擎 item 版无关闭按钮 ⇒ toast 永不清、窗口永不结束），
+                           让下面的 toast 分支画那条带 × 的成功线。 */
                         compactionLine = <ItemView item={lastCompaction} onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} key={`compact-${lastCompaction.id}`} />;
                       } else if (hostCompaction && insertBefore >= 0) {
                         compactionLine = (
@@ -708,7 +722,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       ...visible.map((turn, i) => (
                       <Fragment key={turn.id}>
                         {compactionLine && i === insertBefore && compactionLine}
-                        <MemoTurnView turn={turn} threadId={thread?.id ?? ""} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} assistantName={partnerRow?.name || undefined} assistantAvatar={partnerAvatar ?? undefined} />
+                        <MemoTurnView turn={turn} threadId={thread?.id ?? ""} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} suppressCompaction={String(turn.id) === suppressCompactionTurnId} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} assistantName={partnerRow?.name || undefined} assistantAvatar={partnerAvatar ?? undefined} />
                       </Fragment>
                     )),
                       /* ⛔ 末尾插槽：手动压缩的锚点 = 压缩发生处（最后一回合之后） */

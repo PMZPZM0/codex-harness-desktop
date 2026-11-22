@@ -56,13 +56,26 @@ ok(resolveCompactionAnchor(secTurns, "ghost", { compactionAt: 1700000250000 }) =
   "真值表④b：压缩发生在 s1 之后、s2 之前 ⇒ 插在 s2 之前（下标 1）");
 ok(resolveCompactionAnchor(turns, "") === 4,
   "真值表③：完全没有回合信息（只有 toast）⇒ 最后一回合（压缩就发生在当下）");
+/* ⛔⛔ 11-22 用户实测（另一台电脑）：「手动触发压缩，压缩完成后，压缩线反馈成功的那个没了」。
+   两条独立原因都用真值表钉住：
+   ① 压缩项回到过程列表后跟着过程组**折叠** ⇒ 看不见（运行中那条反而可见 = 「转圈在、成功那条没了」）；
+   ② 手动压缩跑成的独立回合永远不在 visible，引擎 item 只有 {type,id}、没有时间字段 ⇒ 旧代码回落
+      「有 id 无时间 ⇒ 0」= 窗口**顶部**，线跑到顶上，同样看不见。 */
+const cOrder = [a("c1", 1000), a("c2", 2000), a("c3", 3000), a("c4", 4000)];
+const cVisible = [a("c1", 1000), a("c2", 2000), a("c4", 4000)];
+ok(resolveCompactionAnchor(cVisible, "c3", { ordered: cOrder }) === 2,
+  "真值表⑤：压缩回合不在窗口但**在完整回合列表里** ⇒ 结构定位落在它之前最近可见回合之后（⛔ 旧行为回落 0 = 窗口顶部，用户以为「线没了」）");
+ok(resolveCompactionAnchor(cVisible, "c3", { compactionAt: 0 }) === 0,
+  "真值表⑤b：不传 ordered 仍是旧的 0 —— 证明 ⑤ 的差异确实来自结构定位，不是别的分支碰巧给对");
+ok(resolveCompactionAnchor(cVisible, "c4", { ordered: cOrder }) === 2,
+  "真值表⑤c：压缩回合在窗口里时结构定位**不抢** ① 的语义（仍插在它自己之前）");
 ok(resolveCompactionAnchor([], "t3") === -1 && resolveCompactionAnchor(null, "") === -1,
   "真值表：空列表 / 坏入参 ⇒ -1（不插）");
 ok(resolveCompactionAnchor([a("x1", 1000), a("x2", 2000)], "x2") === 1,
   "真值表：窗口里一条 userMessage 都没有 ⇒ 插在压缩所在回合本身之前（不丢线）");
 /* ── ② 接线：时间线必须走纯函数，且旧的「回退最后一回合」不许回来 ── */
 const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
-ok(/import \{ resolveCompactionAnchor \}/.test(timeline) && /resolveCompactionAnchor\(visible, boundaryTurnId, \{ compactionAt \}\)/.test(timeline),
+ok(/import \{ resolveCompactionAnchor \}/.test(timeline) && /resolveCompactionAnchor\(visible, boundaryTurnId, \{ compactionAt, ordered \}\)/.test(timeline),
   "时间线用 resolveCompactionAnchor(visible, boundaryTurnId, { afterNewest }) 算锚点（已完成 / 宿主记录那条路）");
 ok(/const compactionAt = Number\(hostCompaction\?\.at \?\? 0\);/.test(timeline) && !/isCompactionNewest/.test(timeline),
   "压缩时间取记录的 at（⛔ 组件里不许再写一份时间比较）");
@@ -133,6 +146,19 @@ ok(/className=\{`ruler-tick[\s\S]{0,900}?onClick=\{\(\) => onJump\(mark\.turnId\
 
 /* ⛔ 10-26 用户：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」——
    根因是**没有压缩证据也照画**（纯函数兜底 = visible 最后一回合 ⇒ 窗口一滚它就跟着跑）。 */
+ok(/const justCompacted = Boolean\(threadCompactToast && threadCompactToast\.state === "success"\)/.test(timeline)
+  && /&& !justCompacted/.test(timeline)
+  && /else if \(!justCompacted && lastCompaction && insertBefore >= 0\)/.test(timeline)
+  && /if \(justCompacted\) suppressCompactionTurnId = compactionOwnerTurnId;/.test(timeline)
+  && /suppressCompaction=\{String\(turn\.id\) === suppressCompactionTurnId\}/.test(timeline),
+  "压缩刚完成时由时间线画那条成功线（⛔ 不再让位给「过程列表里跟着折叠」的压缩项 —— 那正是「成功后那条没了」）；跳过无关闭按钮的引擎 item 分支，让带 × 的 toast 线接管");
+{
+  const turnViewSrc = read("src/features/session-turn/SessionTurn/03-turn-view.tsx");
+  ok(/if \(suppressCompaction\) return false;/.test(turnViewSrc)
+    && /\}, \[responseItems, suppressCompaction\]\)/.test(turnViewSrc)
+    && /prev\.suppressCompaction === next\.suppressCompaction/.test(turnViewSrc),
+    "回合内按 suppressCompaction 剔除压缩项（useMemo 依赖 + memo 比较器都要带上；⛔ 漏了 = 同屏两条 / 完成那刻不刷新）");
+}
 const timelineSrc = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
 ok(/const hasEvidence = cs\.state === "done" \|\| cs\.state === "compacting" \|\| Boolean\(record\);[\s\S]{0,200}?if \(!hasEvidence\) return \{ turnId: "", atEnd: false \};/.test(timelineSrc),
   "⛔ 没有压缩证据就不画绿线（否则每个没压缩过的会话都凭空长一条）");

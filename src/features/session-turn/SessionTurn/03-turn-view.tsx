@@ -29,7 +29,9 @@ import { TurnMediaCard } from "../../media";
 /** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。
  *  `assistantName` / `assistantAvatar`：群聊伙伴会话在外面显示**伙伴本人**的名字与头像
  *  （11-09 用户令：与群聊里看到的一致，历史回合也实时跟随）；缺省 = 全局 Codex 身份。 */
-export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview, extraFooter, reasoningFloatHost }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void; /** 群聊：群特有的页脚项（追问 / 来源会话）接在**同一行**（⛔ 不另起一行留空白）。 */ extraFooter?: ReactNode; /** ⛔ 推理浮窗宿主（群聊传 `.team-reasoning-float-host`；缺省 = 主对话宿主）。 */ reasoningFloatHost?: string }) {
+export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview, extraFooter, reasoningFloatHost, suppressCompaction }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void; /** 群聊：群特有的页脚项（追问 / 来源会话）接在**同一行**（⛔ 不另起一行留空白）。 */ extraFooter?: ReactNode; /** ⛔ 推理浮窗宿主（群聊传 `.team-reasoning-float-host`；缺省 = 主对话宿主）。 */ reasoningFloatHost?: string; /**
+   * 11-22：本回合的压缩项**由时间线统一画**（刚压缩完成那一刻必须看得见）—— 回合内先剔除，
+   * ⛔ 不这么做的后果：压缩项回到过程列表、跟着过程组一起折叠 ⇒ 用户「压缩完成后成功那条没了」。 */ suppressCompaction?: boolean }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
   const codexName = useCodexName();
@@ -114,6 +116,13 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
     const hasSibling = responseItems.some((item) => !isCompactionItem(item));
     return responseItems.filter((item: any) => {
       if (!isCompactionItem(item)) return true;
+      /* ⛔⛔ 11-22 用户实测（另一台电脑）：「手动触发压缩，压缩完成后，压缩线反馈成功的那个没了」。
+         根因 —— 完成的压缩项回到过程列表（11-03 用户令），而回合收尾后过程组是**折叠**的，
+         线被折进去 = 看不见；运行中那条反而是可见的（running 被剔除、由时间线画），
+         所以症状正好是「转圈那条在，成功那条没了」。
+         ⇒ 刚完成的那一刻由时间线画（常驻 + 可关闭）；回合内先剔除，避免同屏两条。
+            用户关掉 / 切走之后回到这里当历史记录，按发生顺序排（11-03 的语义不丢）。 */
+      if (suppressCompaction) return false;
       /* 整回合只有压缩项（手动 /compact 的独立压缩回合）⇒ 剔除，整组不渲染，线交给 timeline */
       if (!hasSibling) return false;
       /* ⛔ 运行中的压缩项仍剔除：`ItemView` 的 running 分支**没有停止按钮**，
@@ -122,7 +131,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
       const running = item?.status === "inProgress" || item?.status === "running";
       return !running;
     });
-  }, [responseItems]);
+  }, [responseItems, suppressCompaction]);
   // 最终答复 = 最后一条有正文的 agentMessage
   const finalAgent = [...foldItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
   const hasContent = foldItems.some((item) => item.type !== "agentMessage" || Boolean(String(item.text ?? "").trim()));
@@ -329,7 +338,9 @@ export const MemoTurnView = memo(TurnView, (prev, next) =>
   && prev.handlers === next.handlers
   && prev.hooks === next.hooks
   && prev.assistantName === next.assistantName
-  && prev.assistantAvatar === next.assistantAvatar,
+  && prev.assistantAvatar === next.assistantAvatar
+  /* ⛔ 11-22：漏了这个比较 ⇒ 压缩完成那一刻回合不重渲染，回合内仍挂着那条已完成压缩项 ⇒ 同屏两条。 */
+  && prev.suppressCompaction === next.suppressCompaction,
 );
 
 /** memo 用户消息：只有消息内容/回合变化才重渲染 */
