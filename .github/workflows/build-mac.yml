@@ -30,7 +30,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # ⛔ 11-22 实测：macOS arm64 作业的 npm ci 偶发崩溃（退出码 196 = npm 的
+        #   「Exit handler never called」，npm 已知 bug，与仓库内容无关：同一提交的 win 作业通过）。
+        #   一次重试即可，别让偶发崩溃吃掉一整版的三端资产。
+        run: npm ci || (echo "npm ci 偶发失败（196），5 秒后重试一次" && sleep 5 && npm ci)
 
       - name: Checkout desktop engine source (Intel)
         if: matrix.mac_target == 'x64'
