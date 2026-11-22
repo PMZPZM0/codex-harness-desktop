@@ -308,6 +308,22 @@ ok(/case "external":/.test(backendsCode) && /runEgoUpgrade\(\)/.test(backendsCod
 ok(!/row\.id === "ego-lite"/.test(boardCode) && /componentSpec\(row\.specId\)\?\.kind !== "external"/.test(boardCode),
   "后台循环按 kind=external 判断「无版本号也要跑」，不再写 id 字面量");
 
+/* ── 镜像探测不许「等所有源都下完才开工」（11-22 用户实测）──────────────────────
+   用户原话：「好几个镜像源同时下载，下载的时候几个来回跳动，另外下载完了也没用，
+   非要几个全部下载完才行」。根因是排名阶段 `Promise.all(所有候选探测)` ——
+   要等最慢那条 1.5s 探测结束（候选多时叠加），期间每条候选都在拉 256KB。
+   判据：必须有总预算常量 + 到点结算的 Promise.race + 结算后掐断残余连接。 */
+{
+  const mirror = read("electron/mirror-download.ts");
+  ok(/const PROBE_TOTAL_MS = \d+_000/.test(mirror) && /Promise\.race\(\[all, new Promise<void>/.test(mirror)
+    && /gate\.abort\(\)/.test(mirror) && /settled\.get\(candidate\) \?\? 0/.test(mirror),
+    "镜像探测到点结算（不再等最慢那条；没答完的按 0 分并掐断连接）");
+  const panel = read("src/features/settings-devtools/RuntimeToolsPanel.tsx");
+  const page = read("src/features/settings-devtools/DevtoolsSettingsSection.tsx");
+  ok(/data-devtools-help-hint/.test(panel) && /data-devtools-help-hint/.test(page) && /帮我装一下/.test(panel),
+    "开发工具页写明「下载 / 安装失败可让 Codex 帮忙完成」（一级页与每个工具分组内各一处）");
+}
+
 console.log("");
 console.log(fails === 0 ? `12l 组件更新守卫：全部通过（${checks}/${checks}）` : `12l 组件更新守卫：${fails} 项未通过（共 ${checks} 项）`);
 process.exit(fails === 0 ? 0 : 1);

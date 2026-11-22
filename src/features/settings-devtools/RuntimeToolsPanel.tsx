@@ -59,6 +59,14 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
         <span className="settings-subhead-hint">{group.hint}</span>
       </div>
 
+      {/* 11-22 用户令：「开发工具加一句提醒，所有下载失败、安装失败都可以让 codex 帮忙完成，
+          因为很多下载不稳定、慢，每个人的网络不一样」。⛔ 这句话必须留在**每个工具分组**里
+          （用户是在这里看到失败提示的），别只挂在一级页。 */}
+      <p className="settings-card-hint" data-devtools-help-hint>
+        下载 / 安装失败不用自己折腾：每个人的网络环境不同，镜像不通、超时、装到一半卡住都很常见。
+        直接在对话里说一句「帮我装一下 <strong>XXX</strong>」，Codex 会用命令行在这台机器上装好。
+      </p>
+
       <div className="runtime-list">
         {items.map((runtime) => {
           const busy = runtimeInstalling === runtime.id || runtime.installing;

@@ -40,6 +40,13 @@ export type MirrorDownloadResult = { bytes: number; sha256: string; host: string
 
 const PROBE_TIMEOUT_MS = 1_500;
 const PROBE_BYTES = 256 * 1024;
+/**
+ * 探测阶段的总预算（11-22 用户实测：「好几个镜像源同时下载、来回跳动，非要几个全部下载完才行」）。
+ * ⛔ 旧实现是 `Promise.all(所有候选)` —— 排名要等**最慢的那个**探测结束（单源 1.5s、候选多时叠加），
+ *   期间每条候选都在拉 256KB ⇒ 网卡和进度都在抖，用户看到的就是「几个源一起下」。
+ * ⇒ 到点就结算：谁答完谁参与排名，没答完的按 0 分（仍需保留在回落链里），并把它们的连接**掐掉**。
+ */
+const PROBE_TOTAL_MS = 3_000;
 /* ⛔ 11-21 用户实测「经常出现 20s 超时，镜像不稳定还慢」：死源不会吐任何字节，
    20 秒纯属让用户干等 —— 降到 8s（实测 ghfast 类死源在 8s 内一定判出）。 */
 const STALL_MS = 8_000;
@@ -60,9 +67,11 @@ const SEGMENT_MIN_BYTES = 4 * 1024 * 1024;
  *  ⛔ 不能只看 TTFB：gh-proxy 对小请求回得快、整包吞吐却可能只有直连的 1/3
  *    （实测 37MB 包：直连 2.6MB/s、gh-proxy 0.76MB/s），TTFB 会把慢源排到第一。
  */
-async function probeCandidate(url: string): Promise<number> {
+async function probeCandidate(url: string, outer?: AbortSignal): Promise<number> {
   const started = Date.now();
   const controller = new AbortController();
+  const onOuter = () => controller.abort();
+  outer?.addEventListener("abort", onOuter, { once: true });
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
     const res = await net.fetch(url, { redirect: "follow", signal: controller.signal, headers: { Range: `bytes=0-${PROBE_BYTES - 1}` } });
@@ -90,7 +99,18 @@ async function probeCandidate(url: string): Promise<number> {
 export async function rankMirrors(url: string): Promise<Array<{ candidate: string; score: number }>> {
   const candidates = mirrorCandidates(url);
   if (candidates.length <= 1) return candidates.map((candidate) => ({ candidate, score: -1 }));
-  const probed = await Promise.all(candidates.map(async (candidate) => ({ candidate, score: await probeCandidate(candidate) })));
+  /* ⛔ 到点结算（见 PROBE_TOTAL_MS）：等到预算用完就按已答的排名，没答完的当死源并掐断连接 ——
+     否则排名要等最慢那条探测，用户看到的就是「几个源一起下、还一直不开始」。 */
+  const gate = new AbortController();
+  const settled = new Map<string, number>();
+  const all = Promise.all(candidates.map(async (candidate) => {
+    const score = await probeCandidate(candidate, gate.signal);
+    settled.set(candidate, score);
+    return { candidate, score };
+  })).catch(() => undefined);
+  await Promise.race([all, new Promise<void>((resolve) => setTimeout(resolve, PROBE_TOTAL_MS))]);
+  gate.abort();
+  const probed = candidates.map((candidate) => ({ candidate, score: settled.get(candidate) ?? 0 }));
   const alive = probed.filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score);
   const dead = probed.filter((entry) => entry.score <= 0);
   return [...alive, ...dead];

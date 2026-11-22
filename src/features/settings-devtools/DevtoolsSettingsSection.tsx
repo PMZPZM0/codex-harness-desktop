@@ -325,6 +325,11 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           </button>
         </p>
         <p className="settings-card-hint">语音模型（识别 + 合成）与音色克隆模型已移到<strong>设置 → 语音通话</strong>，和音色、语速同页管理。</p>
+        {/* 11-22 用户令：下载 / 安装失败可以交给 Codex（各处网络差异大，镜像不一定通）。 */}
+        <p className="settings-card-hint" data-devtools-help-hint>
+          这里的下载 / 安装失败都不用自己排查：镜像通不通取决于你的网络。直接在对话里说「帮我装一下 <strong>XXX</strong>」，
+          Codex 会用命令行在本机装好；macOS 与 Windows 都适用。
+        </p>
       </section>
 
       {/* ── 二级：弹窗（内容一律在这里，⛔ 不内嵌到上面的一级页）────────────────── */}
