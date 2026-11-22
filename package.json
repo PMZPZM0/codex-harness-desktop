@@ -114,7 +114,8 @@
       "build/trayTemplate@2x.png",
       "electron/composition.json",
       "package.json",
-      "!node_modules/mermaid/dist/*.map"
+      "!node_modules/mermaid/dist/*.map",
+      "scripts/lib/*.json"
     ],
     "extraResources": [
       {

@@ -180,6 +180,12 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
       && probeSrc.includes("if (error?.probeDiagnosed) throw error;") ? ok : fail)(
       "⛔ 精确诊断不被 catch 二次包装（否则认证失败 / 模型不存在 / 5xx 全被吞成「实际推理失败」）"
     );
+    /* 11-22 mac 实测：/models 8s 超时被 Chromium 的 IPv6→IPv4 回落吃掉，且超时被误报成
+       「网关不提供 /models」。判据：双传输栈 + IPv4 优先兜底 + 网络错误单独报。 */
+    (probeSrc.includes('dns.setDefaultResultOrder("ipv4first")') && /await fetch\(url/.test(probeSrc)
+      && probeSrc.includes("20_000") && probeSrc.includes("连接不上供应商网关") ? ok : fail)(
+      "⛔ 探测走双传输栈（net → Node IPv4 优先），/models 20s；网络失败不再误报成「不提供 /models」"
+    );
   }
   if (compiledOk) {
     const requireBridge = createRequire(import.meta.url);
@@ -608,7 +614,20 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     "package.json：内置小工具的 extraResources 一条不少（漏了 = 发出去是空壳包）");
   (mainTs26.includes("toolRootsRead()") && /watchFs\(toolsDir, \{ recursive: true \}/.test(mainTs26) && mainTs26.includes('message: "开发工具目录已更新", auto: true') ? ok : fail)("main.ts：随包 + userData 两个 tools 目录都监视 → 引擎自己装工具后界面自动刷新");
   const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
-  (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
+  /* 11-22：镜像映射收敛到 scripts/lib/download-sources.json（单一真相源，安装脚本与自检共用）。
+     判据改成读那份表 + 断言安装脚本确实查表，⛔ 不再在脚本里找硬编码字符串。 */
+  {
+    const sources = JSON.parse(readFileSync(join(ROOT, "scripts", "lib", "download-sources.json"), "utf8"));
+    const map = sources.npmmirror || {};
+    const need = ["https://nodejs.org/dist/", "https://www.python.org/ftp/python/", "https://github.com/git-for-windows/git/releases/download/"];
+    const missing = need.filter((k) => !map[k]);
+    (missing.length === 0 && installRuntimes.includes("lib/download-sources.json") ? ok : fail)(
+      `install-runtimes：node/python/git 走 npmmirror 国内镜像（单一真相源 download-sources.json，缺 ${missing.length} 条）`
+    );
+    (Array.isArray(sources.channels?.win32) && Array.isArray(sources.channels?.darwin) && sources.channels.darwin.length > 0 ? ok : fail)(
+      "下载通道按平台分列（win32 / darwin 各一份 —— 11-22 用户令「镜像源必须做两种系统准备」）"
+    );
+  }
   // 【242】开发工具的**卸载要真删**（10-01 用户报「卸载不真」：点了卸载还显示已装）。
   //   根因：npm 类工具（nuphus / playwright-cli / cloakbrowser）的 marker 形如
   //   `npm-global\node_modules\@nuphus\nuphus-mcp\package.json`，旧实现只删 `npm-global/nuphus-mcp`

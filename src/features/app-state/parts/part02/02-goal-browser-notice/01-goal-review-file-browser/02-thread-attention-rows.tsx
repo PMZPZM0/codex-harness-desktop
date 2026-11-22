@@ -415,19 +415,11 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             {/* ⛔ 11-01 用户令：**只留一个改名入口**。
                 「重命名」和「改笔名」本来是同一个操作（笔名就是会话名），两个选项让人以为分工不同。
                 现在统一叫「改名字」：写别名记录 + 写引擎会话名 + 广播（子会话里的「上级：X」跟着变）。 */}
-            <button onClick={(event) => {
+            <button onClick={() => {
               bag.setThreadRowMenu(null);
-              /* 同「删除」那条（11-22）：锚点 Y 用**被点的菜单项**，弹窗才落在鼠标处。 */
-              const itemRect = event.currentTarget.getBoundingClientRect();
-              const rowRect = threadMenuTriggerRect;
-              void renameSession(entry.id, titleText, {
-                left: rowRect ? rowRect.left : itemRect.left,
-                right: rowRect ? rowRect.right : itemRect.right,
-                width: rowRect ? rowRect.width : itemRect.width,
-                top: itemRect.top,
-                bottom: itemRect.bottom,
-                height: itemRect.height,
-              });
+              /* 同「删除」：锚点 = 会话行**实时**矩形（⛔ 不用菜单项、也不吃打开菜单那一刻的旧值）。 */
+              const rowLive = document.querySelector<HTMLElement>(`[data-thread-id="${entry.id}"]`)?.getBoundingClientRect() ?? null;
+              void renameSession(entry.id, titleText, rowLive ?? threadMenuTriggerRect);
             }}><PenLine size={13} /><span>改名字</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span>{
               /* ⛔ 11-08 用户（截图）：「添加标签后面的『点标签可切换』怎么也没了」。
@@ -463,30 +455,20 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             </div>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.copyThreadReferenceId(entry); }}><Copy size={13} /><span>复制会话 ID</span></button>
-            <button className="danger" onClick={async (event) => {
+            <button className="danger" onClick={async () => {
               bag.setThreadRowMenu(null);
-              /* ⛔⛔ 11-22 用户实测：「点击删除之后位置又变了，还要点一次」。
-                 旧代码锚的是**菜单打开那一刻**记下的「⋯」矩形：菜单本身高 ≈284px、行的位置还会随
-                 列表重排变化，等用户点到最下面的「删除」时，那个矩形和鼠标已经不在同一高度上
-                 ⇒ 确认气泡出现在别处，用户得重新对准「永久删除」再点一次。
-                 ⇒ 锚点 Y 取**被点的菜单项自己**的矩形（点哪就在哪弹），X 仍用行内「⋯」的右缘
-                 （贴侧栏右缘、不压进侧栏 —— 11-11 用户令那条不变）。 */
-              const itemRect = event.currentTarget.getBoundingClientRect();
-              const rowRect = threadMenuTriggerRect;
-              setDialogAnchor({
-                left: rowRect ? rowRect.left : itemRect.left,
-                right: rowRect ? rowRect.right : itemRect.right,
-                width: rowRect ? rowRect.width : itemRect.width,
-                top: itemRect.top,
-                bottom: itemRect.bottom,
-                height: itemRect.height,
-              });
+              /* ⛔⛔ 11-22 三次定稿（用户两次截图纠正）：确认气泡必须**与会话行垂直对齐**
+                 —— 跟着「被点的菜单项」会飘到行下面一截（菜单 284px 高，删除在最底部），
+                 跟着「打开菜单那一刻的旧矩形」又会因列表重排而错位。
+                 ⇒ 直接**当场查行元素**：行还在（删除前），拿到的就是用户此刻看到的那个位置。 */
+              const rowLive = document.querySelector<HTMLElement>(`[data-thread-id="${entry.id}"]`)?.getBoundingClientRect() ?? null;
+              setDialogAnchor(rowLive ?? threadMenuTriggerRect);
               if (!(await bag.openAppConfirm(
                 "删除会话",
                 `会话「${entry.name || entry.preview || "未命名"}」及其中的消息、工具记录将被永久删除，此操作无法撤销。`,
                 "永久删除",
               ))) return;
-              void bag.deleteThread(entry.id);
+              void bag.deleteThread(entry.id, { confirmed: true });   /* 菜单里已经确认过，别再弹第二个 */
             }}><Trash2 size={13} /><span>删除</span></button>
           </div>
         </>, document.body)}

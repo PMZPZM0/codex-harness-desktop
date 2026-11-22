@@ -912,6 +912,8 @@ contextBridge.exposeInMainWorld("codex", {
   cancelRuntime: (id: string) => __ipc("runtime:cancel", 1, [id]),
   /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
   runtimeHealth: () => __ipc("runtime:health", 0, []),
+  /* 11-22 镜像自检：逐条下载通道做小 Range 实测（设置 → 开发工具 → 工具自检），mac/win 各用自己那份通道清单 */
+  runtimeMirrorProbe: () => __ipc("runtime:mirror-probe", 0, []),
   installRuntime: (id: string) => __ipc("runtime:install", 1, [id]),
   listRuntimes: () => __ipc("runtime:list", 0, []),
   uninstallRuntime: (id: string) => __ipc("runtime:uninstall", 1, [id]),

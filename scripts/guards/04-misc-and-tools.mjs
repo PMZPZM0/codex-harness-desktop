@@ -322,8 +322,8 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
     );
   }
   // ⑥ 通道账本：runtime 前缀 5 条（【2】只验 manifest 自洽，这里钉人读的账本别漏登记）
-  (/prefix: "runtime", count: 7/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))
-    ? ok("ipc-registry runtime 账本 count=7（含 10-12 的 update-check/update）且含 runtime:cancel")
+  (/prefix: "runtime", count: 8/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))
+    ? ok("ipc-registry runtime 账本 count=8（含 10-12 的 update-check/update 与 11-22 的 mirror-probe）且含 runtime:cancel")
     : fail("runtime 账本没登记 runtime:cancel —— 预检【2】会红，且读账本的人不知道有这条通道");
 }
 

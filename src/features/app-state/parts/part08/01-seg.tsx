@@ -402,7 +402,7 @@ bag.unarchiveThread = unarchiveThread as typeof bag.unarchiveThread;
   }
 bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
 
-  async function deleteThread(id: string) {
+  async function deleteThread(id: string, options?: { confirmed?: boolean }) {
     const cluster = bag.clusteredSidebar.clusters.find((entry) => entry.lead?.id === id);
     const memberCount = cluster?.members.length ?? 0;
     /* ⛔ 10-31：删除会**连带**它派出的调度子会话（否则它们变成孤儿行、按自己的 cwd 挂到别的项目下）
@@ -412,7 +412,10 @@ bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
       memberCount ? `这是「专家团」主会话，将同时永久删除其 ${memberCount} 条成员会话。` : "",
       delegateCount ? `它派出的 ${delegateCount} 条调度会话也会一并删除（否则会变成挂在别的项目下的孤儿会话）。` : "",
     ].filter(Boolean).join("\n\n");
-    if (!await bag.openAppConfirm("删除会话", `当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。${extra}`, "永久删除")) return;
+    /* ⛔⛔ 11-22 用户实测：「点删除，然后又出来一次这个」—— 侧栏菜单**自己已经确认过**，
+       这里再确认一次就是第二个气泡（而且它没有锚点、位置也在别处）。
+       ⇒ 调用方传 confirmed:true 时直接走内核。 */
+    if (!options?.confirmed && !await bag.openAppConfirm("删除会话", `当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。${extra}`, "永久删除")) return;
     bag.setOpeningThread(id);
     try {
       await bag.deleteThreadCore(id);

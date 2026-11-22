@@ -524,8 +524,8 @@ ok(/DEFAULT_PICK_KINDS/.test(dialogSrc) && /KIND_ORDER/.test(dialogSrc) && /clou
 ok(/SessionSyncDialog/.test(manageSrc) && /ResultDialog/.test(manageSrc) && /选择会话上传/.test(manageSrc),
   "云管理改为弹窗选择上传，删除走模态确认");
 const threadRowsSrc = codeOnly(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"));
-ok(/openAppConfirm/.test(threadRowsSrc) && /deleteThread\(entry\.id\)/.test(threadRowsSrc),
-  "侧栏本地删除会话也走确认弹窗");
+ok(/openAppConfirm/.test(threadRowsSrc) && /deleteThread\(entry\.id, \{ confirmed: true \}\)/.test(threadRowsSrc),
+  "侧栏本地删除会话：菜单里确认一次即可（⛔ 传 confirmed:true 走内核，否则 deleteThread 会再弹第二个确认 —— 11-22 用户实测）");
 const bridgeSrc2 = codeOnly(read("electron/cloud-bridge.ts"));
 ok(/\/api\/sync-sessions/.test(bridgeSrc2) && /listSessions/.test(bridgeSrc2) && /syncNow: \(ids\?/.test(bridgeSrc2),
   "本机桥暴露本地会话列表，sync-now 支持只传勾选的 ids");

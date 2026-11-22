@@ -201,9 +201,16 @@ async function trySegmentedDownload(args: {
     for (const part of parts) await fs.rm(part.file, { force: true }).catch(() => undefined);
   };
   try {
-    await Promise.all(parts.map(async (part, index) => {
+    /* ⛔⛔ 11-22 用户实测「几个源同时在下载、来回跳动」：旧实现用裸 Promise.all ——
+       任一段失败时 all 立刻 reject、调用方转向下一个镜像，但**其余各段仍在跑**
+       （没人 abort 它们）⇒ 新旧两个源同时占带宽、进度来回跳。
+       ⇒ 加一个 shared killer：任一段判定失败就把其余段全部掐掉，并等它们真正退出后再返回。 */
+    const killer = new AbortController();
+    const tasks = parts.map(async (part, index) => {
       const controller = new AbortController();
       const onAbort = () => controller.abort();
+      const onKill = () => controller.abort();
+      killer.signal.addEventListener("abort", onKill, { once: true });
       signal?.addEventListener("abort", onAbort, { once: true });
       let stallTimer: NodeJS.Timeout | null = null;
       const arm = () => {
@@ -244,11 +251,20 @@ async function trySegmentedDownload(args: {
           await once(sink, "finish").catch(() => undefined);
         }
         if (received[index] !== expected) throw new Error(`分段字节数不符（${received[index]}/${expected}）`);
+      } catch (error) {
+        killer.abort();   /* 一段失败 ⇒ 其余段立即停，别让两个源同时下 */
+        throw error;
       } finally {
         if (stallTimer) clearTimeout(stallTimer);
+        killer.signal.removeEventListener("abort", onKill);
         signal?.removeEventListener("abort", onAbort);
       }
-    }));
+    });
+    await Promise.all(tasks).catch(async (error) => {
+      /* 等残余段真正退出（它们已被 killer 掐断），再把这个错误抛给上层换源。 */
+      await Promise.allSettled(tasks);
+      throw error;
+    });
     if (cancelled()) throw new DownloadCancelledError();
     /* 合并：按段序 append，边写边算 SHA256（与单流同一份摘要口径，调用方校验逻辑不用改）。 */
     const hash = createHash("sha256");
@@ -436,4 +452,53 @@ export async function downloadThroughMirrors(options: {
     }
   }
   throw new Error(`下载失败：${tried.join(" → ")}`);
+}
+
+/** 一条通道的自检结果（设置 → 开发工具 → 工具自检 里展示）。 */
+export type ChannelCheck = { label: string; host: string; ok: boolean; kbps: number; ms: number; note?: string };
+
+/**
+ * 通道自检：对每条候选做一次小 Range 拉取，给出**实测**速度（11-22 用户要求「镜像自检」）。
+ *
+ * ⛔ 这是给用户点的一个按钮，不是后台任务：串行跑（避免自检自己把带宽打满、测出来的数全偏低），
+ *   单条上限 6s；失败也要有结果行（ok:false + 原因），不许静默消失。
+ */
+export async function probeChannels(rows: Array<{ label: string; url: string }>, timeoutMs = 6_000): Promise<ChannelCheck[]> {
+  const out: ChannelCheck[] = [];
+  for (const row of rows) {
+    const host = hostOf(row.url);
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await net.fetch(row.url, {
+        redirect: "follow",
+        signal: controller.signal,
+        headers: { Range: `bytes=0-${PROBE_BYTES - 1}`, "User-Agent": "codex-harness-selftest" },
+      });
+      if (!res.ok && res.status !== 206) {
+        out.push({ label: row.label, host, ok: false, kbps: 0, ms: Date.now() - started, note: `HTTP ${res.status}` });
+        continue;
+      }
+      let got = 0;
+      const reader = res.body?.getReader();
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          got += value?.byteLength ?? 0;
+          if (got >= PROBE_BYTES || Date.now() - started > timeoutMs) break;
+        }
+        void reader.cancel().catch(() => undefined);
+      }
+      const ms = Math.max(1, Date.now() - started);
+      out.push({ label: row.label, host, ok: got > 0, kbps: Math.round((got / 1024) / (ms / 1000)), ms, note: got ? undefined : "无数据" });
+    } catch (error) {
+      const message = String((error as Error)?.message ?? error);
+      out.push({ label: row.label, host, ok: false, kbps: 0, ms: Date.now() - started, note: /abort/i.test(message) ? "超时" : message.slice(0, 60) });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return out.sort((a, b) => Number(b.ok) - Number(a.ok) || b.kbps - a.kbps);
 }

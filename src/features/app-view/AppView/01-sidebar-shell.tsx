@@ -174,22 +174,14 @@ import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 let projectMenuTriggerRect: DOMRect | null = null;
 
 /**
- * 项目菜单里「改名 / 删除」的确认锚点（11-22 用户实测「点了删除位置又变、还要再点一次」）。
- * X 取「⋯」按钮矩形（贴侧栏右缘，与会话行同一条竖线）；**Y 取被点的那个菜单项**。
- * ⛔ 别再整体用 `projectMenuTriggerRect`：菜单本身两百多像素高，用户点到最下面那项时，
- *    用菜单打开那一刻的旧矩形会让弹窗落在别的高度上，鼠标和按钮对不上。
+ * 项目菜单里「改名 / 删除」的确认锚点（11-22 用户两次截图纠正后定稿）。
+ * ⛔ 必须**与项目行垂直对齐**：跟着菜单项会飘到行下面一截，跟着「打开菜单那一刻」的旧矩形
+ *    又会因列表重排错位 ⇒ 当场按 `data-project-cwd` 查行元素，拿到的就是用户此刻看到的位置。
  */
-function projectDialogAnchor(item: Element | null): DialogAnchorRect | null {
-  const itemRect = item?.getBoundingClientRect();
-  if (!itemRect) return projectMenuTriggerRect;
-  return {
-    left: projectMenuTriggerRect ? projectMenuTriggerRect.left : itemRect.left,
-    right: projectMenuTriggerRect ? projectMenuTriggerRect.right : itemRect.right,
-    width: projectMenuTriggerRect ? projectMenuTriggerRect.width : itemRect.width,
-    top: itemRect.top,
-    bottom: itemRect.bottom,
-    height: itemRect.height,
-  };
+function projectDialogAnchor(cwd: string): DialogAnchorRect | null {
+  const need = typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(cwd) : cwd.replace(/"/g, '\\"');
+  const live = document.querySelector<HTMLElement>(`[data-project-cwd="${need}"]`)?.getBoundingClientRect() ?? null;
+  return live ?? projectMenuTriggerRect;
 }
 
 /** 侧栏壳：项目/会话树、团队条、指挥中枢入口。⛔ 中枢就是**一个普通会话**（点按钮 = openThread(bossThreadId)），不是覆盖层。 */
@@ -1003,7 +995,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                          中枢会话的判定与徽标同源（bossIds = 群 boss 线程，sessionIds = 已登记中枢）。 */
                     const hasBossThread = items.some((entry) => bossThreads.bossIds.includes(entry.id) || (bossThreads.sessionIds ?? []).includes(entry.id));
                     return (
-                      <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
+                      <div key={cwd} data-project-cwd={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
                         <div className="project-item-head">
                           <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
                             {/* 11-19 用户令：「展开折叠图标删了，项目图标左边对齐上面；项目图标做两张」
@@ -1046,14 +1038,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                               <span className="project-menu-arrow" style={{ top: projectMenuPos.arrowTop, left: projectMenuPos.left - 6 }} />
                             )}
                             <div className="project-menu" style={projectMenuPos ? { top: projectMenuPos.top, left: projectMenuPos.left } : undefined}>
-                              <button onClick={(event) => { setProjectMenu(null); setDialogAnchor(projectDialogAnchor(event.currentTarget)); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                              <button onClick={() => { setProjectMenu(null); setDialogAnchor(projectDialogAnchor(cwd)); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
                               <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                               <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
-                              <button className="danger" onClick={async (event) => {
+                              <button className="danger" onClick={async () => {
                                 setProjectMenu(null);
-                                /* ⛔ 11-22 同会话行那条：X 用「⋯」矩形贴侧栏、Y 用**被点的这一项**，
-                                   否则菜单高 ≈200px，点到「删除」时弹窗会落在别处、要再点一次。 */
-                                setDialogAnchor(projectDialogAnchor(event.currentTarget));
+                                /* ⛔ 11-22 三次定稿：锚点 = 项目行**实时**矩形（与行垂直对齐）。
+                                   跟菜单项会飘到行下面；用打开菜单那一刻的旧矩形会因重排错位。 */
+                                setDialogAnchor(projectDialogAnchor(cwd));
                                 if (!(await app.openAppConfirm("删除项目", `项目「${projectNameOf(cwd)}」下的全部会话与记录将被永久删除，此操作无法撤销。`, "永久删除"))) return;
                                 unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd);
                               }}><Trash2 size={14} />删除项目（含全部会话）</button>

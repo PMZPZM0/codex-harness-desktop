@@ -6,11 +6,13 @@
  * 清单说明可展开、可整段复制，交给 Codex 自己装工具时参考。
  */
 import { useState } from "react";
-import { Activity, AlertTriangle, BookOpen, Copy } from "lucide-react";
+import { Activity, AlertTriangle, BookOpen, Copy, Gauge } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import type { RuntimeRow } from "./runtime-groups";
 
 type HealthRow = { id: string; name: string; installed: boolean; ok: boolean; detail: string };
+/** 一条下载通道的自检结果（主进程 runtime:mirror-probe 下发）。 */
+type MirrorRow = { label: string; host: string; ok: boolean; kbps: number; ms: number; note?: string };
 
 /** 工具健康检查面板：一键体检并列出每项的状态与修复建议。 */
 export function ToolsHealthPanel({ devRuntimes, setNotice }: { devRuntimes: RuntimeRow[]; setNotice: (text: string) => void }) {
@@ -42,6 +44,23 @@ export function ToolsHealthPanel({ devRuntimes, setNotice }: { devRuntimes: Runt
       setHealthBusy(false);
     }
   };
+  /* 11-22 用户令：「下载通道自检」—— 把「这台机器上哪条镜像真的通、多少 KB/s」直接摆出来。
+     ⛔ 通道清单在主进程（scripts/lib/download-sources.json，按平台分列），渲染层不抄第二份。 */
+  const [mirrorRows, setMirrorRows] = useState<MirrorRow[] | null>(null);
+  const [mirrorBusy, setMirrorBusy] = useState(false);
+  const [mirrorError, setMirrorError] = useState("");
+  const runMirrorProbe = async () => {
+    setMirrorBusy(true);
+    setMirrorError("");
+    try {
+      const result = await window.codex.runtimeMirrorProbe();
+      setMirrorRows(result?.rows ?? []);
+    } catch (error) {
+      setMirrorError("通道自检失败：" + String((error as { message?: string })?.message ?? error).slice(0, 160));
+    } finally {
+      setMirrorBusy(false);
+    }
+  };
   const healthBad = (health ?? []).filter((row) => row.installed && !row.ok);
   const healthMissing = health ? health.filter((row) => !row.installed).length : 0;
   const manifest = devRuntimes.map((r) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n");
@@ -60,6 +79,36 @@ export function ToolsHealthPanel({ devRuntimes, setNotice }: { devRuntimes: Runt
         </span>
         <button className="primary-setting runtime-check" disabled={healthBusy} onClick={() => void runHealth()}><Activity size={13} />{healthBusy ? "检查中…" : "检查工具"}</button>
       </div>
+      {/* 下载通道自检（11-22 用户令）：网络差异大，先让用户看清自家哪条通道通，再谈装不装得上。 */}
+      <div className="devtools-health devtools-health-hero">
+        <span className="devtools-health-icon"><Gauge size={17} /></span>
+        <span className="devtools-health-copy">
+          <strong>
+            {mirrorRows
+              ? (mirrorRows.some((row) => row.ok) ? `${mirrorRows.filter((row) => row.ok).length}/${mirrorRows.length} 条通道可用` : "所有通道都不通")
+              : "下载通道自检"}
+          </strong>
+          <small>逐条实测镜像（每条采样 256KB），告诉你这台机器上哪条通道真能用、哪条该放弃</small>
+        </span>
+        <button className="primary-setting runtime-check" disabled={mirrorBusy} onClick={() => void runMirrorProbe()}>
+          <Gauge size={13} />{mirrorBusy ? "测速中…" : "测下载通道"}
+        </button>
+      </div>
+      {mirrorError ? <div className="runtime-loading">{mirrorError}</div> : null}
+      {mirrorRows ? (
+        <div className="runtime-list" data-mirror-probe={mirrorRows.length}>
+          {mirrorRows.map((row) => (
+            <div className={`runtime-row ${row.ok ? "installed" : "missing"}`} key={`mirror-${row.label}-${row.host}`}>
+              <span className="runtime-icon">{row.ok ? "✓" : "✕"}</span>
+              <span className="runtime-copy">
+                <strong>{row.label}</strong>
+                <small>{row.ok ? `${row.kbps} KB/s · ${row.ms} ms` : (row.note || "不可用")}</small>
+              </span>
+              <span className="runtime-size">{row.host}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {healthError ? <div className="runtime-loading">{healthError}</div> : null}
       {healthBad.length > 0 && (
         <div className="runtime-list" data-health-bad={healthBad.length}>

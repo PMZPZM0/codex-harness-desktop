@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "note": "下载通道的单一真相源（11-22）。按平台列出候选加速通道；自检与安装脚本都读这一份。⛔ 新增通道只改这里。",
+  "probe": {
+    "direct": "https://nodejs.org/dist/latest/SHASUMS256.txt",
+    "npmmirror": "https://cdn.npmmirror.com/binaries/node/latest/SHASUMS256.txt",
+    "github": "https://raw.githubusercontent.com/BurntSushi/ripgrep/master/README.md"
+  },
+  "channels": {
+    "win32": [
+      { "label": "npmmirror（国内 CDN）", "prefix": "https://cdn.npmmirror.com/binaries/", "probe": "npmmirror" },
+      { "label": "gh-proxy.org", "prefix": "https://gh-proxy.org/", "probe": "github" },
+      { "label": "gh-proxy.com", "prefix": "https://gh-proxy.com/", "probe": "github" },
+      { "label": "ghfast.top", "prefix": "https://ghfast.top/", "probe": "github" },
+      { "label": "GitHub 直连", "prefix": "", "probe": "github" },
+      { "label": "官方直连（nodejs.org）", "prefix": "", "probe": "direct" }
+    ],
+    "darwin": [
+      { "label": "npmmirror（国内 CDN）", "prefix": "https://cdn.npmmirror.com/binaries/", "probe": "npmmirror" },
+      { "label": "gh-proxy.org", "prefix": "https://gh-proxy.org/", "probe": "github" },
+      { "label": "gh-proxy.com", "prefix": "https://gh-proxy.com/", "probe": "github" },
+      { "label": "ghfast.top", "prefix": "https://ghfast.top/", "probe": "github" },
+      { "label": "GitHub 直连", "prefix": "", "probe": "github" },
+      { "label": "官方直连（nodejs.org）", "prefix": "", "probe": "direct" }
+    ]
+  },
+  "npmmirror": {
+    "https://nodejs.org/dist/": "https://cdn.npmmirror.com/binaries/node/",
+    "https://www.python.org/ftp/python/": "https://cdn.npmmirror.com/binaries/python/",
+    "https://github.com/git-for-windows/git/releases/download/": "https://cdn.npmmirror.com/binaries/git-for-windows/",
+    "https://github.com/astral-sh/python-build-standalone/releases/download/": "https://registry.npmmirror.com/-/binary/python-build-standalone/",
+    "https://github.com/eugeneware/ffmpeg-static/releases/download/": "https://registry.npmmirror.com/-/binary/ffmpeg-static/",
+    "https://repo.anaconda.com/miniconda/": "https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/",
+    "https://github.com/BurntSushi/ripgrep/releases/download/": "https://registry.npmmirror.com/-/binary/ripgrep/",
+    "https://github.com/astral-sh/uv/releases/download/": "https://registry.npmmirror.com/-/binary/uv/",
+    "https://github.com/jqlang/jq/releases/download/": "https://registry.npmmirror.com/-/binary/jq/",
+    "https://github.com/ninja-build/ninja/releases/download/": "https://registry.npmmirror.com/-/binary/ninja/",
+    "https://github.com/ip7z/7zip/releases/download/": "https://registry.npmmirror.com/-/binary/7zip/",
+    "https://github.com/yt-dlp/yt-dlp/releases/download/": "https://registry.npmmirror.com/-/binary/yt-dlp/",
+    "https://github.com/Kitware/CMake/releases/download/": "https://registry.npmmirror.com/-/binary/cmake/"
+  }
+}

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-10-09",
-  "count": 722,
+  "generatedAt": "2026-11-22T11:06:06.513Z",
+  "count": 723,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5099,6 +5099,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看"
+    },
+    {
+      "name": "runtimeMirrorProbe",
+      "channel": "runtime:mirror-probe",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ platform: string; rows: { label: string; host: string; ok: boolean; kbps: number; ms: number; note?: string }[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-22 镜像自检：逐条下载通道做小 Range 实测（设置 → 开发工具 → 工具自检），mac/win 各用自己那份通道清单"
     },
     {
       "name": "installRuntime",

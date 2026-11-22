@@ -47,6 +47,8 @@ import { layaInstall } from "./laya-service";
 import { installPhoneHarness } from "./phone-harness";
 import { codexHome, server } from "../runtime-refs";
 import { defineFeature } from "../context";
+import { probeRows } from "../download-sources";
+import { probeChannels } from "../mirror-download";
 import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
 // 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
@@ -1356,7 +1358,7 @@ export async function performRuntimeUpdate(
   }
 }
 
-const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health", "runtime:update-check", "runtime:update"];
+const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health", "runtime:update-check", "runtime:update", "runtime:mirror-probe"];
 
 /* 装不上的备用方案文案生成器：导出**只为可验证**（探针/守卫能真跑它），业务侧一律经 runtime:list 取。 */
 export { fallbackPromptFor };
@@ -1515,6 +1517,17 @@ export const runtimeFeature = defineFeature<null>({
     });
 
     ipcHost.handle("runtime:health", () => devRuntimeHealth());
+
+    /* ⛔ 11-22 用户令：「开发工具加一个镜像自检」—— 逐条通道做小 Range 实测，把「你这台机器上
+       哪条通道真的通、多少 KB/s」直接摆出来。mac 上到底哪条镜像坏了，点一下就知道，
+       ⛔ 不需要用户自己开终端测。
+       通道清单来自 scripts/lib/download-sources.json（按平台分列），与安装脚本同一份。 */
+    ipcHost.handle("runtime:mirror-probe", async () => {
+      const rows = probeRows();
+      if (!rows.length) return { platform: process.platform, rows: [] };
+      const checks = await probeChannels(rows);
+      return { platform: process.platform, rows: checks };
+    });
 
     ipcHost.handle("runtime:install", async (_event, idValue: string) => {
       try {
