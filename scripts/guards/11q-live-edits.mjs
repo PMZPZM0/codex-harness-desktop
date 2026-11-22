@@ -307,6 +307,13 @@ console.log("\n【live-edits】⑱ 回合用量落账");
     "⛔ threadMemoKey 含**末回合 status**（⛔ 缺它 = 回合完成瞬间 memo 陈旧，用量页脚只在重启后出现）");
   ok(/\[bag\.threadMemoKey\]/.test(seg04),
     "completedTurns 确实以 threadMemoKey 为依赖（改键即生效）");
+  /* 11-21 用户截图（红框圈住消息底部那行 token 用量）：「这个汇总消息下面的这个展示帮我隐藏掉…
+     下面这个弹窗这个地方有就可以了」⇒ 页脚不再展示 入/出/缓存/命中；口径统一留在底部上下文容量弹窗。 */
+  const footer = codeOnly(read("src/features/shared/MessageFooter.tsx"));
+  ok(!/入 \/.*出|usageInputTokens|usageCachedTokens|usageNumber/.test(footer),
+    "⛔ 消息页脚不再展示 token 用量（统一看底部「上下文容量」弹窗）");
+  ok(/export function ContextUsageBadge/.test(status) && /usageBucket\(tokenUsage, "last"\)/.test(status),
+    "底部「上下文容量」弹窗仍在（用户：下面这个弹窗有就可以了）");
 }
 
 /* ── 九、提问卡「先选中、再确认」（10-11 用户：点击选项只是选中，提交按钮才生效）────────

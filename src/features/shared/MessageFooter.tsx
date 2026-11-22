@@ -4,10 +4,6 @@ import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { itemText } from "../../lib/item-text";
 import { userDisplayText } from "../../lib/user-refs";
-import { usageBucket } from "../../lib/usage-bucket";
-import { usageInputTokens } from "../../lib/usage-input-tokens";
-import { usageNumber } from "../../lib/usage-number";
-import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { Quote, PenLine, Copy, GitBranch, Clock3, Star, Check } from "lucide-react";
 import { requestFavorite } from "../../lib/favorite-bridge";
 import { useTurnCredit } from "../../lib/cloud-credit-store";
@@ -21,16 +17,6 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
   const isAgent = item.type === "agentMessage";
   // 用户消息对外文本：团队/成员会话首条的 SYSTEM TASK 段会被折叠，引用与复制只暴露用户原文
   const text = isAgent ? rawText : (rawText.trim() ? userDisplayText(rawText) : "");
-  // 兼容引擎上报字段：inputTokens / input_tokens / promptTokens / prompt_tokens 等
-  const num = (value: any) => { const n = Number(value); return Number.isFinite(n) ? n : 0; };
-  // 优先用回合级 usage；缺失时回落到 session 级 tokenUsage.last（最新一回合的用量）
-  const u = usage ?? tokenUsage?.derivedLast ?? usageBucket(tokenUsage, "last") ?? usageBucket(tokenUsage, "total") ?? tokenUsage ?? null;
-  const input = usageInputTokens(u);
-  const output = usageNumber(u, "outputTokens", "output_tokens", "completionTokens", "completion_tokens");
-  const cached = Math.min(input, usageCachedTokens(u));
-  const total = num(u?.totalTokens ?? u?.total_tokens);
-  const cacheRate = input > 0 ? Math.round((cached / input) * 100) : null;
-  const showTokenInfo = isAgent && (input > 0 || output > 0 || total > 0);
   /* 每个动作都是同一个「两段反馈」按钮（按下 → 对勾/实心星 → 淡回原样），
      所以在这里一次建好，末尾按角色决定**摆放顺序** —— 不在两处写两份按钮。 */
   const quoteButton = text ? (
@@ -73,14 +59,6 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
       {turnCredit.free ? "免费" : `≈ ${turnCredit.credit} 积分`}
     </span>
   ) : null;
-  const tokenNodes = isAgent ? [
-    /* 10-17 用户令：页脚展示**最新回合**的 输入/输出/缓存输入（缓存命中括注）；
-       ⛔ 不再展示累计「总」—— 累计口径在「上下文容量」弹层里看（那里用户要的就是总）。 */
-    ...(showTokenInfo ? [
-      <span key="tokens" className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出 / 缓存 {cached.toLocaleString()}{cacheRate != null ? ` · 命中 ${cacheRate}%` : ""}</span>,
-    ] : []),
-    ...(creditNode ? [creditNode] : []),
-  ] : [];
 
   return (
     <div className="message-footer">
@@ -88,7 +66,7 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
           hover 才现身的项**仍占着位**（见 03-messages-turns.css 里那条"避免撑高 footer"的注释），
           所以谁排在最后，谁就贴着右端 —— 用户消息只有复制是常驻的，必须排最后；
           agent 侧的常驻是 复制 + 分支 + 时间，保持原顺序不动。 */}
-      {!isAgent ? <>{quoteButton}{editButton}{favoriteButton}{copyButton}</> : <>{copyButton}{forkButton}{timeNode}{tokenNodes}{quoteButton}{favoriteButton}</>}
+      {!isAgent ? <>{quoteButton}{editButton}{favoriteButton}{copyButton}</> : <>{copyButton}{forkButton}{timeNode}{creditNode}{quoteButton}{favoriteButton}</>}
       {extraIcon}
       {/* 回合网页来源（10-12 用户令「放到下面吧，跟下面这个在一行」）：贴操作条最右端。
           ⛔ TurnWebSources 空数组自己返回 null —— 无来源的消息 footer 形态不变。 */}

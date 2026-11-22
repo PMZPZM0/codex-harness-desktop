@@ -3022,6 +3022,25 @@ const CHECKS = [
     },
   },
   {
+    id: "footer-usage",
+    name: "消息页脚不显示 token 用量，保留底部上下文弹窗（11-21）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 12000 });
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("任务")); b?.click(); return 1; })()`);
+      await wait(800);
+      if (!(await h.eval(`!!document.querySelector(".message-footer")`))) {
+        await h.eval(`(function(){ document.querySelectorAll(".thread-row button")[0]?.click(); return 1; })()`);
+      }
+      await h.waitFor(`!!document.querySelector(".message-footer")`, { label: "消息页脚", timeoutMs: 12000 });
+      const footer = await h.eval(`(function(){ const nodes=[...document.querySelectorAll(".message-footer")]; return nodes.map(function(n){ return n.textContent||""; }).join("\\n"); })()`);
+      h.check("① 页脚不再出现「N 入 / N 出 / 缓存 …命中」", !/\d[\d,]*\s*入\s*\//.test(footer) && !/缓存\s*\d/.test(footer), footer.slice(0, 200));
+      await h.eval(`(function(){ document.querySelector(".ctx-badge-btn")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".ctx-pop")`, { label: "上下文容量弹窗", timeoutMs: 5000 });
+      const pop = await h.eval(`document.querySelector(".ctx-pop")?.textContent||""`);
+      h.check("② 底部「上下文容量」弹窗仍在（用量统一在这里看）", /上下文容量/.test(pop) && /(?:已用|万\/)/.test(pop), pop.slice(0, 160));
+    },
+  },
+  {
     id: "inline-file-row",
     name: "正文行内文件链接：按类型图标/配色，点击打开右栏（11-21）",
     run: async (h) => {

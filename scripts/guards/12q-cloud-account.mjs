@@ -382,7 +382,7 @@ ok(
   "积分 tooltip 同时给出高峰倍率与闲时倍率（⛔ 不许写窗口默认系数 —— 那是兜底值，不是实际用的）",
 );
 ok(
-  /creditNode \? \[creditNode\] : \[\]/.test(footerSrc),
+  /const creditNode = isAgent && turnCredit \?/.test(footerSrc) && /\{creditNode\}/.test(footerSrc),
   "页脚积分节点由估算结果**决定要不要占位**（拿不到估算就不显示，不摆一个空位）",
 );
 const badgeSrc = read("src/features/settings-cloud/CloudPointsBadge.tsx");
