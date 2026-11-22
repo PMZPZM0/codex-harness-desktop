@@ -374,6 +374,23 @@
   line-height: 1.5;
   white-space: nowrap;
 }
+/* 岗位 + 管理员可能同时存在：横排贴着名字，窄栏里也不撑破成员行。 */
+.team-group__member-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.team-group__member-tags .team-group__member-tag { flex: none; }
+.team-group__member-tag.is-profession {
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--panel-base);
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
 /* ⛔ 11-12 用户：「管理员设置就不能再展示普通标了」——管理员要和职业标**看得出区别**，
    否则它只是"另一个灰标"，用户还是分不清谁是负责人。
    ⛔ 用**实心**（身份）而不是另一个浅色底（分类）；`--warning*` 项目里没有，之前那版是土黄 fallback。 */

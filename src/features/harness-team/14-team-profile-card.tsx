@@ -15,11 +15,11 @@ import { useEffect, useMemo, useState } from "react";
 import { AtSign, Square, X, Pencil, Check, Users } from "lucide-react";
 import type { GroupMessageRow, TeamGroup, TeamMember } from "./01-team-types";
 import { MemberAvatar } from "./13-team-avatar";
-import { resolveManagerId } from "../../lib/team-models.mjs";
+import { parseTeamAuthorId, resolveManagerId, teamMemberIdOf } from "../../lib/team-models.mjs";
 import { formatChars, formatMs, formatTokens } from "../../lib/team-ledger.mjs";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
-type CatalogEntry = { kind: string; key: string; name: string; profession?: string; teamId?: string };
+type CatalogEntry = { kind: string; key: string; memberId?: string; name: string; profession?: string; teamId?: string };
 
 type LedgerStat = {
   count: number;
@@ -75,9 +75,27 @@ export function TeamProfileCard({
   const [draft, setDraft] = useState(String(member.name ?? ""));
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState("");
-  /* ⛔ 团成员的显示名来自专家目录（资料卡显示主理人名），群内改名不会改变展示 ⇒ 不提供入口；
+  const teamAuthor = parseTeamAuthorId(member.id);
+  const teamId = member.targetKind === "team"
+    ? String(member.targetKey ?? "")
+    : String(teamAuthor?.teamId ?? (member.targetKind === "member" ? String(member.targetKey ?? "").split(":")[0] : ""));
+  const lead = useMemo(
+    () => (teamId
+      ? catalog.find((t) => t.kind === "expert" && t.teamId === teamId) ?? null
+      : null),
+    [catalog, teamId],
+  );
+  const kid = useMemo(() => {
+    if (!teamId) return null;
+    const memberId = String(teamAuthor?.memberId ?? teamMemberIdOf({ key: member.targetKey }));
+    if (!memberId) return null;
+    return catalog.find((t) => t.kind === "member" && t.teamId === teamId
+      && (teamMemberIdOf(t) === memberId || t.key === memberId)) ?? null;
+  }, [catalog, member.targetKey, teamAuthor?.memberId, teamId]);
+
+  /* ⛔ 团成员的显示名来自专家目录，群内改名不会改变展示 ⇒ 不提供入口；
      人类成员跟随用户中心。只有绑定到专家/子智能体/CLI 的伙伴可以群内改名。 */
-  const canRename = Boolean(onRename) && member.kind === "bot" && member.targetKind !== "team";
+  const canRename = Boolean(onRename) && member.kind === "bot" && member.targetKind !== "team" && !teamAuthor;
   /* ⛔ 11-10：管理员在成员列表直接设（用户原话：不要跑设置界面）。团群有自己的主理人 ⇒ 不给这个开关。 */
   const isAdminOfCard = String((group as { adminId?: unknown })?.adminId ?? "") === String(member.id);
   const teamGroupOfCard = ((group as { members?: Array<{ targetKind?: string }> })?.members ?? []).some((m) => m.targetKind === "team");
@@ -109,25 +127,38 @@ export function TeamProfileCard({
     return () => { alive = false; };
   }, [group.id, member.id, member.kind]);
 
-  const lead = useMemo(
-    () => (member.targetKind === "team"
-      ? catalog.find((t) => t.kind === "expert" && t.teamId === member.targetKey) ?? null
-      : null),
-    [catalog, member.targetKind, member.targetKey],
-  );
   const kids = useMemo(
     () => (member.targetKind === "team"
       ? catalog.filter((t) => t.kind === "member" && t.teamId === member.targetKey)
       : []),
     [catalog, member.targetKind, member.targetKey],
   );
-  const personName = lead?.name || member.name;
-  const personRole = lead?.profession || member.targetProfession || (member.id === group.leadId ? "群主" : "伙伴");
-  const managerId = resolveManagerId(group, member.id);
-  const managerName = managerId ? group.members.find((m) => m.id === managerId)?.name ?? managerId : "";
+  const expert = useMemo(
+    () => (member.targetKind === "expert"
+      ? catalog.find((t) => t.kind === "expert" && (t.key === member.targetKey || t.teamId === member.targetKey)) ?? null
+      : null),
+    [catalog, member.targetKey, member.targetKind],
+  );
+  const personName = kid?.name || lead?.name || expert?.name || member.name;
+  const personRole = kid?.profession || lead?.profession || expert?.profession || member.targetProfession || (member.id === group.leadId ? "群主" : "伙伴");
+  const managerId = teamAuthor
+    ? group.members.find((m) => m.targetKind === "team" && String(m.targetKey ?? "") === teamAuthor.teamId)?.id || group.leadId
+    : resolveManagerId(group, member.id);
+  const managerName = kid && lead?.name
+    ? lead.name
+    : managerId ? group.members.find((m) => m.id === managerId)?.name ?? managerId : "";
   const mine = useMemo(() => rows.filter((r) => r.authorId === member.id), [rows, member.id]);
   const lastAt = mine.reduce((max, r) => Math.max(max, Number(r.at) || 0), 0);
-  const face = lead ? { ...member, targetKind: "expert", targetKey: lead.key, name: lead.name } : member;
+  const face = kid
+    ? { ...member, id: teamMemberIdOf(kid), targetKind: "member" as const, targetKey: teamMemberIdOf(kid), name: kid.name, targetProfession: kid.profession || "团成员" }
+    : lead
+      ? { ...member, targetKind: "expert" as const, targetKey: lead.key, name: lead.name, targetProfession: lead.profession || "" }
+      : expert
+        ? { ...member, targetKind: "expert" as const, targetKey: expert.key, name: expert.name, targetProfession: expert.profession || "" }
+        : member;
+  const identity = member.kind === "human"
+    ? "用户（群里的你）"
+    : [KIND_LABEL[member.targetKind] || "未绑定", personRole].filter((text, index, list) => Boolean(text) && list.indexOf(text) === index).join(" · ");
 
   const saveRename = async () => {
     if (!onRename || renameBusy) return;
@@ -191,7 +222,7 @@ export function TeamProfileCard({
             <small>{personRole}</small>
             <span className="team-profile__badges">
               {member.id === group.leadId && <em className="is-lead">群主</em>}
-              {lead && <em className="is-team">主理人</em>}
+              {lead && !kid && <em className="is-team">主理人</em>}
               {member.muted && <em className="is-muted">已静音</em>}
               {running && <em className="is-live">处理中</em>}
             </span>
@@ -205,7 +236,7 @@ export function TeamProfileCard({
         <dl className="team-profile__rows">
           <div>
             <dt>身份</dt>
-            <dd>{member.kind === "human" ? "用户（群里的你）" : KIND_LABEL[member.targetKind] || "未绑定"}</dd>
+            <dd>{identity}</dd>
           </div>
           <div>
             <dt>绑定</dt>

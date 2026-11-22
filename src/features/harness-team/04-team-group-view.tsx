@@ -26,7 +26,7 @@ import { TeamMentionChip, TeamMentionText } from "./17-team-mention-text";
 import { ArtifactPanel } from "../artifact-archive";
 import { linkifyMentions } from "../../lib/team-mention-render.mjs";
 import { TeamAvatarPicker } from "./19-team-avatar-picker";
-import { buildMentionCandidates, fmtTime, shortId } from "./20-team-view-utils";
+import { buildMentionCandidates, createTeamIdentityHelpers, fmtTime, shortId } from "./20-team-view-utils";
 import { MemberActions } from "./18-team-member-actions";
 
 import { TeamRuler } from "./07-team-ruler";
@@ -362,7 +362,7 @@ export function TeamGroupView({
   /* ⛔ 11-06 用户：「团成员不展示出来吗」——群里的「软件开发专家团」只显示一行，
      看不到团里那 4 个人。⇒ 拉一次调度目录，把 member 条目按 teamId 挂到团下面。
      ⛔ 只读展示：团内成员由主理人编排，群视图不给它们单独派活（那是另一套语义）。 */
-  const [catalog, setCatalog] = useState<Array<{ kind: string; key: string; name: string; profession?: string; teamId?: string }>>([]);
+  const [catalog, setCatalog] = useState<Array<{ kind: string; key: string; memberId?: string; name: string; profession?: string; teamId?: string }>>([]);
   /* ⛔ 11-10 用户令「提升到 100 分」：群内进度要一眼看到，⛔ 别让人靠读消息猜。
      只显示「有任务」的群：没有任务时一个字的占位都不放（用户之前专门要求删掉副标题赘述）。
      ⛔ 11-11：带上 items（未结束的清单）—— 数字点得开才叫「看得到进度」，
@@ -524,27 +524,9 @@ export function TeamGroupView({
   /* ⛔ 11-08 用户：「指令按键可以不要了，配套群设置里面也可以删了」——
      「指令」按钮 / 菜单 / 展示形态设置整体下线（群消息直接 @ 伙伴即可）。
      `group.menu` / `menuPlacement` 字段保留在数据层（老档案不迁移、不报错），只是没有入口。 */
-  /* ── 专家团 = 主理人 + 成员 ──────────────────────────────────────────────────
-     ⛔⛔ 11-06 用户（截图）：「肯定要是主理人➕成员啊，专家团不一直是这样吗」——
-        原来成员栏/@ 条/气泡署名都用群成员名（= 团名「软件开发专家团」），主理人「承枢」
-        只缩在小字「负责人 承枢」里 ⇒ 看起来像"团"在群里说话，而不是一个人带队。
-        现在统一：**团的第一行就是主理人本人**（名字 + 头像 + 职业），团名退到副标题。
-     ⛔ 判据只此一处（成员栏 / @ 条 / 气泡头 / 头像 / @ 提及全部走它），别在三处各写一套。 */
-  const teamLeadOf = (member: TeamGroup["members"][number]) => {
-    if (member?.targetKind !== "team") return null;
-    return catalog.find((t) => t.kind === "expert" && t.teamId === member.targetKey) ?? null;
-  };
-
-  /** 某个团伙伴的下属成员（按 teamId 匹配；同一 memberId 只留一条） */
-  const teamKidsOf = (member: TeamGroup["members"][number]) => {
-    if (member?.targetKind !== "team") return [];
-    const teamId = String(member.targetKey ?? "");
-    if (!teamId) return [];
-    const seen = new Set<string>();
-    return catalog
-      .filter((t) => t.kind === "member" && t.teamId === teamId)
-      .filter((t) => (seen.has(t.key) ? false : (seen.add(t.key), true)));
-  };
+  /* 专家团 = 主理人 + 成员：身份解析统一在纯工具里，成员栏 / 消息 / 资料卡共用一份口径。 */
+  const { leadOf: teamLeadOf, kidsOf: teamKidsOf, professionOf, leadFaceOf, profileMemberOf } =
+    createTeamIdentityHelpers(group.members, catalog, group.avatars);
 
   /** 团伙伴「出面上的人」= 主理人；目录还没回来时退回团名（⛔ 不编名字、不画空壳） */
   const personNameOf = (m: TeamGroup["members"][number]) =>
@@ -572,15 +554,6 @@ export function TeamGroupView({
         不同图集不同格子（实测 expert-b/cell3 vs expert-a/cell1）⇒ 两张脸。
         ⇒ **团槽 = 主理人这份脸只在这里算一次**（`leadFaceOf`），成员栏 / 消息气泡 /
           @ 芯片 / 群头头像全部复用它。⛔ 别在别处再拼 targetKey。 */
-  const leadFaceOf = (m: TeamGroup["members"][number]) => {
-    const lead = teamLeadOf(m);
-    if (!lead) return m;
-    /* 换脸覆盖两处都认：① 成员行自己的 `avatar`（成员栏点头像写进 members[]）；
-       ② 群级覆盖表按**合成 id** 存的那条（@ 面板/团成员路径写进 avatars{}）。
-       ⛔ 只认一处 ⇒ 换个头像只有半边界面变，又变成"对不上"。 */
-    const override = String(group.avatars?.[teamAuthorIdOf(String(m.targetKey ?? ""), teamMemberIdOf(lead))] ?? "").trim();
-    return { ...m, targetKind: "expert", targetKey: lead.key, avatar: String(m.avatar ?? "").trim() || override };
-  };
   const faceOf = (m: TeamGroup["members"][number]) => (m?.targetKind === "team" ? leadFaceOf(m) : m);
 
   /* 定时任务在群日志里的作者 id 是 `automation`（主进程写入）—— 它不是群成员，
@@ -1739,7 +1712,7 @@ export function TeamGroupView({
                       data-item-id={row.itemId}
                       data-ruler-mark={isBot ? undefined : "user"}
                     >
-                      {memberOf(row.authorId) ? (
+                      {profileMemberOf(row.authorId) ? (
                         <button
                           type="button"
                           className="team-msg__avatar-btn"
@@ -2233,11 +2206,19 @@ export function TeamGroupView({
                       onClick={(event) => openProfile(event, m.id)}
                     >
                       <strong>{personNameOf(m)}</strong>
-                      {/* ⛔ 11-12 用户：「管理员设置就不能再展示普通标了」。
-                          团群的管理员 = 团主理人（原来这里写死"团群不显示"，于是它只剩
-                          「团队成员」这个普通标）。判定走 adminSeatOf（按椅子，不比 id 字符串）。 */}
-                      {adminSeatOf(m.id) && (
-                        <em className="team-group__member-tag is-admin" title="这个群的管理员：用户没 @ 时由它接话、推进进度">管理员</em>
+                      {(professionOf(m) || adminSeatOf(m.id)) && (
+                        <span className="team-group__member-tags">
+                          {professionOf(m) && (
+                            <em className="team-group__member-tag is-profession" title={`岗位：${professionOf(m)}`}>
+                              {professionOf(m)}
+                            </em>
+                          )}
+                          {adminSeatOf(m.id) && (
+                            <em className="team-group__member-tag is-admin" title="这个群的管理员：用户没 @ 时由它接话、推进进度">
+                              管理员
+                            </em>
+                          )}
+                        </span>
                       )}
                     </button>
                     {/* ⛔ 11-07 用户：「每个成员 @ 的前面有运行动态展示吗」⇒ 运行态点 + @ + 停 三件套
@@ -2296,10 +2277,15 @@ export function TeamGroupView({
                               <button
                                 type="button"
                                 className="team-group__member-main is-kid"
-                                title={`${kid.name} · 打开${m.name}的资料卡`}
-                                onClick={(event) => openProfile(event, m.id)}
+                                title={`${kid.name}${kid.profession ? ` · ${kid.profession}` : ""} · 打开资料卡`}
+                                onClick={(event) => openProfile(event, kidId)}
                               >
                                 <strong>{kid.name}</strong>
+                                <span className="team-group__member-tags">
+                                  <em className="team-group__member-tag is-profession" title={`岗位：${kid.profession || "团成员"}`}>
+                                    {kid.profession || "团成员"}
+                                  </em>
+                                </span>
                               </button>
                               {/* 团成员同样三件套：运行态点 → @ → 停（11-07 用户：「每个成员 @ 的前面
                                   有运行动态展示吗」）。合成 id 与群流署名一致，所以"谁在跑"和"他说的"
@@ -2338,9 +2324,9 @@ export function TeamGroupView({
       {/* 伙伴资料卡（11-07 用户令：点头像看身份 / 模型 / 群内统计）。
           ⛔ 独立浮层、独立板块：群视图只负责"点谁"和锚点坐标，内容全在 14- 里。
           ⛔ 成员被移除/换群后 `memberOf` 取空 ⇒ 直接不渲染（别弹一张空卡）。 */}
-      {profile && memberOf(profile.memberId) && (
+      {profile && profileMemberOf(profile.memberId) && (
         <TeamProfileCard
-          member={memberOf(profile.memberId)!}
+          member={profileMemberOf(profile.memberId)!}
           group={group}
           rows={rows}
           catalog={catalog}

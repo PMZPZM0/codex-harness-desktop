@@ -2077,9 +2077,7 @@ const catalog = [
     "⛔ 成员栏团成员不许拿目录 key 当头像 seed（那会与气泡画成两张脸）");
   ok(/return !isTeamKidAuthor\(ta\.teamId, ta\.memberId\)/.test(view),
     "「是不是团成员」判据只有 isTeamKidAuthor 一处（管理员与头像共用，⛔ 两处各判一次就会漂）");
-  /* 换脸覆盖两处都认：成员行 avatar + 群级覆盖表（按合成 id 存） */
-  ok(/group\.avatars\?\.\[teamAuthorIdOf\(String\(m\.targetKey \?\? ""\), teamMemberIdOf\(lead\)\)\]/.test(view),
-    "主理人换脸两处都认（成员行 + 按合成 id 存的群级覆盖表），⛔ 只认一处 ⇒ 换了只有半边界面变");
+  /* 主理人换脸的两处回落由 12bw 真跑 createTeamIdentityHelpers 校验，这里只钉团成员覆盖。 */
   ok(/group\.avatars\?\.\[kidId\]/.test(view) && /targetKey: teamMemberIdOf\(kid\)/.test(view),
     "团成员换脸覆盖按合成 id 存、seed 用裸 memberId（覆盖与选脸口径分开）");
 
