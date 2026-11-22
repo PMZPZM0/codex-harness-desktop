@@ -953,7 +953,7 @@ try {
   }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
-  ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
+  ok(/(?:member|m)\?\.targetKind/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
     "视图 / 头像对 undefined 成员不再解引用 targetKind（旧 dist 的崩溃点）");
   /* ⛔ hop 统一 0（47d060d64 起）：接力交给 chainBudget + ranIds 截断，不再靠 hop=1 掐断
      「主理人 → 成员 A → 成员 B」。守卫曾继续钉 hop=1 ⇒ 既存假红。 */

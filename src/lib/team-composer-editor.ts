@@ -83,6 +83,8 @@ function serializeNode(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200b/g, "");
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
   const el = node as HTMLElement;
+  /* 群输入框附件 chip 是视觉节点：附件仍走 opts.files，不能进入正文序列化。 */
+  if (el.getAttribute?.("data-group-attach") != null) return "";
   const mention = el.getAttribute?.("data-mention");
   if (mention) return `@${mention}`;
   const url = el.getAttribute?.("data-composer-url");
@@ -132,6 +134,7 @@ export function editorCaret(root: HTMLElement): number {
     if (node.nodeType === Node.TEXT_NODE) { out += (node.textContent ?? "").replace(/\u200b/g, ""); return; }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
+    if (el.getAttribute?.("data-group-attach") != null) return;
     const mention = el.getAttribute?.("data-mention");
     if (mention) { out += `@${mention}`; return; }
     const url = el.getAttribute?.("data-composer-url");

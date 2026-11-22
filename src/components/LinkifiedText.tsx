@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { ExternalLink } from "./ExternalLink";
 import { HTTP_URL_RE } from "../lib/composer-links.mjs";
 
+/** 把纯文本里的 HTTP(S) 链接拆成可点链接，其余文字原样输出。 */
 export function LinkifiedText({ text }: { text: string }) {
   const parts: Array<{ text: string; url?: string }> = [];
   let last = 0;

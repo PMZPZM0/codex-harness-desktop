@@ -288,9 +288,9 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     ok(/data-attach-ext/.test(viewDom) && /\.composer-attach-chip-file \.composer-image-chip-name[\s\S]{0,100}color:\s*var\(--link\)/.test(composerCss)
       && /data-attach-ext="ts"/.test(composerCss) && /data-attach-ext="css"/.test(composerCss),
       "主输入框文件芯片：文件名蓝色加粗，图标按类型着色");
-    ok(/<FileTypeIcon path=\{p\} size=\{13\}/.test(teamComposer)
-      && /\.team-composer__chip\.is-file > span[\s\S]{0,100}color:\s*var\(--link\)/.test(teamCss),
-      "群聊附件芯片同款「类型图标 + 蓝色文件名」");
+    ok(/data-group-attach/.test(read("src/lib/team-composer-editor.ts")) && /insertGroupAttachChip/.test(teamComposer)
+      && !/opts\.files\.map/.test(teamComposer),
+      "群输入框附件 = 内联 chip（与主对话一致；⛔ 不再在输入框上方单排一行）");
     const userMsg = read("src/features/shared/UserMessageView.tsx");
     ok(/<LinkifiedText text=\{seg\.text\}/.test(userMsg) && /openRightFile\(source\)/.test(userMsg),
       "已发出的用户消息：URL 自动变链接，文件附件点击开右栏（两处都接线）");

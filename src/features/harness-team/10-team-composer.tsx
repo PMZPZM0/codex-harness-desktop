@@ -24,12 +24,12 @@ import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AtSign, Bot, Check, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, Square, X } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
-import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
 import { useAnchoredPopover } from "../../lib/use-centered-popover";
 import { insertComposerUrlChip, isSingleHttpUrl } from "../../lib/composer-url-chip";
+import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
@@ -96,6 +96,8 @@ export const DEFAULT_TEAM_RUN_OPTS: TeamRunOpts = {
    ⇒ 四项**偏好**落 localStorage（与主对话 composer-editor-height 同口径），
      每次改动即写、启动时读回；⛔ 技能/文件是「本轮附件」，⛔ 不持久化。
    ⛔ 读回必须校验：脏值/旧版本字段不能把输入框塞坏，一律回落默认。 */
+const FILE_CHIP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>';
+
 const OPTS_STORAGE_KEY = "harness-team:composer-opts";
 
 /** 读群聊的默认运行选项（模型/档位/沙箱/审批）；没有就用默认值。 */
@@ -366,6 +368,51 @@ export function TeamComposer({
   const onOptsRef = useRef(onOpts);
   onOptsRef.current = onOpts;
 
+  /** 群输入框附件：与主对话同款内联 chip（视觉节点不进入正文序列化，附件仍走 opts.files）。 */
+  const makeGroupAttachChip = (path: string, image: boolean) => {
+    const chip = document.createElement("span");
+    chip.className = `composer-image-chip-inline composer-attach-chip-${image ? "image" : "file"}`;
+    chip.setAttribute("contenteditable", "false");
+    chip.setAttribute("data-group-attach", path);
+    if (!image) {
+      chip.setAttribute("data-attach-ext", path.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "");
+    }
+    const name = path.split(/[\\/]/).pop() || path;
+    chip.innerHTML = `<span class="composer-image-chip-icon">${image ? `<img class="composer-image-chip-thumb" src="${imageDisplaySrc(path)}" alt="" draggable="false">` : FILE_CHIP_ICON}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
+    chip.querySelector(".composer-image-chip-name")!.textContent = name;
+    chip.querySelector(".composer-image-chip-close")!.addEventListener("click", (event) => {
+      event.stopPropagation();
+      chip.remove();
+      const cur = optsRef.current;
+      onOptsRef.current({ ...cur, files: cur.files.filter((item) => item !== path) });
+    });
+    return chip;
+  };
+  const insertGroupAttachChip = (path: string, image: boolean) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const chip = makeGroupAttachChip(path, image);
+    el.focus();
+    const selection = window.getSelection();
+    const range = selection?.rangeCount && el.contains(selection.anchorNode) ? selection.getRangeAt(0) : null;
+    if (range) {
+      range.deleteContents();
+      range.insertNode(chip);
+      range.setStartAfter(chip);
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else {
+      el.appendChild(chip);
+    }
+  };
+  /* opts.files 是发送真相源；DOM 里少了的 chip（X / 退格）同步回 opts.files。 */
+  const syncGroupAttachFiles = (el: HTMLElement) => {
+    const domPaths = [...el.querySelectorAll("[data-group-attach]")].map((node) => node.getAttribute("data-group-attach") || "").filter(Boolean);
+    const cur = optsRef.current;
+    if (domPaths.join("|") !== cur.files.join("|")) onOptsRef.current({ ...cur, files: domPaths });
+  };
+
   /**
    * 模型候选 = 与**主对话输入框同一个口径**（`collectModelChoices`）：
    *   · 只列启用供应商的启用模型 ⇒ 停用旧供应商的模型不会再冒出来（11-07 用户实测）；
@@ -456,7 +503,9 @@ export function TeamComposer({
     try {
       const paths = await window.codex.chooseFiles();
       if (!Array.isArray(paths) || !paths.length) return;
+      const added = paths.filter((path) => !opts.files.includes(path));
       onOpts({ ...opts, files: [...new Set([...opts.files, ...paths])].slice(0, 20) });
+      for (const path of added) insertGroupAttachChip(path, /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path));
     } catch { /* 取消选择：什么都不做 */ }
     setPlusOpen(false);
   };
@@ -474,7 +523,9 @@ export function TeamComposer({
     const paths = pastedFilePaths(cb);
     if (paths.length) {
       e.preventDefault();
+      const added = paths.filter((p) => !opts.files.includes(p));
       onOpts({ ...opts, files: [...new Set([...opts.files, ...paths])].slice(0, 20) });
+      for (const path of added) insertGroupAttachChip(path, /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path));
       return;
     }
     const image = [...cb.files].find((f) => f.type.startsWith("image/"));
@@ -508,7 +559,10 @@ export function TeamComposer({
     /* ⛔ await 期间用户可能已改过偏好 / 加过附件 ⇒ 用最新的 optsRef，别拿闭包里的旧 opts 覆盖。 */
     if (saved) {
       const cur = optsRef.current;
-      onOpts({ ...cur, files: [...new Set([...cur.files, saved])].slice(0, 20) });
+      if (!cur.files.includes(saved)) {
+        onOpts({ ...cur, files: [...new Set([...cur.files, saved])].slice(0, 20) });
+        insertGroupAttachChip(saved, Boolean(image) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(saved));
+      }
     }
   };
 
@@ -519,7 +573,6 @@ export function TeamComposer({
     else onOpts({ ...opts, sandbox: "workspace-write", approvalPolicy: next as TeamRunOpts["approvalPolicy"] });
   };
 
-  const fileName = (p: string) => p.split(/[\\/]/).pop() || p;
   const q = skillQuery.trim().toLowerCase();
   const skillMatches = skills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   /* 11-08 用户令「选那个模型，有几个档位，就显示那几个档位」：群输入框与主对话同一套联动
@@ -542,14 +595,8 @@ export function TeamComposer({
         <span className="composer-resize-grip" aria-hidden />
       </div>
       {app && <ComposerRail app={app} threadId="" />}
-      {(opts.files.length > 0 || opts.skills.length > 0) && (
+      {opts.skills.length > 0 && (
         <div className="team-composer__chips">
-          {opts.files.map((p) => (
-            <span key={`f:${p}`} className="team-composer__chip is-file" title={p}>
-              <FileTypeIcon path={p} size={13} /> <span>{fileName(p)}</span>
-              <button type="button" aria-label={`移除 ${fileName(p)}`} onClick={() => onOpts({ ...opts, files: opts.files.filter((x) => x !== p) })}><X size={10} /></button>
-            </span>
-          ))}
           {opts.skills.map((s) => (
             <span key={`s:${s.name}`} className="team-composer__chip is-skill" title={s.description}>
               <Sparkles size={11} /> <span>{s.name}</span>
@@ -580,7 +627,10 @@ export function TeamComposer({
               onQuery={setFileQuery}
               candidates={fileCandidates}
               onPick={(path) => {
-                onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
+                if (!opts.files.includes(path)) {
+                  onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
+                  insertGroupAttachChip(path, /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path));
+                }
                 setPlusView("main");
               }}
               onClose={() => setPlusView("main")}
@@ -647,7 +697,7 @@ export function TeamComposer({
           chip = 头像 + `@名字`（contenteditable=false 的原子节点），序列化回 `@名字`；
           ⛔ 不再用 textarea + 覆盖层（头像会加宽，覆盖层与光标必然错位）。 */}
       <div className="team-composer__editor">
-        {!value && <div className="team-composer__placeholder" aria-hidden>{placeholder}</div>}
+        {!value && !opts.files.length && !opts.skills.length && <div className="team-composer__placeholder" aria-hidden>{placeholder}</div>}
         <div
           ref={textareaRef}
           className="team-composer__input"
@@ -665,6 +715,7 @@ export function TeamComposer({
             const next = editorValue(el);
             renderedRef.current = next;
             onValueChange(next, editorCaret(el));
+            syncGroupAttachFiles(el);
           }}
           onKeyDown={onKeyDown}
           onCompositionStart={(event) => {
@@ -680,6 +731,7 @@ export function TeamComposer({
             const next = editorValue(el);
             renderedRef.current = next;
             onValueChange(next, editorCaret(el));
+            syncGroupAttachFiles(el);
           }}
           onPaste={(e) => void onPaste(e)}
         />
