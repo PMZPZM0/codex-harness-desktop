@@ -29,8 +29,7 @@ import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
 import { useAnchoredPopover } from "../../lib/use-centered-popover";
-import { ComposerLinkRow } from "../composer";
-import { extractHttpUrls } from "../../lib/composer-links.mjs";
+import { insertComposerUrlChip, isSingleHttpUrl } from "../../lib/composer-url-chip";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
@@ -490,6 +489,16 @@ export function TeamComposer({
          （图片/表格内容丢失，别处复制的 data-mention 还会变成真 chip 被序列化成 @名字、误触发派活）。
          ⇒ 一律只取 text/plain 用纯文本插入。 */
       e.preventDefault();
+      if (isSingleHttpUrl(plain)) {
+        const el = textareaRef.current;
+        if (el) {
+          insertComposerUrlChip(el, plain, true);
+          const next = editorValue(el);
+          renderedRef.current = next;
+          onValueChange(next, editorCaret(el));
+        }
+        return;
+      }
       const text = cb.getData("text/plain");
       if (text) document.execCommand("insertText", false, text);
       return;
@@ -638,7 +647,6 @@ export function TeamComposer({
           chip = 头像 + `@名字`（contenteditable=false 的原子节点），序列化回 `@名字`；
           ⛔ 不再用 textarea + 覆盖层（头像会加宽，覆盖层与光标必然错位）。 */}
       <div className="team-composer__editor">
-        <ComposerLinkRow urls={extractHttpUrls(value)} />
         {!value && <div className="team-composer__placeholder" aria-hidden>{placeholder}</div>}
         <div
           ref={textareaRef}

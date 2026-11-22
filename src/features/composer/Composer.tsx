@@ -6,6 +6,7 @@ import { promptFilePaths, shouldSavePastedTextAsFile } from "../../lib/composer-
 import { ChevronDown, Eye, Video, Search, Image, FileCode2, Settings2 } from "lucide-react";
 import { rebuildComposerDom } from "../../lib/rebuild-composer-dom";
 import { serializeComposerDom } from "../../lib/serialize-composer-dom";
+import { insertComposerUrlChip, isSingleHttpUrl } from "../../lib/composer-url-chip";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
 import { isMacPlatform } from "../../lib/is-mac-platform";
@@ -155,6 +156,18 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
         } else if (imageFile) {
           event.preventDefault();
           onPasteImage(event.clipboardData.getData("text/plain"));
+        } else if (isSingleHttpUrl(event.clipboardData.getData("text/plain"))) {
+          /* 11-21 用户：粘贴 URL 后不要「芯片 + 原文」两份 ⇒ 直接把 URL 变成一颗链接芯片
+             （序列化回原 URL，发送内容不变）。 */
+          const el = editorRef.current;
+          if (el) {
+            event.preventDefault();
+            insertComposerUrlChip(el, event.clipboardData.getData("text/plain").trim(), true);
+            const next = serializeComposerDom(el);
+            domValueRef.current = next;
+            onValueInput(next);
+            return;
+          }
         } else {
           // 渲染层 files/uri-list 都拿不到：剪贴板可能是文件（Windows CF_HDROP 渲染层不暴露）
           // 也可能是纯文本。先阻止原生，主进程 clipboard.read() 兜底判断文件；

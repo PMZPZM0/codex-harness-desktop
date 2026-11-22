@@ -261,7 +261,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   /* 11-21 用户（两张截图）：正文网页链接统一蓝色、GitHub 链接自动识别带 logo；
      输入框也要自动识别链接，文件芯片跟正文一样「图标 + 文件名」。 */
   {
-    const composerLinks = read("src/features/composer/ComposerLinkRow.tsx");
+    const urlChip = read("src/lib/composer-url-chip.ts");
+    const composerEditor = read("src/features/composer/Composer.tsx");
     const composerForm = read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx");
     const teamComposer = read("src/features/harness-team/10-team-composer.tsx");
     const viewDom = read("src/features/app-view/helpers/view-dom.ts");
@@ -272,11 +273,17 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
       "正文 GitHub 链接自动识别 + GitHub 标志 + 默认浏览器打开");
     ok(/\.markdown a \{[\s\S]{0,220}color:\s*var\(--link\)[\s\S]{0,120}font-size:\s*13\.5px/.test(msgCss),
       "正文链接统一蓝色（13.5px、500 字重）");
-    ok(/openExternal\(url\)/.test(composerLinks) && /githubLinkLabel/.test(composerLinks) && /GitHubMark/.test(composerLinks),
-      "输入框「已识别链接」行：GitHub 紧凑名 + logo，点击走默认浏览器");
-    ok(/<ComposerLinkRow urls=\{extractHttpUrls\(prompt\)\}/.test(composerForm)
-      && /<ComposerLinkRow urls=\{extractHttpUrls\(value\)\}/.test(teamComposer),
-      "主对话与群聊输入框都接入同一套链接识别（⛔ 不各写一份）");
+    ok(/data-composer-url/.test(urlChip) && /openExternal\(url\)/.test(urlChip) && /isSingleHttpUrl/.test(urlChip),
+      "URL 芯片：GitHub 紧凑名/logo，点击走默认浏览器，序列化回原 URL");
+    ok(/isSingleHttpUrl\(event\.clipboardData\.getData\("text\/plain"\)\)/.test(composerEditor) && /insertComposerUrlChip/.test(composerEditor),
+      "主输入框：粘贴单个 URL 就地变芯片（⛔ 不再保留原文）");
+    ok(/isSingleHttpUrl\(plain\)/.test(teamComposer) && /insertComposerUrlChip/.test(teamComposer),
+      "群聊输入框：粘贴单个 URL 同样就地变芯片");
+    ok(/data-composer-url/.test(read("src/lib/team-composer-editor.ts"))
+      && /remaining -= url\.length/.test(read("src/lib/team-composer-editor.ts")),
+      "群编辑器把链接芯片序列化回原 URL，光标按 URL 长度计（@ 插入不偏位）");
+    ok(!/ComposerLinkRow/.test(composerForm) && !/ComposerLinkRow/.test(teamComposer) && !/composer-link-row/.test(composerCss),
+      "⛔ 旧的「输入框上方再排一行链接」已删除（避免芯片 + 原文重复展示）");
     ok(/data-attach-ext/.test(viewDom) && /\.composer-attach-chip-file \.composer-image-chip-name[\s\S]{0,100}color:\s*var\(--link\)/.test(composerCss)
       && /data-attach-ext="ts"/.test(composerCss) && /data-attach-ext="css"/.test(composerCss),
       "主输入框文件芯片：文件名蓝色加粗，图标按类型着色");

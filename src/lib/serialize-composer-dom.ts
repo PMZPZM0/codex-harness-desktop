@@ -16,6 +16,9 @@ export function serializeComposerDom(root: HTMLElement): string {
       out += attachmentToken(kind === "file" ? "file" : "image", attachPath);
       return;
     }
+    /* 11-21：URL 芯片（粘贴链接后就地变芯片）→ 原 URL（不保留芯片文案）。 */
+    const url = el.getAttribute("data-composer-url");
+    if (url != null) { out += url; return; }
     if (el.tagName === "BR") { out += "\n"; return; }
     for (const child of Array.from(el.childNodes)) walk(child);
     if (el.tagName === "DIV" || el.tagName === "P") out += "\n";

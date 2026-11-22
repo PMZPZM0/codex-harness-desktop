@@ -3023,25 +3023,27 @@ const CHECKS = [
   },
   {
     id: "composer-links",
-    name: "输入框自动识别链接：GitHub 紧凑名 + logo（11-21）",
+    name: "输入框粘贴链接：就地变 GitHub 芯片，不再保留原文（11-21）",
     run: async (h) => {
       await h.waitFor(`!!document.querySelector(".composer-editor")`, { label: "主输入框", timeoutMs: 12000 });
-      const inserted = await h.eval(`(function(){
+      const pasted = await h.eval(`(function(){
         const el=document.querySelector(".composer-editor");
         if(!el) return 0;
         el.focus();
-        document.execCommand("insertText", false, "https://github.com/XBuilderLAB/cheat-on-content");
+        const dt=new DataTransfer();
+        dt.setData("text/plain", "https://github.com/XBuilderLAB/cheat-on-content");
+        el.dispatchEvent(new ClipboardEvent("paste",{ clipboardData:dt, bubbles:true, cancelable:true }));
         return 1;
       })()`);
-      h.check("① 前提：能把 GitHub 链接输入主输入框", inserted === 1);
-      await h.waitFor(`!!document.querySelector(".composer-link-chip.is-github")`, { label: "已识别 GitHub 链接", timeoutMs: 5000 });
+      h.check("① 前提：能向主输入框粘贴 GitHub 链接", pasted === 1);
+      await h.waitFor(`!!document.querySelector(".composer-url-chip-inline.is-github")`, { label: "GitHub 链接芯片", timeoutMs: 5000 });
       const chip = await h.eval(`(function(){
-        const b=document.querySelector(".composer-link-chip.is-github");
-        return b ? { text:(b.textContent||"").trim(), title:b.getAttribute("title")||"", icons:b.querySelectorAll("svg").length } : null;
+        const b=document.querySelector(".composer-url-chip-inline.is-github");
+        const el=document.querySelector(".composer-editor");
+        return b ? { text:(b.textContent||"").trim(), title:b.getAttribute("title")||"", icons:b.querySelectorAll("svg").length, editor:(el?.innerText||"") } : null;
       })()`);
-      h.check("② GitHub 链接自动识别：显示仓库名 + logo + 默认浏览器提示",
-        Boolean(chip) && chip.text === "XBuilderLAB/cheat-on-content" && /默认浏览器/.test(chip.title) && chip.icons >= 1,
-        JSON.stringify(chip));
+      h.check("② 链接就地变芯片：仓库名 + logo + 默认浏览器提示", Boolean(chip) && chip.text === "XBuilderLAB/cheat-on-content" && /默认浏览器/.test(chip.title) && chip.icons >= 1, JSON.stringify(chip && { text: chip.text, title: chip.title, icons: chip.icons }));
+      h.check("③ 输入框里不再保留 URL 原文（⛔ 不重复展示两份）", Boolean(chip) && !/https?:\/\//.test(chip.editor), chip?.editor ?? "");
       await h.eval(`(function(){
         const el=document.querySelector(".composer-editor");
         if(!el) return 0;

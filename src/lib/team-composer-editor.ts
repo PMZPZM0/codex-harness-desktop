@@ -79,39 +79,73 @@ export function renderEditor(
 }
 
 /** DOM → 纯文本（chip → `@名字`，br/div → 换行）。 */
+function serializeNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200b/g, "");
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  const el = node as HTMLElement;
+  const mention = el.getAttribute?.("data-mention");
+  if (mention) return `@${mention}`;
+  const url = el.getAttribute?.("data-composer-url");
+  if (url) return url;
+  if (el.tagName === "BR") return "\n";
+  let out = "";
+  for (const child of Array.from(el.childNodes)) out += serializeNode(child);
+  /* ⛔ 11-08 审查确认：浏览器回车产生的空行是 `<div><br></div>`，BR 已经贡献了一个换行，
+     DIV 再补一个 ⇒ 空行翻倍、连续回车越打越长。末子是 BR 时不再补。 */
+  if (el.tagName === "DIV" || el.tagName === "P") {
+    const last = el.lastChild;
+    const lastIsBr = Boolean(last && last.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR");
+    if (!lastIsBr) out += "\n";
+  }
+  return out;
+}
+
+/** DOM → 纯文本（chip → `@名字` / 原 URL，br/div → 换行）。 */
 export function editorValue(root: HTMLElement): string {
   let out = "";
+  for (const child of Array.from(root.childNodes)) out += serializeNode(child);
+  return out.replace(/\n$/, "");
+}
+
+/** 光标 → 纯文本偏移（提及按 `@名字`、链接芯片按**原 URL** 长度计，与 editorValue 同口径）。 */
+export function editorCaret(root: HTMLElement): number {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return editorValue(root).length;
+  const { endContainer, endOffset } = selection.getRangeAt(0);
+  if (!root.contains(endContainer)) return editorValue(root).length;
+  let out = "";
+  let done = false;
   const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      out += (node.textContent ?? "").replace(/\u200b/g, "");
-      return;
+    if (done) return;
+    if (node === endContainer) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += (node.textContent ?? "").slice(0, endOffset).replace(/\u200b/g, "");
+        done = true;
+        return;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        for (const child of Array.from(node.childNodes).slice(0, endOffset)) out += serializeNode(child);
+        done = true;
+        return;
+      }
     }
+    if (node.nodeType === Node.TEXT_NODE) { out += (node.textContent ?? "").replace(/\u200b/g, ""); return; }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
     const mention = el.getAttribute?.("data-mention");
     if (mention) { out += `@${mention}`; return; }
+    const url = el.getAttribute?.("data-composer-url");
+    if (url) { out += url; return; }
     if (el.tagName === "BR") { out += "\n"; return; }
-    for (const child of Array.from(el.childNodes)) walk(child);
-    /* ⛔ 11-08 审查确认：浏览器回车产生的空行是 `<div><br></div>`，BR 已经贡献了一个换行，
-       DIV 再补一个 ⇒ 空行翻倍、连续回车越打越长。末子是 BR 时不再补。 */
-    if (el.tagName === "DIV" || el.tagName === "P") {
+    for (const child of Array.from(el.childNodes)) { walk(child); if (done) break; }
+    if (!done && (el.tagName === "DIV" || el.tagName === "P")) {
       const last = el.lastChild;
       const lastIsBr = Boolean(last && last.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR");
       if (!lastIsBr) out += "\n";
     }
   };
-  for (const child of Array.from(root.childNodes)) walk(child);
-  return out.replace(/\n$/, "");
-}
-
-/** 光标 → 纯文本偏移（chip 按 `@名字` 的长度计）。 */
-export function editorCaret(root: HTMLElement): number {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return editorValue(root).length;
-  const range = selection.getRangeAt(0).cloneRange();
-  range.selectNodeContents(root);
-  try { range.setEnd(selection.getRangeAt(0).endContainer, selection.getRangeAt(0).endOffset); } catch { return editorValue(root).length; }
-  return range.toString().replace(/\u200b/g, "").length;
+  for (const child of Array.from(root.childNodes)) { walk(child); if (done) break; }
+  return out.replace(/\n$/, "").length;
 }
 
 /** 把光标落到纯文本偏移处。 */
@@ -132,6 +166,12 @@ export function setEditorCaret(root: HTMLElement, offset: number): void {
       const len = `@${el.getAttribute("data-mention")}`.length;
       if (remaining <= len) { node = el.parentNode; nodeOffset = Array.from(el.parentNode?.childNodes ?? []).indexOf(el) + 1; return true; }
       remaining -= len;
+      return false;
+    }
+    const url = el.getAttribute?.("data-composer-url");
+    if (url) {
+      if (remaining <= url.length) { node = el.parentNode; nodeOffset = Array.from(el.parentNode?.childNodes ?? []).indexOf(el) + 1; return true; }
+      remaining -= url.length;
       return false;
     }
     for (const child of Array.from(current.childNodes)) if (walk(child)) return true;

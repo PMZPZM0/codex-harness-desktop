@@ -1555,7 +1555,7 @@ const catalog = [
     "重绘后恢复原光标（⛔ 原来一律扔到末尾 = 用户「打字光标乱跳」）");
   ok(/const sigChanged = mentionSigRef\.current !== sig/.test(composer) && /if \(!sigChanged\) return;/.test(composer),
     "打字路径不重建 DOM：只有名字/头像表变了才为重绘 chip 动一次");
-  ok(/e\.preventDefault\(\);[\s\S]{0,260}?getData\("text\/plain"\)[\s\S]{0,160}?execCommand\("insertText"/.test(composer),
+  ok(/const text = cb\.getData\("text\/plain"\);[\s\S]{0,700}?execCommand\("insertText", false, text\)/.test(composer),
     "普通文字粘贴只取 text/plain（⛔ 浏览器默认塞 HTML：图片丢失、别处的 chip 变真 @ 误派活）");
   ok(/lastIsBr/.test(editor) && /if \(!lastIsBr\) out \+= "\\n"/.test(editor),
     "序列化不重复计换行（`<div><br></div>` 空行翻倍的根因）");

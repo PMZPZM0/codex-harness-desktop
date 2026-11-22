@@ -1656,35 +1656,27 @@
   color: var(--faint);
   pointer-events: none;
 }
-/* 11-21：输入框里自动识别到的链接（主对话与群聊共用 ComposerLinkRow）——
-   不打断原文，只在输入区顶部列出可点链接；点击走系统默认浏览器。 */
-.composer-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  margin: 0 0 2px;
-}
-.composer-link-chip {
+/* 11-21：输入框里粘贴的 URL 就地变成链接芯片（不再保留原文，也不另排预览行）。
+   主对话与群聊共用；点击走系统默认浏览器。 */
+.composer-url-chip-inline {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 300px;
+  max-width: 340px;
   min-width: 0;
-  padding: 1px 4px;
-  border: 0;
+  padding: 0 4px;
+  margin: 0 2px;
+  vertical-align: middle;
   border-radius: 5px;
   background: transparent;
   color: var(--link);
-  font: inherit;
-  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  text-align: left;
+  user-select: none;
 }
-.composer-link-chip:hover { background: var(--panel-2); text-decoration: underline; }
-.composer-link-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-link-chip svg { flex: none; }
+.composer-url-chip-inline:hover { background: var(--panel-2); text-decoration: underline; }
+.composer-url-chip-icon { display: inline-flex; align-items: center; color: currentColor; flex: none; }
+.composer-url-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-image-chip-inline {
   display: inline-flex;
   align-items: center;
