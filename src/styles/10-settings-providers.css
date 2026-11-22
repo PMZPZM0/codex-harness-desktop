@@ -961,8 +961,18 @@
   font-size: 12px;
   cursor: pointer;
 }
-.ctx-pop-compact-btn:hover {
+.ctx-pop-compact-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--orange) 18%, transparent);
+}
+/* 11-22：「压缩上下文」按钮常驻，已用不到 30% 时禁用。
+   ⛔ 必须显式写 :disabled —— 全站没有 `button:disabled` 的兜底样式，不写就和可点状态长得一模一样
+     （10-20 记忆卡变死按钮的同一个坑）。 */
+.ctx-pop-compact-btn:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 /* 中转站账户卡片（设置 → 模型） */
 .relay-account-card {

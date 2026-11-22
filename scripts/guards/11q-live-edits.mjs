@@ -314,6 +314,27 @@ console.log("\n【live-edits】⑱ 回合用量落账");
     "⛔ 消息页脚不再展示 token 用量（统一看底部「上下文容量」弹窗）");
   ok(/export function ContextUsageBadge/.test(status) && /usageBucket\(tokenUsage, "last"\)/.test(status),
     "底部「上下文容量」弹窗仍在（用户：下面这个弹窗有就可以了）");
+  /* 11-22 用户令：「压缩上下文」按钮常驻，已用 ≥30% 可点、不到 30% 灰色不可点；**运行中一律不可点**。
+     ⛔ 旧实现 percent>=70 才出现 ⇒ 用户根本找不到入口；⛔ 禁用态必须有自己的 CSS，否则看着能点。 */
+  ok(/className="ctx-pop-compact-btn"[\s\S]{0,220}?disabled=\{blocked \|\| tooLow\}/.test(status)
+    && !/onCompact && percent >= 70/.test(status)
+    && /30% 后可点/.test(status),
+    "压缩上下文按钮常驻 + 低于 30% 禁用（不再等 70% 才冒出来）");
+  ok(/const blocked = Boolean\(running\) \|\| Boolean\(compacting\)/.test(status)
+    && /运行中不可用/.test(status),
+    "⛔ 运行中（或已在压缩）不可点压缩按钮 —— 会和当前回合抢同一会话");
+  {
+    const composer = read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx");
+    ok(/<ContextUsageBadge[\s\S]{0,400}?running=\{activeThreadRunning\}/.test(composer)
+      && /compacting=\{app\.compactToast\?\.state === "running"/.test(composer),
+      "合成器把「本轮运行中 / 正在压缩」两态传给上下文徽标（不是只靠按钮内部猜）");
+  }
+  {
+    const css = read("src/styles/10-settings-providers.css");
+    ok(/\.ctx-pop-compact-btn:disabled\s*\{[^}]*cursor:\s*not-allowed/.test(css)
+      && /\.ctx-pop-compact-btn:hover:not\(:disabled\)/.test(css),
+      "压缩按钮的禁用态有自己的样式（灰底 + not-allowed，hover 不再高亮）");
+  }
 }
 
 /* ── 九、提问卡「先选中、再确认」（10-11 用户：点击选项只是选中，提交按钮才生效）────────

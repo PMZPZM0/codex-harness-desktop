@@ -520,7 +520,7 @@ function usageCacheRate(usage: any): number | null {
 export type UsageCounterSnapshot = { input: number; cached: number; output: number; total: number };
 
 /** 上下文用量徽标：点开看明细与最近一次压缩，可手动压缩。 */
-export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction, onCompact }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean; onCompact?: () => void }) {
+export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction, onCompact, running, compacting }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean; onCompact?: () => void; /** 本轮是否在跑（运行中禁止手动压缩） */ running?: boolean; /** 是否已有一个压缩在进行（禁止重复触发） */ compacting?: boolean }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -589,11 +589,28 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
             {input > 0 && <div className="ctx-pop-cell"><span className="ctx-pop-cell-label">缓存输入</span><b className="ctx-pop-cell-value">{cached.toLocaleString()} / {input.toLocaleString()}</b></div>}
           </div>
           {turnCacheRate != null && turnCacheRate < 20 && input >= 8192 && <p className="ctx-pop-cache-note">{recentCompaction ? "上下文刚压缩过：提示词前缀已被重写，上游缓存需要 1~3 轮对话重建，期间命中率偏低属正常现象。" : "本轮缓存较低，通常是首次请求、恢复旧会话、上下文压缩、切换模型/供应商，或上游未复用相同提示词前缀导致。"}</p>}
-          {onCompact && percent >= 70 && (
-            <button type="button" className="ctx-pop-compact-btn" onClick={() => { setOpen(false); onCompact && onCompact(); }}>
-              <Minimize2 size={13} />压缩上下文（已用 {Math.round(percent)}%）
-            </button>
-          )}
+          {/* 11-22 用户令：「压缩上下文」按钮**常驻**展示，已用 ≥30% 才可点，不到就灰色不可点。
+              ⛔ 旧实现是 `percent >= 70` 才出现 —— 用户找不到入口（「我记得这个地方有个按钮」）。
+              ⛔ 门槛定 30%：低于此压缩收益小于代价（压缩本身要跑一次模型，还会丢细节缓存）。
+              ⛔⛔ 运行中一律不可点（用户点名的边界）：回合正在跑时压缩会与当前回合抢同一个会话，
+                 引擎侧也会互相打断 —— 必须等回合结束。正在压缩时同样不可再点。 */}
+          {onCompact && (() => {
+            const tooLow = percent < 30;
+            const blocked = Boolean(running) || Boolean(compacting);
+            const reason = compacting ? "正在压缩上下文…" : running ? "本轮运行中，结束后才能压缩" : tooLow ? "上下文还不到 30%，暂不需要压缩" : "立即压缩当前会话上下文，腾出空间";
+            return (
+              <button
+                type="button"
+                className="ctx-pop-compact-btn"
+                disabled={blocked || tooLow}
+                title={reason}
+                onClick={() => { setOpen(false); onCompact(); }}
+              >
+                <Minimize2 size={13} />
+                {compacting ? "正在压缩…" : running ? "压缩上下文（运行中不可用）" : `压缩上下文（已用 ${Math.round(percent)}%${tooLow ? " · 30% 后可点" : ""}）`}
+              </button>
+            );
+          })()}
         </div>
       )}
     </div>
