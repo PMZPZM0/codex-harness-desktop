@@ -2,7 +2,7 @@
  * video-providers —— 视频生成接口的**纯适配层**（无副作用，可被守卫真跑）。
  *
  * 覆盖：国内 5 家（可灵 / 通义万相 / 即梦Seedance〔1.0 文本参数协议 + 2.0/2.5 body 参数协议与视频参考〕/ 智谱CogVideoX / MiniMax海螺）
- *      国外 3 家（Runway / Luma / Google Veo）。
+ *      国外 4 家（Runway / Luma / Google Veo / Muse〔Meta，经 HiAPI 统一任务协议〕）。
  * 每家四个纯函数语义：buildSubmit（组装提交请求）→ parseSubmit（拿 jobId）→
  * buildPoll（组装查询请求）→ parsePoll（归一成 queued/running/succeeded/failed + 产物 url）。
  *
@@ -30,6 +30,14 @@ export const VIDEO_PROVIDERS = [
   { id: "runway", name: "Runway Gen-4", region: "global", modes: ["i2v"], imageInput: "both", baseUrl: "https://api.dev.runwayml.com", fields: ["apiKey"], models: ["gen4_turbo", "gen3a_turbo"], defaultModel: "gen4_turbo", aspects: ["16:9", "9:16", "1:1"] },
   { id: "luma", name: "Luma Dream Machine", region: "global", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://api.lumalabs.ai", fields: ["apiKey"], models: ["ray-2", "ray-flash-2"], defaultModel: "ray-2" },
   { id: "veo", name: "Google Veo", region: "global", modes: ["t2v", "i2v"], imageInput: "base64", baseUrl: "https://generativelanguage.googleapis.com", fields: ["apiKey"], models: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-2.0-generate-001"], defaultModel: "veo-3.0-generate-001", aspects: ["16:9", "9:16", "1:1"] },
+  /* Muse（Meta Superintelligence Labs，11-22 用户要求接入）：走 HiAPI 的统一异步任务协议
+     （POST /v1/tasks → GET /v1/tasks/{id}）—— Meta 没有公开发布官方 REST 端点。
+     ⛔ 三个协议特点，写死进适配层别让上层猜：
+       ① t2v / i2v 是**两个不同 model id**（`...-1.0/text-to-video` / `.../image-to-video`），
+          切模式必须换 model 字符串，传错会被 400；
+       ② 时长固定 10s、分辨率固定 720p、自带声音 ⇒ **不许传 duration / resolution**（多余字段直接 400）；
+       ③ 图生视频只收 1–9 个**公网图片 URL**（image_urls 数组），本地首帧必须先传成 URL。 */
+  { id: "muse", name: "Muse Video 1.0（Meta）", region: "global", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://api.hiapi.ai", fields: ["apiKey"], models: ["muse-video-1.0/text-to-video", "muse-video-1.0/image-to-video"], defaultModel: "muse-video-1.0/text-to-video", aspects: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"] },
 ];
 
 const jsonHeaders = (extra = {}) => ({ "Content-Type": "application/json", ...extra });
@@ -56,6 +64,8 @@ const ASPECT_VALUES = {
   seedance: { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1" },
   runway: { "16:9": "1280:720", "9:16": "720:1280", "1:1": "960:960" },
   veo: { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1" },
+  /* Muse 收字面比例（7 档，全支持）；图生视频不给画幅时用 "auto"（跟随参考图）。 */
+  muse: { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1", "4:3": "4:3", "3:4": "3:4", "3:2": "3:2", "2:3": "2:3" },
 };
 
 /** 提交前校验画幅：厂商不支持而我们被要求指定 ⇒ 当场报错（换厂商或去掉画幅）。 */
@@ -161,6 +171,21 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
       if (kind === "image2video") instance.image = { bytesBase64Encoded: image.replace(/^data:[^;]+;base64,/, "") };
       return { url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning?key=${encodeURIComponent(cfg.apiKey)}`, headers: jsonHeaders(), body: { instances: [instance], parameters: { aspectRatio: (aspect && ASPECT_VALUES.veo[aspect]) || "16:9", durationSeconds: Math.min(8, duration) } } };
     }
+    case "muse": {
+      if (!cfg.apiKey) throw new Error("Muse 需要 API Key（HiAPI 控制台建 key，形如 sk-…）");
+      /* ⛔ 模式 ↔ model id 必须配对：Muse 的 t2v/i2v 是两个不同 id，传错直接 400。 */
+      const museModel = kind === "image2video"
+        ? model.replace(/text-to-video$/, "image-to-video")
+        : model.replace(/image-to-video$/, "text-to-video");
+      /* ⛔ 只发协议认识的字段（prompt / aspect_ratio / image_urls）：时长 10s、720p、带声音
+         都是固定值，多传 duration / resolution 一律 400（HiAPI 严格校验未知字段）。 */
+      const museInput = {
+        prompt,
+        ...(aspect ? { aspect_ratio: ASPECT_VALUES.muse[aspect] || aspect } : (kind === "image2video" ? { aspect_ratio: "auto" } : {})),
+        ...(kind === "image2video" ? { image_urls: [image] } : {}),
+      };
+      return { url: "https://api.hiapi.ai/v1/tasks", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}` }), body: { model: museModel, input: museInput } };
+    }
     default:
       throw new Error(`未知的视频生成厂商：${providerId}`);
   }
@@ -168,7 +193,9 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
 
 /** 提交响应 → jobId（各家字段不同；拿不到就抛错，别让上层轮询空气）。 */
 export function videoParseSubmit(providerId, respJson) {
-  const jobId = respJson?.data?.task_id ?? respJson?.output?.task_id ?? respJson?.id ?? respJson?.task_id ?? respJson?.name;
+  /* ⛔ `data.taskId`（驼峰）是 HiAPI/Muse 的字段，别只认下划线写法 —— 漏了它就等于
+     「提交成功但拿不到任务 id」，整条视频白花钱且不可查。 */
+  const jobId = respJson?.data?.task_id ?? respJson?.data?.taskId ?? respJson?.output?.task_id ?? respJson?.id ?? respJson?.task_id ?? respJson?.taskId ?? respJson?.name;
   if (!jobId) throw new Error(`提交成功但响应里没有任务 id：${JSON.stringify(respJson).slice(0, 160)}`);
   return String(jobId);
 }
@@ -195,6 +222,8 @@ export function videoBuildPoll(providerId, cfg, jobId, nowMs) {
       return { url: `https://api.lumalabs.ai/dream-machine/v1/generations/${encodeURIComponent(jobId)}`, headers: { Authorization: `Bearer ${cfg.apiKey}` } };
     case "veo":
       return { url: `https://generativelanguage.googleapis.com/v1beta/${jobId}?key=${encodeURIComponent(cfg.apiKey)}`, headers: {} };
+    case "muse":
+      return { url: `https://api.hiapi.ai/v1/tasks/${encodeURIComponent(jobId)}`, headers: { Authorization: `Bearer ${cfg.apiKey}` } };
     default:
       throw new Error(`未知的视频生成厂商：${providerId}`);
   }
@@ -258,6 +287,22 @@ export function videoParsePoll(providerId, respJson) {
       if (j?.error) return { status: "failed", error: String(j.error.message ?? JSON.stringify(j.error).slice(0, 120)) };
       const sample = j?.response?.generateVideoResponse?.generatedSamples?.[0] ?? j?.response?.generatedVideos?.[0] ?? null;
       return { status: "succeeded", url: String(sample?.video?.uri ?? sample?.uri ?? "") };
+    }
+    case "muse": {
+      /* HiAPI 统一任务协议：{ data: { status, output: [{ type:"video", url }] } }。
+         ⛔ 状态取值按官方：pending/processing/success/fail（另兼容 queued/running/completed）。 */
+      const d = j?.data ?? j;
+      const s = String(d?.status ?? "").toLowerCase();
+      if (s === "success" || s === "succeeded" || s === "completed") {
+        const list = Array.isArray(d?.output) ? d.output : [];
+        const video = list.find((entry) => String(entry?.type ?? "").toLowerCase() === "video") ?? list[0];
+        const url = String(video?.url ?? d?.video_url ?? "");
+        /* 已成功但链接还没落上 ⇒ 再等一轮，别凭空判失败（产物链接是稍后才挂到 output 的）。 */
+        return url ? { status: "succeeded", url } : { status: "running" };
+      }
+      if (/fail|error|cancel|timeout/.test(s)) return { status: "failed", error: String(d?.error?.message ?? d?.error ?? s) };
+      if (/pending|queued|waiting|created/.test(s)) return { status: "queued" };
+      return { status: "running" };
     }
     default:
       throw new Error(`未知的视频生成厂商：${providerId}`);

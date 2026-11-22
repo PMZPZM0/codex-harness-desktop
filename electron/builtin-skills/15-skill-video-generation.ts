@@ -76,7 +76,7 @@ description: 视频生成的操作手册。当用户要「生成视频 / 文生�
 
 **竖屏的额外注意**：竖屏构图主体要**居中偏上**，下方留出文字/字幕空间；提示词里写"竖构图、主体居中偏上"比事后裁更稳。
 
-## 三、厂商矩阵（8 家，国内外都要支持）
+## 三、厂商矩阵（9 家，国内外都要支持）
 
 | 厂商 | 地区 | 凭证 | 本地首帧 | 默认模型 |
 |---|---|---|---|---|
@@ -88,11 +88,15 @@ description: 视频生成的操作手册。当用户要「生成视频 / 文生�
 | Runway Gen-4 | 国外 | API Key | ✅ 可用 | gen4_turbo |
 | Luma Dream Machine | 国外 | API Key | ❌ 要公网 URL | ray-2 |
 | Google Veo | 国外 | API Key | ✅（收 base64 字节） | veo-3.0-generate-001 |
+| Muse Video 1.0（Meta，经 HiAPI） | 国外 | API Key | ❌ 要公网 URL（1–9 张） | muse-video-1.0/text-to-video |
 
 **选厂商的硬规则**：
 - 首帧是**本地文件**（画布里刚生成的图就是本地文件）⇒ 只能选可灵 / 智谱 / MiniMax / Runway / Veo。
-  给万相 / Seedance / Luma 传本地路径会被当场拒绝（它们只收公网图片地址）——先换厂商，别硬试。
-- 首帧是**公网 URL** ⇒ 八家都能用。
+  给万相 / Seedance / Luma / Muse 传本地路径会被当场拒绝（它们只收公网图片地址）——先换厂商，别硬试。
+- 首帧是**公网 URL** ⇒ 九家都能用。
+- Muse 两条专属约束：① 文生 / 图生是两个 model id（muse-video-1.0/text-to-video 与
+  muse-video-1.0/image-to-video），切模式要换 id；② 时长固定 10 秒、720p、自带声音，
+  **不要传 duration / resolution**（协议严格校验，多余字段直接 400）。
 - 没有首帧 ⇒ 全部支持文生视频。
 
 ## 三·五、Seedance 2.5：目前能力最强的一档（09-29 接入）

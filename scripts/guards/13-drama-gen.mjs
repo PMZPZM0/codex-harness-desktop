@@ -562,8 +562,8 @@ export async function run() {
     (Array.isArray(vp.VIDEO_ASPECTS) && vp.VIDEO_ASPECTS.includes("9:16") ? ok : fail)(
       "【206】画幅常量含 9:16 竖屏（短视频主流形态；此前适配层全部写死横屏）"
     );
-    /* ① 四家支持画幅：9:16 必须真出现在它们的请求体里（按各家自己的格式） */
-    const supports = ["wanx", "seedance", "runway", "veo"];
+    /* ① 支持画幅的 5 家：9:16 必须真出现在它们的请求体里（按各家自己的格式） */
+    const supports = ["wanx", "seedance", "runway", "veo", "muse"];
     const sent = supports.map((id) => {
       const mode = id === "runway" || id === "veo" ? "i2v" : "t2v";
       const req = vp.videoBuildSubmit(id, cfg, { mode, prompt: "p", image: "https://x/y.png", aspect: "9:16" }, nowMs);
@@ -571,7 +571,7 @@ export async function run() {
     });
     const missed = sent.filter((r) => !r.hit).map((r) => r.id);
     (missed.length === 0 ? ok : fail)(
-      `【206】支持画幅的 4 家真把 9:16 传进请求体${missed.length ? "：缺 " + missed.join(", ") : "（万相/即梦/Runway/Veo 各自格式）"}`
+      `【206】支持画幅的 5 家真把 9:16 传进请求体${missed.length ? "：缺 " + missed.join(", ") : "（万相/即梦/Runway/Veo/Muse 各自格式）"}`
     );
     /* ② 不支持画幅的 4 家：指定画幅必须**报错**（不许静默按默认出片） */
     const rejects = ["kling", "cogvideo", "minimax", "luma"].map((id) => {
@@ -608,6 +608,40 @@ export async function run() {
     (videoGenSkill206.includes("只有部分厂商支持指定画幅") && videoGenSkill206.includes("9:16") ? ok : fail)(
       "【206】视频技能写明画幅支持范围（含哪些厂商不支持）"
     );
+    /* ⑥.5 Muse（11-22 用户要求接入）：这家三个协议特点必须**真跑**验证，不能只看文本。
+       ① t2v / i2v 是两个 model id，切模式要换 id（传错 400）；② 时长/分辨率是固定值，
+       多发 duration / resolution 会被严格校验拒掉；③ 图生视频只收公网 URL 数组。 */
+    {
+      const muse = vp.VIDEO_PROVIDERS.find((p) => p.id === "muse");
+      (muse && muse.models.includes("muse-video-1.0/text-to-video") && muse.models.includes("muse-video-1.0/image-to-video") ? ok : fail)(
+        "【206】Muse 登记了文生/图生两个 model id（这家按模式分 id，不是同一个模型两种模式）"
+      );
+      const t2vReq = vp.videoBuildSubmit("muse", cfg, { mode: "t2v", prompt: "p", duration: 12, aspect: "9:16" }, nowMs);
+      const t2vBody = JSON.stringify(t2vReq.body);
+      (t2vBody.includes("muse-video-1.0/text-to-video") && !/duration|resolution/.test(t2vBody) && t2vBody.includes("9:16") ? ok : fail)(
+        "【206】Muse 文生：发 text-to-video id、带画幅、**不带** duration/resolution（固定 10s/720p，多传即 400）"
+      );
+      const i2vReq = vp.videoBuildSubmit("muse", cfg, { mode: "i2v", prompt: "p", image: "https://x/y.png" }, nowMs);
+      const i2vBody = JSON.stringify(i2vReq.body);
+      (i2vBody.includes("muse-video-1.0/image-to-video") && /"image_urls":\["https:\/\/x\/y\.png"\]/.test(i2vBody) && i2vBody.includes("\"aspect_ratio\":\"auto\"") ? ok : fail)(
+        "【206】Muse 图生：自动换 image-to-video id + 公网 URL 数组 + 未指定画幅时用 auto"
+      );
+      let localBlocked = false;
+      try { vp.videoAssertImageOk("muse", "i2v", "data:image/png;base64,AAA"); } catch { localBlocked = true; }
+      (localBlocked ? ok : fail)("【206】Muse 收本地 base64 首帧时报错（只接受公网 URL，不许静默失败）");
+      const jobId = vp.videoParseSubmit("muse", { code: 200, data: { taskId: "tk-1" } });
+      const poll = vp.videoBuildPoll("muse", cfg, jobId, nowMs);
+      (jobId === "tk-1" && /\/v1\/tasks\/tk-1$/.test(poll.url) ? ok : fail)(
+        "【206】Muse 任务 id 取 data.taskId（驼峰）且轮询打 /v1/tasks/{id}"
+      );
+      const st = (status) => vp.videoParsePoll("muse", { data: status }).status;
+      (st({ status: "success", output: [{ type: "video", url: "https://v.mp4" }] }) === "succeeded"
+        && st({ status: "processing" }) === "running"
+        && st({ status: "pending" }) === "queued"
+        && st({ status: "fail", error: { message: "x" } }) === "failed" ? ok : fail)(
+        "【206】Muse 状态归一真值表（success/processing/pending/fail → 四态）"
+      );
+    }
   }
   /* ══ 白模视频 / 3D 建模工作流（09-29 用户立项）══
      两个模板必须**真跑有效**（节点/边结构完整）且带 payload.flow 身份标记（flowLabel 判定依据）；
