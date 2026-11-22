@@ -82,8 +82,9 @@ ok(["py", "ts", "js", "md", "json", "svg", "yml"].every((ext) => icon.includes(`
   "图标表覆盖常用扩展名（py/ts/js/md/json/svg/yml…）");
 ok(/\["tsx",\s*"jsx"\][^\n]*Icon:\s*Atom/.test(icon) && /\["js",\s*"mjs",\s*"cjs"\][^\n]*Icon:\s*Braces/.test(icon)
   && /\["css",\s*"scss",\s*"less"\][^\n]*Icon:\s*Palette/.test(icon)
-  && /\["tsx",\s*"jsx"\][^\n]*#2f74c0/.test(icon) && /\["js",\s*"mjs",\s*"cjs"\][^\n]*#b8860b/.test(icon),
-  "前端常见类型用**不同图形 + 不同配色**（tsx=原子 / js=花括号 / css=调色板；用户对照 Qoder）");
+  && /\["tsx",\s*"jsx"\][^\n]*#2f74c0/.test(icon) && /\["js",\s*"mjs",\s*"cjs"\][^\n]*#b8860b/.test(icon)
+  && /\["md",\s*"mdx"\][^\n]*#2e8b6e/.test(icon) && /\["css",\s*"scss",\s*"less"\][^\n]*#c026d3/.test(icon),
+  "前端常见类型用**不同图形 + 不同配色**（tsx=原子 / js=花括号 / css=调色板；md 绿 / ts 蓝 / css 品红，不再全蓝）");
 ok(status.includes('<FileTypeIcon path={file.path} size={15} className="completed-file-icon" />') && !status.includes("fileChip"),
   "汇总卡行用 FileTypeIcon（旧的文字彩色块已删，别回来）");
 ok(itemView.includes('<FileTypeIcon path={path} size={12} />') && itemView.includes('className="action-diff-head"') && itemView.includes('className="action-diff-stats"'),
