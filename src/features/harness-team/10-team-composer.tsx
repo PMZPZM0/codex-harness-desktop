@@ -24,10 +24,13 @@ import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AtSign, Bot, Check, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, Square, X } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
 import { useAnchoredPopover } from "../../lib/use-centered-popover";
+import { ComposerLinkRow } from "../composer";
+import { extractHttpUrls } from "../../lib/composer-links.mjs";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
@@ -534,7 +537,7 @@ export function TeamComposer({
         <div className="team-composer__chips">
           {opts.files.map((p) => (
             <span key={`f:${p}`} className="team-composer__chip is-file" title={p}>
-              <Paperclip size={11} /> <span>{fileName(p)}</span>
+              <FileTypeIcon path={p} size={13} /> <span>{fileName(p)}</span>
               <button type="button" aria-label={`移除 ${fileName(p)}`} onClick={() => onOpts({ ...opts, files: opts.files.filter((x) => x !== p) })}><X size={10} /></button>
             </span>
           ))}
@@ -635,6 +638,7 @@ export function TeamComposer({
           chip = 头像 + `@名字`（contenteditable=false 的原子节点），序列化回 `@名字`；
           ⛔ 不再用 textarea + 覆盖层（头像会加宽，覆盖层与光标必然错位）。 */}
       <div className="team-composer__editor">
+        <ComposerLinkRow urls={extractHttpUrls(value)} />
         {!value && <div className="team-composer__placeholder" aria-hidden>{placeholder}</div>}
         <div
           ref={textareaRef}

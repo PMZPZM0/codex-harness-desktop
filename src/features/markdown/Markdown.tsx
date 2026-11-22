@@ -34,6 +34,8 @@ import { lazy, Suspense } from "react";
 const GraphCanvas = lazy(() => import("../graph/GraphCanvas"));
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Globe2, Copy, Check, FileDown } from "lucide-react";
+import { GitHubMark } from "../../components/GitHubMark";
+import { githubLinkLabel } from "../../lib/composer-links.mjs";
 import { FeedbackIconButton } from "../shared/FeedbackIconButton";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -55,6 +57,20 @@ function LinkCard({ href }: { href: string }) {
       <span className="link-card-body"><strong>{host}</strong><small>网站</small></span>
       <button className="link-card-open" title={`在浏览器中打开 ${href}`} onClick={() => void window.codex.openExternal(href)}>打开</button>
     </span>
+  );
+}
+
+/** 正文链接：统一蓝色；GitHub 链接自动识别并带 GitHub 图标（显示名去掉协议与前缀）。 */
+function MarkdownAnchor({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const raw = String(href ?? "");
+  const github = /^https?:\/\/(?:www\.)?github\.com\//i.test(raw);
+  const text = typeof children === "string" ? children.trim() : "";
+  const label = github && /^https?:\/\//i.test(text) ? githubLinkLabel(raw) : children;
+  return (
+    <a href={href} className={`markdown-link${github ? " is-github" : ""}`} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
+      {github ? <GitHubMark size={14} className="markdown-link-icon" /> : null}
+      {label}
+    </a>
   );
 }
 
@@ -313,11 +329,7 @@ export const MD_COMPONENTS: Components = {
     }
     return <p>{children}</p>;
   },
-  a: ({ href, children }) => (
-    <a href={href} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <MarkdownAnchor href={href}>{children}</MarkdownAnchor>,
   img: ({ src, alt }) => {
     return <img className="message-image" src={src} alt={alt ?? ""} onClick={() => src && openImageLightbox(src, alt ?? "")} />;
   },
@@ -367,11 +379,7 @@ export const Markdown = memo(function Markdown({ children, components }: { child
       a: ({ href, children: kids }: { href?: string; children?: React.ReactNode }) => {
         const id = mentionIdOfHref(href);
         if (!id) {
-          return (
-            <a href={href} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
-              {kids}
-            </a>
-          );
+          return <MarkdownAnchor href={href}>{kids}</MarkdownAnchor>;
         }
         return <>{mention.render(id, String(kids ?? "").replace(/^@/, "").trim())}</>;
       },

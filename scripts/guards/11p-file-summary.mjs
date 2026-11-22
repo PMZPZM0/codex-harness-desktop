@@ -258,6 +258,32 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     && /\.inline-file-link \{[\s\S]{0,400}?font-weight:\s*600;[\s\S]{0,80}?color:\s*var\(--link\)/.test(read("src/styles/14-model-onboarding.css")),
     "文件名统一蓝色加粗（⛔ 只有图标按文件类型变色；用户 11-21 对照 Qoder）");
   ok(!/InlineFileCards/.test(inlineCards), "⛔ 旧的「正文下方一排芯片」已删除（避免同一批文件重复展示）");
+  /* 11-21 用户（两张截图）：正文网页链接统一蓝色、GitHub 链接自动识别带 logo；
+     输入框也要自动识别链接，文件芯片跟正文一样「图标 + 文件名」。 */
+  {
+    const composerLinks = read("src/features/composer/ComposerLinkRow.tsx");
+    const composerForm = read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx");
+    const teamComposer = read("src/features/harness-team/10-team-composer.tsx");
+    const viewDom = read("src/features/app-view/helpers/view-dom.ts");
+    const msgCss = read("src/styles/03-messages-turns.css");
+    const composerCss = read("src/styles/04-cards-tools.css");
+    const teamCss = read("src/styles/61-team-mode.css");
+    ok(/githubLinkLabel/.test(markdown) && /GitHubMark/.test(markdown) && /window\.codex\.openExternal\(href\)/.test(markdown),
+      "正文 GitHub 链接自动识别 + GitHub 标志 + 默认浏览器打开");
+    ok(/\.markdown a \{[\s\S]{0,220}color:\s*var\(--link\)[\s\S]{0,120}font-size:\s*13\.5px/.test(msgCss),
+      "正文链接统一蓝色（13.5px、500 字重）");
+    ok(/openExternal\(url\)/.test(composerLinks) && /githubLinkLabel/.test(composerLinks) && /GitHubMark/.test(composerLinks),
+      "输入框「已识别链接」行：GitHub 紧凑名 + logo，点击走默认浏览器");
+    ok(/<ComposerLinkRow urls=\{extractHttpUrls\(prompt\)\}/.test(composerForm)
+      && /<ComposerLinkRow urls=\{extractHttpUrls\(value\)\}/.test(teamComposer),
+      "主对话与群聊输入框都接入同一套链接识别（⛔ 不各写一份）");
+    ok(/data-attach-ext/.test(viewDom) && /\.composer-attach-chip-file \.composer-image-chip-name[\s\S]{0,100}color:\s*var\(--link\)/.test(composerCss)
+      && /data-attach-ext="ts"/.test(composerCss) && /data-attach-ext="css"/.test(composerCss),
+      "主输入框文件芯片：文件名蓝色加粗，图标按类型着色");
+    ok(/<FileTypeIcon path=\{p\} size=\{13\}/.test(teamComposer)
+      && /\.team-composer__chip\.is-file > span[\s\S]{0,100}color:\s*var\(--link\)/.test(teamCss),
+      "群聊附件芯片同款「类型图标 + 蓝色文件名」");
+  }
   /* 11-21 用户截图：「这种汇总消息展示文件就挺好看…比本轮产物里面的文件卡片好多了」。
      ⇒ 文件只在正文行内出现；底部只剩一条「已编辑 N 个文件」汇总条（默认收起）。 */
   {

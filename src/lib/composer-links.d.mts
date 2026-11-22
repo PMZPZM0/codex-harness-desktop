@@ -1,0 +1,4 @@
+/** 输入框链接识别（.mjs）的类型声明；⛔ 与 .mjs 导出保持同步。 */
+export declare function extractHttpUrls(text: unknown): string[];
+export declare function isGithubUrl(url: string): boolean;
+export declare function githubLinkLabel(url: string): string;

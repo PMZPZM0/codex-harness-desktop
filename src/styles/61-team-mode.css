@@ -1429,6 +1429,7 @@
 /* ⛔ 只裁文字，⛔ 别裁整个 chip：删除按钮被裁掉就再也点不到了 */
 .team-composer__chip > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .team-composer__chip button { flex: none; }
+.team-composer__chip.is-file > span { color: var(--link); font-weight: 600; }
 .team-composer__chip.is-skill { border-color: var(--accent); color: var(--accent); }
 .team-composer__chip button {
   display: inline-flex;

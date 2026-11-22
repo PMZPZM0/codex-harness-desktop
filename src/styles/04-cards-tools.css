@@ -1656,6 +1656,35 @@
   color: var(--faint);
   pointer-events: none;
 }
+/* 11-21：输入框里自动识别到的链接（主对话与群聊共用 ComposerLinkRow）——
+   不打断原文，只在输入区顶部列出可点链接；点击走系统默认浏览器。 */
+.composer-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin: 0 0 2px;
+}
+.composer-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 300px;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.composer-link-chip:hover { background: var(--panel-2); text-decoration: underline; }
+.composer-link-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-link-chip svg { flex: none; }
 .composer-image-chip-inline {
   display: inline-flex;
   align-items: center;
@@ -1691,6 +1720,33 @@
 .composer-image-chip-inline.composer-attach-chip-file .composer-image-chip-icon {
   color: var(--link);
 }
+/* 11-21 用户：「文件粘贴到输入框里面也跟汇总消息里面一样，图标跟文件名」——
+   文件名统一蓝色加粗；图标按类型着色（与 FileTypeIcon 同一套配色）。 */
+.composer-image-chip-inline.composer-attach-chip-file .composer-image-chip-name {
+  color: var(--link);
+  font-weight: 600;
+}
+.composer-attach-chip-file[data-attach-ext="ts"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="tsx"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="jsx"] .composer-image-chip-icon { color: #2f74c0; }
+.composer-attach-chip-file[data-attach-ext="js"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="mjs"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="cjs"] .composer-image-chip-icon { color: #b8860b; }
+.composer-attach-chip-file[data-attach-ext="css"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="scss"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="less"] .composer-image-chip-icon { color: #c026d3; }
+.composer-attach-chip-file[data-attach-ext="md"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="mdx"] .composer-image-chip-icon { color: #2e8b6e; }
+.composer-attach-chip-file[data-attach-ext="html"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="htm"] .composer-image-chip-icon { color: #c86a28; }
+.composer-attach-chip-file[data-attach-ext="json"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="yml"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="yaml"] .composer-image-chip-icon { color: #8a8a84; }
+.composer-attach-chip-file[data-attach-ext="py"] .composer-image-chip-icon { color: #2e8b6e; }
+.composer-attach-chip-file[data-attach-ext="sh"] .composer-image-chip-icon { color: #4e9a54; }
+.composer-attach-chip-file[data-attach-ext="svg"] .composer-image-chip-icon { color: #bd34fe; }
+.composer-attach-chip-file[data-attach-ext="go"] .composer-image-chip-icon,
+.composer-attach-chip-file[data-attach-ext="rs"] .composer-image-chip-icon { color: #b4633a; }
 .composer-image-chip-inline .composer-image-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;

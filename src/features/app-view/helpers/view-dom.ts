@@ -26,6 +26,10 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
   chip.setAttribute("contenteditable", "false");
   chip.setAttribute("data-attach-kind", kind);
   chip.setAttribute("data-attach-path", path);
+  if (!image) {
+    const ext = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
+    chip.setAttribute("data-attach-ext", ext);
+  }
   const iconHtml = image
     ? `<img class="composer-image-chip-thumb" src="${imageDisplaySrc(path)}" alt="" draggable="false">`
     : COMPOSER_FILE_CHIP_ICON;

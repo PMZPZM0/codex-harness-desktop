@@ -3022,6 +3022,37 @@ const CHECKS = [
     },
   },
   {
+    id: "composer-links",
+    name: "输入框自动识别链接：GitHub 紧凑名 + logo（11-21）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".composer-editor")`, { label: "主输入框", timeoutMs: 12000 });
+      const inserted = await h.eval(`(function(){
+        const el=document.querySelector(".composer-editor");
+        if(!el) return 0;
+        el.focus();
+        document.execCommand("insertText", false, "https://github.com/XBuilderLAB/cheat-on-content");
+        return 1;
+      })()`);
+      h.check("① 前提：能把 GitHub 链接输入主输入框", inserted === 1);
+      await h.waitFor(`!!document.querySelector(".composer-link-chip.is-github")`, { label: "已识别 GitHub 链接", timeoutMs: 5000 });
+      const chip = await h.eval(`(function(){
+        const b=document.querySelector(".composer-link-chip.is-github");
+        return b ? { text:(b.textContent||"").trim(), title:b.getAttribute("title")||"", icons:b.querySelectorAll("svg").length } : null;
+      })()`);
+      h.check("② GitHub 链接自动识别：显示仓库名 + logo + 默认浏览器提示",
+        Boolean(chip) && chip.text === "XBuilderLAB/cheat-on-content" && /默认浏览器/.test(chip.title) && chip.icons >= 1,
+        JSON.stringify(chip));
+      await h.eval(`(function(){
+        const el=document.querySelector(".composer-editor");
+        if(!el) return 0;
+        el.focus();
+        document.execCommand("selectAll");
+        document.execCommand("delete");
+        return 1;
+      })()`);
+    },
+  },
+  {
     id: "footer-usage",
     name: "消息页脚不显示 token 用量，保留底部上下文弹窗（11-21）",
     run: async (h) => {
