@@ -65,5 +65,17 @@ ok(/let pathlessBudget = inlineImageSet\.size;/.test(umv) && /if \(pathlessBudge
 ok(!/const extraImages = images\.filter\(\(part: any\) => !refsImagePaths\.has\(part\.path\) && !inlineImageSet\.has\(part\.path\)\);/.test(umv),
   "⛔ 旧的单行去重已删（只比 part.path ⇒ data URL 与落盘路径永远不相等 ⇒ 双 chip 的根因）");
 
+/* ── ④ 插队消息的图片可达性（11-23 用户：「插队消息带了图片，codex 看不到图片」） ──
+   插队走 turn/steer，宿主入队时的 localImage 在「入队 → 队列回读 → steer」一路上无人保证被保住
+   （引擎二进制、无 schema），实际表现是模型只看到文字 ⇒ 兜底把图片路径写进插队文本的附件段。 */
+{
+  const send = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+  ok(/const queuedImagePaths = \[\.\.\.new Set\(\[\.\.\.inlineImagePaths, \.\.\.sendImages\]\)\];/.test(send)
+    && /const filePrefixLines = \[\.\.\.new Set\(\[\.\.\.inlineFilePaths, \.\.\.queuedImagePaths\]\)\];/.test(send),
+    "插队/排队消息把图片路径并入 [附件文件] 段（模型可按路径读图，不看引擎是否保住 localImage）");
+  ok(/messageText \|\| threadReferenceBlocks \|\| inlineFilePaths\.length \|\| queuedImagePaths\.length/.test(send),
+    "「只有图片、没有文字」的插队也要产出 text part —— 否则路径段根本发不出去（等于没修）");
+}
+
 console.log(fails ? `\n【attach-image】${checks} 条断言 / ${fails} 条失败` : `\n【attach-image】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

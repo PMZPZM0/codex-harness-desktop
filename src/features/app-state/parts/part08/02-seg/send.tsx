@@ -220,9 +220,17 @@ export async function send(bag: Bag, event?: FormEvent) {
       const skillPrefix = skillsForSend.length ? `\n\n[本轮已引用技能]\n${skillsForSend.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
       /* ★ 10-29 @ 点名：模型侧唯一知道"用户点名了谁"的通道（纯函数生成，空数组则一字不加） */
       const mentionPrefix = bag.dispatchMentionBlock();
-      const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+      /* ⛔⛔ 11-23 用户实测「插队消息带了图片，codex 看不到图片」：插队走 `turn/steer`，而宿主
+         入队时带的 localImage 在「入队 → 队列回读 → steer」这一路上**没有任何环节能保证被保住**
+         （引擎是二进制包，没有 schema 可核；回读的 entry.input 与 steer 的 input 都不由宿主校验）
+         ⇒ 实际表现就是模型只看到文字。
+         ⇒ 插队这条路上把图片路径一并写进 `[附件文件]` 段：模型可以按路径读图（view_image / 读文件）。
+            ⛔ 只对**插队/排队**加这段；正常发送不加（那条路 localImage 真实生效，加路径只是噪声）。 */
+      const queuedImagePaths = [...new Set([...inlineImagePaths, ...sendImages])];
+      const filePrefixLines = [...new Set([...inlineFilePaths, ...queuedImagePaths])];
+      const filePrefix = filePrefixLines.length ? `\n\n[附件文件]\n${filePrefixLines.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
       const input = [
-        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.selectedSkills.length || bag.contextItems.length || bag.dispatchMentions.length || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${mentionPrefix}${filePrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || queuedImagePaths.length || inlineNotices || bag.selectedSkills.length || bag.contextItems.length || bag.dispatchMentions.length || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${mentionPrefix}${filePrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ];
