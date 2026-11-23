@@ -365,6 +365,21 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "⛔ 提交按钮在「有选中或自定义输入」前禁用；答案 = 勾选 + 自定义输入拼接（单/多选同规则）");
   ok(/!multi && ask\.recommended \? \[ask\.recommended\]/.test(askCard),
     "单选**预选推荐项**（推荐路径保持一键确认，不因两步交互变麻烦）");
+  /* ⛔ 11-24 用户：「自定义输入，没有选中功能」—— 输入非空要像选项一样点亮选中态、计入提交计数；
+     单选语义下还须与选项**互斥**（旧实现两边都留着 ⇒ 提交会变成「选项；自定义」两条答案）。 */
+  ok(/const freeActive = freeText\.trim\(\)\.length > 0;/.test(askCard)
+    && /const chosenCount = picked\.length \+ \(freeActive \? 1 : 0\);/.test(askCard)
+    && /agent-ask-free\$\{freeActive \? " has-value" : ""\}/.test(askCard)
+    && /if \(!multi && next\.trim\(\)\) setPicked\(\[\]\);/.test(askCard)
+    && /if \(!multi\) setFreeText\(""\);/.test(askCard),
+    "自定义输入也算「选中一项」：输入即点亮勾选标记 + 计入提交计数；单选时与选项互斥");
+  {
+    const cardCss = read("src/styles/17-visual-cards.css");
+    ok(/\.agent-ask-free \.agent-ask-mark \{ color: transparent; \}/.test(cardCss)
+      && /\.agent-ask-free\.has-value \{[^}]*border-color: var\(--accent\)/.test(cardCss)
+      && /\.agent-ask-free \{[^}]*border: 1px solid transparent/.test(cardCss),
+      "自定义输入的选中态有专属样式（强调边 + 淡底），未选中时标记占位但不可见（⛔ 否则打字时输入框会横跳）");
+  }
   const seg08 = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
   ok(/name: "agent_ask"[\s\S]{0,600}multiple: \{ type: "boolean"/.test(seg08),
     "⛔ agent_ask 工具 schema 仍带 multiple 参数（单/多选由 Codex 决定的通道不许丢）");

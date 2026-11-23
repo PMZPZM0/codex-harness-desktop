@@ -24,11 +24,20 @@ export function AgentAskCard({ ask, onClose }: { ask: AgentAskPayload; onClose: 
   // 单选时预选推荐项：老流程「点推荐 = 一步完成」，预选后推荐路径仍是点一次「确认」
   const [picked, setPicked] = useState<string[]>(() => (!multi && ask.recommended ? [ask.recommended] : []));
   const [freeText, setFreeText] = useState("");
-  const toggle = (option: string) =>
+  /* ⛔ 11-24 用户：「自定义输入，没有选中功能」—— 单选语义下「选项」与「自定义」是**互斥**的
+     （只能给一个答案）。旧实现两边都留着 ⇒ 点选项后再打字，提交会变成「选项；自定义」两条答案。
+     ⇒ 选选项时清掉自定义、打自定义时清掉选项；多选不受影响（自定义是额外一项）。 */
+  const toggle = (option: string) => {
+    if (!multi) setFreeText("");
     setPicked((current) => (multi
       ? (current.includes(option) ? current.filter((entry) => entry !== option) : [...current, option])
       : (current.includes(option) ? [] : [option]))); // 单选：选新的自动取消旧的；再点一次取消
-  const canSubmit = picked.length > 0 || freeText.trim().length > 0;
+  };
+  /** 自定义输入非空 = 已选中一项（与选项行同款视觉），参与按钮计数。 */
+  const freeActive = freeText.trim().length > 0;
+  /** 真正会提交的项数：选项 + 自定义（单选时两者互斥，不会同时为真）。 */
+  const chosenCount = picked.length + (freeActive ? 1 : 0);
+  const canSubmit = chosenCount > 0;
   const submit = () => {
     if (!canSubmit) return;
     const parts = [...picked];
@@ -67,24 +76,34 @@ export function AgentAskCard({ ask, onClose }: { ask: AgentAskPayload; onClose: 
       </div>
       {ask.allowFree !== false && (
         <form
-          className="agent-ask-free"
+          className={`agent-ask-free${freeActive ? " has-value" : ""}`}
           onSubmit={(event) => { event.preventDefault(); submit(); }}
         >
+          {/* ⛔ 11-24：自定义输入也要有「选中」标记 —— 与选项行同款（单选圆点 / 多选方框），
+              否则用户打完字不知道自己这条算不算被选中、会不会一起提交。 */}
+          <span className={`agent-ask-mark${multi ? " box" : " radio"}`} aria-hidden>
+            {freeActive && (multi ? <Check size={12} /> : <CircleCheck size={15} />)}
+          </span>
           <input
             value={freeText}
-            onChange={(event) => setFreeText(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setFreeText(next);
+              if (!multi && next.trim()) setPicked([]);
+            }}
             name="freeText"
+            aria-label="自定义答案"
             placeholder={multi ? "或者输入你的想法（可与勾选一起提交）…" : "或者输入你的想法…"}
           />
           <button type="submit" className="primary-setting" disabled={!canSubmit}>
-            <Check size={14} />{multi ? `提交${picked.length ? `（已选 ${picked.length} 项）` : ""}` : "确认"}
+            <Check size={14} />{multi ? `提交${chosenCount ? `（已选 ${chosenCount} 项）` : ""}` : "确认"}
           </button>
         </form>
       )}
       {ask.allowFree === false && (
-        <div className="agent-ask-free">
+        <div className="agent-ask-free agent-ask-free--plain">
           <button type="button" className="primary-setting" disabled={!canSubmit} onClick={submit}>
-            <Check size={14} />{multi ? `提交${picked.length ? `（已选 ${picked.length} 项）` : ""}` : "确认"}
+            <Check size={14} />{multi ? `提交${chosenCount ? `（已选 ${chosenCount} 项）` : ""}` : "确认"}
           </button>
         </div>
       )}

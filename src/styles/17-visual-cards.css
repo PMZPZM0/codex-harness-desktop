@@ -283,7 +283,16 @@
   background: var(--accent);
   color: #fff;
 }
-.agent-ask-free { display: flex; gap: 8px; }
+.agent-ask-free {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  /* ⛔ 11-24：容器**始终**带透明边与内边距 —— 选中态只换颜色不换几何。
+     否则打字那一刻 padding 从 0 变 2px、边框从 0 变 1px，整行会跳 2~4px。 */
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 2px 2px 2px 8px;
+}
 .agent-ask-free input {
   flex: 1;
   padding: 9px 12px;
@@ -295,6 +304,21 @@
   outline: none;
 }
 .agent-ask-free input:focus { border-color: var(--accent); }
+/* ── 自定义输入的「选中」态（11-24 用户：「自定义输入，没有选中功能」）──────────────
+   输入非空即视为选中一项：整行套上与 .agent-ask-option-row.checked 同款的强调边与淡底，
+   左侧勾选标记同时点亮（单选圆点 / 多选方框），提交按钮的计数把它算进去。
+   ⛔ 未选中时标记必须**不可见但占位**（17px），否则打字时输入框会横向跳一下。 */
+/* allowFree=false 的纯按钮分支：没有勾选标记，别吃那 8px 左内边距（按钮会莫名缩进）。 */
+.agent-ask-free--plain { border: 0; padding: 0; }
+.agent-ask-free .agent-ask-mark { color: transparent; }
+.agent-ask-free .agent-ask-mark.box { border-color: var(--line); background: transparent; color: transparent; }
+.agent-ask-free.has-value {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.agent-ask-free.has-value input { border-color: transparent; }
+.agent-ask-free.has-value .agent-ask-mark { color: var(--accent); }
+.agent-ask-free.has-value .agent-ask-mark.box { border-color: var(--accent); background: var(--accent); color: #fff; }
 
 /* ── RPA 设置页 ── */
 .rpa-steps {
