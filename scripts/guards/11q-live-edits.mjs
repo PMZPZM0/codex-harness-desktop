@@ -668,5 +668,23 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "删会话先级联删它的调度子会话（⛔ 顺序：先子后父；否则子会话成孤儿行、按自己 cwd 挂到别的项目）");
 }
 
+/* ⛔⛔ 11-24 用户令：「引擎 90 秒无反应那个提示删了吧」——
+   挂机时询问卡 / 审批卡一直挂着，引擎**本来就在等人回答**，90 秒没有流式事件是正常的，
+   弹「无响应」纯属误报。两句一起钉：
+   ① 负向：那条提示文案与它的 hookKey 不许回来（回来就是同一个误报）；
+   ② 正向：心跳校对本身**必须**还在 —— 删提示时别把 resume 对账一起删了，
+      那是解开「turn/completed 丢了 ⇒ 永远正在运行 + 过程卡片刷屏」死局的唯一机制。 */
+{
+  /* ⛔ 先剥注释再判：源文件里那段块注释会**解释**删掉的是什么（含旧文案原文），
+     不剥就会把「说明」当成「还在用」而误报。 */
+  const mood = codeOnly(read("src/features/app-state/parts/part06/01-seg/01-ui-ready-mood-refs.tsx"));
+  ok(!/超过 90 秒没有收到新内容/.test(mood) && !/回复等待中/.test(mood) && !/stream-stale-/.test(mood),
+    "⛔ 「超过 90 秒没有收到新内容」误报提示已删（挂机等询问时引擎本来就没动静）");
+  ok(/Date\.now\(\) - bag\.lastStreamTsRef\.current < 90_000/.test(mood)
+    && /resumeThreadWithTurns\(bag, \{ threadId: current\.id, excludeTurns: false \}\)/.test(mood)
+    && /状态已同步/.test(mood),
+    "心跳校对保留（90s 阈值 + resume 对账 + 「状态已同步」结论）—— ⛔ 它才是 turn/completed 丢失时解死局的那条");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

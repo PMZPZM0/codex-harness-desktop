@@ -125,18 +125,15 @@ bag.lastStreamTsRef = lastStreamTsRef as typeof bag.lastStreamTsRef;
       if (!current || !lastTurn || !isTurnRunning(lastTurn)) return;
       if (Date.now() - bag.lastStreamTsRef.current < 90_000) return;
       bag.lastStreamTsRef.current = Date.now(); // 防抖：resume 失败也不要每 30s 连环打
-      // 心跳校对期间给用户可见反馈：否则「引擎其实在跑但没出字」看起来就是莫名其妙不回复
+      /* ⛔⛔ 11-24 用户令：删掉「超过 90 秒没有收到新内容…」那条提示，不再往时间线里塞。
+         原因（用户实测原话）：「挂机了询问一直在，也弹那个 90 秒无响应提示」——
+         询问卡 / 审批卡挂着时引擎**本来就在等人回答**，90 秒没有流式事件是正常的，
+         这时候弹「无响应」是误报，还会让人以为引擎坏了。
+         心跳校对本身**保留**：它是解开「turn/completed 丢了 ⇒ 永远正在运行 + 过程卡片刷屏」
+         这个死局用的（见上方注释）。只是不再有可见提示 —— 校对真发现已完成时，
+         下面那句「状态已同步」才是结论，有信息量。 */
       const staleTurnId = lastTurn.id;
       const staleThreadName = current.name || "当前会话";
-      bag.setSystemEvents((currentEvents) => {
-        if (currentEvents.some((event) => event.hookKey === `stream-stale-${staleTurnId}`)) return currentEvents;
-        return [...currentEvents, { id: crypto.randomUUID(), title: "回复等待中", text: "超过 90 秒没有收到新内容，正在与引擎校对任务状态……（若上游卡住，可点输入框旁的停止按钮后重发）", tone: "warning", hookKey: `stream-stale-${staleTurnId}` }] as any;
-      });
-      // 提醒不常驻：无论校对是否确认（上游真卡住时 resume 对不上会一直挂着），25s 后自动撤掉，
-      // 避免「回复等待中」占位卡在时间线里不好看；引擎恢复/校对确认时下方也会主动清除。
-      window.setTimeout(() => {
-        bag.setSystemEvents((currentEvents) => currentEvents.filter((event) => event.hookKey !== `stream-stale-${staleTurnId}`));
-      }, 25_000);
       void resumeThreadWithTurns(bag, { threadId: current.id, excludeTurns: false }).then((result) => {
         if (!result?.thread) return;
         const serverLast = result.thread.turns[result.thread.turns.length - 1];
@@ -148,8 +145,7 @@ bag.lastStreamTsRef = lastStreamTsRef as typeof bag.lastStreamTsRef;
             bag.threadRef.current = merged;
             bag.threadCacheRef.current.set(merged.id, merged);
             bag.setThread(merged);
-            // 校对确认已结束：撤掉等待提示（success 常驻可手动关，不自动消失误导）
-            bag.setSystemEvents((currentEvents) => currentEvents.filter((event) => event.hookKey !== `stream-stale-${staleTurnId}`));
+            // 校对确认已结束：告知界面已恢复（无关闭键，常驻可手动关的那条由事件渲染决定）
             bag.setSystemEvents((currentEvents) => [...currentEvents, { id: crypto.randomUUID(), title: "状态已同步", text: `「${staleThreadName}」的任务实际已在上游完成，界面已恢复。`, tone: "info", hookKey: `stream-settled-${staleTurnId}` }] as any);
           }
         }
