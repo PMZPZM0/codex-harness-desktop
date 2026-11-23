@@ -12,6 +12,7 @@ import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, comp
 import { QueueItem } from "../../../../../lib/queue-item";
 import { isQueueAlreadyStartedError } from "../../../../../lib/queue-errors.mjs";
 import { armPendingSteer, cancelPendingSteer, hasPendingSteers, pendingSteerArmedAge, settlePendingSteers, takePendingSteers, turnStepBusy } from "../../../../../lib/pending-steer.mjs";
+import { forgetQueuedInput, localQueuedInput } from "../../../../../lib/queued-local-input.mjs";
 import { POLL_AUTO_CONTINUE_MAX_ATTEMPTS, POLL_AUTO_CONTINUE_WINDOW_MS, pollContinuePrompt } from "../../../../../lib/poll-config.mjs";
 import { inputText } from "../../../../../lib/input-text";
 import { notePollAutoContinue } from "../../../../../polling/poll-store";
@@ -77,6 +78,10 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
       const runningTurn = (bag.threadRef.current?.turns ?? []).find((turn) => isTurnRunning(turn)) ?? null;
       let steered = false;
       if (runningTurn) {
+        /* ⛔ 11-23 用户令「希望模型直接看到图」：队列回读的 entry.input 只剩文本，
+           而 turn/steer **接受** localImage（探针实测）⇒ 优先用入队时本地记下的原始 input。
+           没有记录（老条目 / 别的窗口入队）⇒ 回落到 entry.input，行为与改前一致。 */
+        const steerInput = localQueuedInput(entry.clientUserMessageId) ?? entry.input;
         bag.armPinForReleasedQueue(threadId, "steer");
         /* ⛔ 11-12 用户实测「点了立即，上屏有延迟」：这里**不能提前 settle**。
            原先在 steer 请求前就摘掉待并入气泡，arm→take→settle 全在同一个同步 tick 里
@@ -86,7 +91,7 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
           await window.codex.request("turn/steer", {
             threadId,
             expectedTurnId: runningTurn.id,
-            input: entry.input,
+            input: steerInput,
             ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
           });
           steered = true;
@@ -111,6 +116,7 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
           settlePendingSteers(threadId, [entry.id]);
           void bag.setQueuedTimer(threadId, entry.id, null, { silent: true });
           await window.codex.request("thread/queue/delete", { threadId, queuedSubmissionId: entry.id }).catch(() => undefined);
+          forgetQueuedInput(entry.clientUserMessageId);
           if (isCurrent()) {
             bag.setQueue((current) => current.filter((queued) => queued.id !== entry.id));
             void bag.refreshQueue(threadId);

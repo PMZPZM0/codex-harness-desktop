@@ -10,6 +10,7 @@ import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../../lib/provider-continuity.mjs";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "../../../../../lib/agent-mood.mjs";
 import { isRateLimitError } from "../../../../../lib/rate-limit-retry";
+import { rememberQueuedInput } from "../../../../../lib/queued-local-input.mjs";
 import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEffortUnsupported, clearEffortUnsupported } from "../../../../../lib/effort-support";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../../lib/prompt-images";
 import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "../../../../../lib/enhance-hints.mjs";
@@ -235,7 +236,13 @@ export async function send(bag: Bag, event?: FormEvent) {
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ];
       try {
-        await window.codex.request("thread/queue/add", { threadId: bag.thread.id, input, clientUserMessageId: crypto.randomUUID() });
+        /* ⛔ 11-23 用户令「希望模型直接看到图」：队列条目回读时只剩文本（引擎侧不保证保住
+           localImage），而 turn/steer 的 schema **实测接受** localImage（同假 threadId 下
+           「只有 text」与「text + localImage」错误完全一致 = thread not found）。
+           ⇒ 入队时把带图的原始 input 按 clientUserMessageId 记一份，派发 steer 时用它覆盖。 */
+        const queueClientId = crypto.randomUUID();
+        rememberQueuedInput(queueClientId, input);
+        await window.codex.request("thread/queue/add", { threadId: bag.thread.id, input, clientUserMessageId: queueClientId });
         bag.setPrompt("");
         bag.setQuoteItem(null);
         bag.setContextItems([]);

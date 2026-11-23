@@ -77,5 +77,23 @@ ok(!/const extraImages = images\.filter\(\(part: any\) => !refsImagePaths\.has\(
     "「只有图片、没有文字」的插队也要产出 text part —— 否则路径段根本发不出去（等于没修）");
 }
 
+/* ── ⑤ 插队图片直达模型（11-23 用户：「希望模型直接看到图」）──
+   探针实测：同一个不存在的 threadId 下，「只有 text」与「text + localImage」返回的错误**完全一致**
+   （都是 thread not found）⇒ `turn/steer` 的 schema **接受** localImage。
+   所以缺的不是引擎能力，而是宿主手里的带图 input（队列回读只剩文本）⇒ 入队记一份、派发覆盖。 */
+{
+  const lib = read("src/lib/queued-local-input.mjs");
+  const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+  ok(/export function rememberQueuedInput\(/.test(lib) && /export function localQueuedInput\(/.test(lib) && /export function forgetQueuedInput\(/.test(lib),
+    "本地原始 input 的三件套：登记 / 取用 / 释放（⛔ 只存内存 + 容量封顶，不落盘不膨胀）");
+  ok(/const queueClientId = crypto\.randomUUID\(\);[\s\S]{0,200}?rememberQueuedInput\(queueClientId, input\);[\s\S]{0,300}?clientUserMessageId: queueClientId/.test(sendSrc),
+    "入队时按 clientUserMessageId 记住**带 localImage 的**原始 input（同一个 id 贯穿 add 与派发）");
+  const queue = read("src/features/app-state/parts/part04/03-seg/02-browser-queue-settings.tsx");
+  ok(/const steerInput = localQueuedInput\(entry\.clientUserMessageId\) \?\? entry\.input;/.test(queue)
+    && /input: steerInput,/.test(queue)
+    && /forgetQueuedInput\(entry\.clientUserMessageId\);/.test(queue),
+    "turn/steer 用本地原始 input（含图），成功后释放登记（⛔ 回落 entry.input 保底，老条目不会崩）");
+}
+
 console.log(fails ? `\n【attach-image】${checks} 条断言 / ${fails} 条失败` : `\n【attach-image】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);
