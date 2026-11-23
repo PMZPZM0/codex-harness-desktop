@@ -306,5 +306,22 @@ ok(/wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2"/.test(ruler)
     "提前 return 之后不许再调用任何 hook（#310：首次渲染少调一个、有刻度时多调一个 ⇒ 整页白屏）");
 }
 
+/* ⛔⛔ 11-23 用户实测（第二次）：「刚刚手动压缩完，还是没线」。三条都钉住：
+   ① 有证据却算不出位置时**回落末尾**（旧行为 insertBefore=-1 ⇒ 带位置判断的子句全跳过 ⇒ 静默消失）；
+   ② toast 的 threadId 以**当前会话**为准（旧写法先取 pendingRef，残留旧会话 id ⇒ threadCompactToast 判假 ⇒ 整条链断）；
+   ③ 手动压缩成功补一条气泡（锚点语义是「回合上方」，回合很长时线在视口外 ⇒ 用户以为没发生）。 */
+{
+  const p04 = read("src/features/app-state/parts/part04/01-seg.tsx");
+  const p05 = read("src/features/app-state/parts/part05/01-seg.tsx");
+  ok(/const threadId = bag\.threadRef\.current\?\.id \?\? Array\.from\(bag\.compactPendingRef\.current\)\[0\] \?\? ""/.test(p04)
+    && !/const threadId = Array\.from\(bag\.compactPendingRef\.current\)\[0\] \?\? bag\.threadRef\.current\?\.id/.test(p04),
+    "压缩 toast 的 threadId 以**当前会话**为准（⛔ 旧写法先取 pendingRef，残留旧会话 id ⇒ threadCompactToast 判假 ⇒ 线一条都不画）");
+  ok(/if \(\(cs\.state === "done" \|\| cs\.state === "compacting" \|\| Boolean\(hostCompaction\)\) && insertBefore < 0\)/.test(timeline),
+    "有压缩证据却算不出位置时回落末尾（⛔ 旧行为 insertBefore=-1 ⇒ 带位置判断的子句全跳过 ⇒ 线静默消失）");
+  ok(/const manualCompaction = bag\.compactPendingRef\.current\.has\(tid0\)/.test(p05)
+    && /if \(manualCompaction\) bag\.setNotice\("上下文压缩成功"\)/.test(p05),
+    "手动压缩成功补一条气泡（压缩线按 11-03 语义在回合上方，回合很长时在视口外 ⇒ 气泡给即时确认）");
+}
+
 console.log(fails ? `\n【compaction-anchor】${checks} 条断言 / ${fails} 条失败` : `\n【compaction-anchor】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

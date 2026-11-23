@@ -431,7 +431,11 @@ bag.addSystemEvent = addSystemEvent as typeof bag.addSystemEvent;
         : state === "cancelled"
           ? { message: "已取消压缩" }
           : { message: detail ? `上下文压缩失败：${detail}` : "上下文压缩失败" };
-    const threadId = Array.from(bag.compactPendingRef.current)[0] ?? bag.threadRef.current?.id ?? "";
+    /* ⛔⛔ 11-23 用户实测（「刚刚手动压缩完，还是没线」）：旧写法**先**取 pendingRef —— 那个集合可能
+       残留别的会话 id（上一次压缩异常退出没清），于是 toast 被挂到另一个 threadId 上；
+       timeline 的 `compactToast.threadId === thread.id` 判假 ⇒ 压缩线一条都不画。
+       压缩只可能发生在**当前会话**，当前会话才是真相源；pendingRef 只作兜底。 */
+    const threadId = bag.threadRef.current?.id ?? Array.from(bag.compactPendingRef.current)[0] ?? "";
     bag.setCompactToast({ state, message: content.message, threadId });
   }
 bag.setCompactEventState = setCompactEventState as typeof bag.setCompactEventState;
@@ -442,7 +446,8 @@ bag.setCompactEventState = setCompactEventState as typeof bag.setCompactEventSta
    *    中断时压缩的完成事件从未到达），靠事件熄灯就会永久转圈。随后再中断引擎回合。
    */
   function cancelCompaction() {
-    const threadId = Array.from(bag.compactPendingRef.current)[0] ?? bag.threadRef.current?.id ?? "";
+    /* 同上（11-23）：取消的 toast 也挂**当前会话**，别被 pendingRef 里的旧 id 带偏。 */
+    const threadId = bag.threadRef.current?.id ?? Array.from(bag.compactPendingRef.current)[0] ?? "";
     bag.compactPendingRef.current.clear();
     bag.setCompactToast({ state: "cancelled", message: "已取消压缩", threadId });
     void bag.interrupt();

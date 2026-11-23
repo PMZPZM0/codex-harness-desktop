@@ -632,6 +632,13 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                          （整组不渲染），只能靠结构定位找「它之前最近一个可见回合」；旧代码在这种
                          情况（有 id、无时间）回落 ③ ⇒ 返回 0 ⇒ 线跑到窗口**顶部**，用户同样看不见。 */
                       insertBefore = resolveCompactionAnchor(visible, boundaryTurnId, { compactionAt, ordered });
+                      /* ⛔⛔ 11-23 用户实测（第二次）：「刚刚手动压缩完，还是没线」。
+                         有压缩证据（已完成 / 进行中 / 宿主记录）却算不出插入位置时，**必须**回落末尾 ——
+                         旧行为是 `insertBefore = -1`，而下面带 `insertBefore >= 0` 的分支全被跳过
+                         ⇒ 线一条都不画。宁可放末尾（至少看得见），也不要静默消失。 */
+                      if ((cs.state === "done" || cs.state === "compacting" || Boolean(hostCompaction)) && insertBefore < 0) {
+                        insertBefore = visible.length;
+                      }
                       /* ⛔⛔ 11-03 用户令（两次澄清后定稿，原话：「运行过程的压缩线留在它产生的位置，
                          等压缩完成后，再放到回合消息上面」/「运行过程中，压缩线跟着历史消息往上走，
                          压缩先就是一个历史记录」）：

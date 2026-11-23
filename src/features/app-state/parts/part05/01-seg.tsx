@@ -387,6 +387,10 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
       } else if (method === "item/completed" && isCompactionItem(params.item)) {
         const tid0 = String(params.threadId ?? bag.threadRef.current?.id ?? "");
+        /* 11-23：手动压缩（点按钮 / 斜杠命令）才在 pendingRef 里留过这个会话 —— 自动压缩没有。
+           手动成功后补一条气泡：压缩线的锚点语义是「放到所属回合的用户消息上方」（11-03 用户令），
+           回合很长时线在视口外 ⇒ 用户会以为「压缩完什么都没发生」。气泡给即时确认，线仍是历史记录。 */
+        const manualCompaction = bag.compactPendingRef.current.has(tid0);
         bag.compactPendingRef.current.delete(tid0);
         // ⛔ 口径（09-26 用户「现在根本压缩成功不了」后重做）：**收到 completed 即认为本次压缩结束**。
         //    先 prune 收敛掉线程里其它压缩项（含可能残留的 inProgress —— started/completed 两阶段
@@ -395,6 +399,7 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         //    这是可接受的取舍，且实现与数据形状解耦。
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
         bag.setCompactEventState("success");
+        if (manualCompaction) bag.setNotice("上下文压缩成功");
         /* ⛔⛔ 11-20 用户实测：「刚压缩就弹成功，下面的『等待模型回复』这行就没了」——
            自动压缩是**内联**在用户回合里的（压缩项所在回合还有 userMessage 等真实内容），
            压缩项 completed 只是「压缩做完了」，**回合还在等模型回复**。此时调 settle 会把
