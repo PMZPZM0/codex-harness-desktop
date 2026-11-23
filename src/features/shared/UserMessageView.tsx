@@ -107,7 +107,23 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
   // 文本占位符里出现过的图片以内联 chip 渲染在正文里，附件列表去重避免双份
   const inlineImageSet = new Set(promptImagePaths(rawText));
-  const extraImages = images.filter((part: any) => !refsImagePaths.has(part.path) && !inlineImageSet.has(part.path));
+  /* ⛔⛔ 11-23 用户截图：「前面展示 chip，后面还展示了粘贴图片」—— 粘贴一张图，气泡里两颗 chip
+     （文件名 + 「粘贴的图片」）。根因：文本 token 里是**落盘路径**，而引擎回读的图片 part 往往只剩
+     data URL（没有 path，或 path 本身就是 data:），两边的去重 key 根本不是同一个东西 ⇒ 集合判空，
+     同一张图被渲染两次。
+     ⇒ 兜底规则：**没有可用路径**的图片 part 先认作文本 token 的同一张图（按文本里已内联的图片
+       数量给名额、先来先配），名额用完才补 chip。
+       ⛔ 名额只由 inlineImageSet.size 决定，不看顺序 —— part 顺序不可靠（引擎可能重排）。 */
+  let pathlessBudget = inlineImageSet.size;
+  const extraImages = images.filter((part: any) => {
+    const key = String(part?.path ?? "");
+    if (key && refsImagePaths.has(key)) return false;
+    if (key && inlineImageSet.has(key)) return false;
+    if (!key || key.startsWith("data:")) {
+      if (pathlessBudget > 0) { pathlessBudget -= 1; return false; }
+    }
+    return true;
+  });
   // 附件 chip：**内联接在正文文字之后**，与输入框里「文字 + chip」的形态逐字一致。
   // ⛔ 09-18 用户三次纠正后的定稿结论（别再走弯路）：
   //    ① 「文件和图片会在用户名字上面」→ 附件不能在名字之前；

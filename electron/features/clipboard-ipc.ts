@@ -23,6 +23,7 @@
  *   · 注册时机不变：生成物在主进程模块加载期被 import ⇒ handler 立即注册（早于 whenReady）。
  */
 import { app, clipboard, nativeImage, ClipboardItem } from "electron";
+import { shrinkAttachedImage } from "../attach-image";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,7 +67,12 @@ export const clipboardFeature = defineFeature<null>({
       await fs.mkdir(imagesDir, { recursive: true });
       const file = path.join(imagesDir, `codex-harness-${Date.now()}.png`);
       await fs.writeFile(file, buffer);
-      return file;
+      /* ⛔⛔ 11-23 用户实测「发个图片，会话直接炸了」：413 Payload Too Large（上游硬限 32MB）。
+         引擎每轮都会把**历史里的图片**重新 base64 发一遍，一张 4K 截图 base64 后 8~12MB，几张就爆；
+         爆过之后每条消息都要重新编码上传几十 MB ⇒「再发就好慢」。
+         ⇒ 粘贴落盘后立刻治理体积（长边 ≤2048 / >2MB 转 JPEG），返回**最终路径**（可能换了扩展名）。 */
+      const shrunk = await shrinkAttachedImage(file).catch(() => null);
+      return shrunk?.path ?? file;
     });
 
     /** 文本写剪贴板：走主进程 electron clipboard，不受渲染层 Clipboard API 的
