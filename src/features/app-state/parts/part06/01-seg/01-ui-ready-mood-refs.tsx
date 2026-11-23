@@ -145,7 +145,9 @@ bag.lastStreamTsRef = lastStreamTsRef as typeof bag.lastStreamTsRef;
             bag.threadRef.current = merged;
             bag.threadCacheRef.current.set(merged.id, merged);
             bag.setThread(merged);
-            // 校对确认已结束：告知界面已恢复（无关闭键，常驻可手动关的那条由事件渲染决定）
+            // 校对确认已结束：告知界面已恢复。⚠️ 这条 info 卡**没有关闭键**（时间线的 system-event
+            // 是纯 div，见 01-timeline.tsx），也没有自动清理 —— 会一直留到切会话/重启。
+            // 同一 turn 只会命中一次（落地后本地回合已结束），所以不会刷屏。
             bag.setSystemEvents((currentEvents) => [...currentEvents, { id: crypto.randomUUID(), title: "状态已同步", text: `「${staleThreadName}」的任务实际已在上游完成，界面已恢复。`, tone: "info", hookKey: `stream-settled-${staleTurnId}` }] as any);
           }
         }
