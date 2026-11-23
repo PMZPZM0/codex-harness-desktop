@@ -60,8 +60,13 @@ ok(/import \{ shrinkAttachedImage \} from "\.\.\/attach-image";/.test(clip)
 
 /* ── ③ 气泡附件去重（同一张图不许两颗 chip） ── */
 const umv = read("src/features/shared/UserMessageView.tsx");
-ok(/let pathlessBudget = inlineImageSet\.size;/.test(umv) && /if \(pathlessBudget > 0\) \{ pathlessBudget -= 1; return false; \}/.test(umv),
-  "没有路径的图片 part（引擎回读成 data URL）先认作文本 token 的同一张图 —— 按名额消耗，不再重复出 chip");
+ok(/const knownImagePaths = new Set<string>\(\[\.\.\.refsImagePaths, \.\.\.inlineImageSet\]\);/.test(umv)
+  && /let pathlessBudget = Math\.max\(0, knownImagePaths\.size - matchedPathParts\);/.test(umv)
+  && /if \(pathlessBudget > 0\) \{ pathlessBudget -= 1; return false; \}/.test(umv)
+  /* ⛔ 11-23 审查修正：名额只算 inlineImageSet 会**整体失效**（正常发送时 token 已被剥离 ⇒ 名额 0
+     ⇒ 那颗「粘贴的图片」照样出来）。必须把 `[附件文件]` 段里的图片路径（refsImagePaths）也算进名额。 */
+  && !/let pathlessBudget = inlineImageSet\.size;/.test(umv),
+  "没有路径的图片 part（引擎回读成 data URL）按「已出现过的图片路径数 − 已精确匹配的 part 数」消耗名额，不再重复出 chip（⛔ 名额必须含 refsImagePaths，否则兜底失效）");
 ok(!/const extraImages = images\.filter\(\(part: any\) => !refsImagePaths\.has\(part\.path\) && !inlineImageSet\.has\(part\.path\)\);/.test(umv),
   "⛔ 旧的单行去重已删（只比 part.path ⇒ data URL 与落盘路径永远不相等 ⇒ 双 chip 的根因）");
 

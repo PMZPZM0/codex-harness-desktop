@@ -111,10 +111,19 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
      （文件名 + 「粘贴的图片」）。根因：文本 token 里是**落盘路径**，而引擎回读的图片 part 往往只剩
      data URL（没有 path，或 path 本身就是 data:），两边的去重 key 根本不是同一个东西 ⇒ 集合判空，
      同一张图被渲染两次。
-     ⇒ 兜底规则：**没有可用路径**的图片 part 先认作文本 token 的同一张图（按文本里已内联的图片
-       数量给名额、先来先配），名额用完才补 chip。
-       ⛔ 名额只由 inlineImageSet.size 决定，不看顺序 —— part 顺序不可靠（引擎可能重排）。 */
-  let pathlessBudget = inlineImageSet.size;
+     ⇒ 兜底规则：**没有可用路径**的图片 part 先认作「同一张图已经在别处展示过」—— 名额来自
+       **所有出现过的图片路径**（正文里的图片 token + `[附件文件]` 段里的图片），再扣掉已经被
+       路径精确匹配到的 part 数，剩下的名额才吞无路径 part。
+       ⛔⛔ 11-23 审查修正（原实现只拿 inlineImageSet.size 当名额，实测**兜底直接失效**）：
+          正常发送时 token 已被 stripImageTokens 剥离 ⇒ inlineImageSet.size = 0 ⇒ 名额 0 ⇒
+          那颗「粘贴的图片」照样冒出来，等于没修。用户的图片路径实际落在 `[附件文件]` 段里（refs.files）。
+       ⛔ 不看顺序 —— part 顺序不可靠（引擎可能重排）。 */
+  const knownImagePaths = new Set<string>([...refsImagePaths, ...inlineImageSet]);
+  const matchedPathParts = images.filter((part: { path?: unknown }) => {
+    const key = String(part?.path ?? "");
+    return Boolean(key) && knownImagePaths.has(key);
+  }).length;
+  let pathlessBudget = Math.max(0, knownImagePaths.size - matchedPathParts);
   const extraImages = images.filter((part: any) => {
     const key = String(part?.path ?? "");
     if (key && refsImagePaths.has(key)) return false;
