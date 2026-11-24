@@ -348,6 +348,13 @@ export const imageLabFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("image-lab: 缺少 ipc 服务（宿主未提供）");
 
+    /* ⛔⛔ 11-25 用户实测：「生成完成时图已经在右下角图像工坊里展示过，模型又调一次
+       image_view 重新打开，等于重复弹一次」。这里记住「刚在浮窗里展示过的图」：
+       view 命中就不再发事件（不重开），只在回执里说明。
+       ⚠️ 用户**主动点 ✕** 关掉浮层时会走 `image-lab:dismiss` 清空 —— 那之后想再看就能正常重开。
+       （生成完成后的自动收起**不算**用户关，所以标记保留：用户确实已经看到了。） */
+    const shownInLab = new Set<string>();
+
     ipcHost.handle("image-lab:read", async (_event, input: { path?: string } = {}) => {
       const file = await resolveImagePath(String(input?.path ?? ""));
       const data = await fs.readFile(file);
@@ -408,10 +415,13 @@ export const imageLabFeature = defineFeature<null>({
       }
       pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "done", images: saved, note: `已生成 ${saved.length} 张` });
       pushImageLabEvent({ phase: "close", taskId: labTaskId });
+      for (const file of saved) shownInLab.add(file);
       const lines = saved.map((file, i) => `${i + 1}. ${file}`).join("\n");
       const tail = errors.length ? `\n（另有 ${errors.length} 张失败：${errors[0]}）` : "";
       const where = cwd ? "" : "\n（未指定工作目录，文件在应用数据目录的 images/ 下）";
-      return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}` };
+      /* ⛔ 明确告诉模型「已经给用户看过了」——它看不到界面，不说就会再调一次 image_view（用户实测重复弹窗）。 */
+      const shown = "\n（这几张图刚在右下角「图像工坊」里展示给用户了，不需要再调 image_view 重复展示。）";
+      return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}${shown}` };
     });
 
     /* ── 修图（工具 image_edit）：零凭证，纯本地 ───────────────────────────────── */
@@ -436,8 +446,10 @@ export const imageLabFeature = defineFeature<null>({
         });
         pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "done", images: results.map((r) => r.path), note: `已编辑 ${results.length} 张` });
         pushImageLabEvent({ phase: "close", taskId: labTaskId });
+        for (const result of results) shownInLab.add(result.path);
         const lines = results.map((r) => `${r.path}（${r.width}×${r.height}，${r.format}，${Math.round(r.bytes / 1024)}KB）`).join("\n");
-        return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}` };
+        const shown = "\n（结果刚在右下角「图像工坊」里展示给用户了，不需要再调 image_view 重复展示。）";
+        return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}${shown}` };
       } catch (error) {
         const message = String((error as Error)?.message ?? error);
         pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "error", images: [], note: message });
@@ -465,16 +477,31 @@ export const imageLabFeature = defineFeature<null>({
     });
 
     /* ── 弹浮层预览（工具 image_view）：只读展示 ─────────────────────────────────── */
-    ipcHost.handle("image-lab:view", async (_event, input: { path?: string; title?: string } = {}): Promise<LabToolResult> => {
+    ipcHost.handle("image-lab:view", async (_event, input: { path?: string; title?: string; force?: boolean } = {}): Promise<LabToolResult> => {
       try {
         const file = await resolveImagePath(String(input?.path ?? ""));
+        /* ⛔⛔ 11-25 用户令：生成/修图完成时图**已经在**右下角展示过（渲染层还会留 0.9s 让用户看清），
+           模型紧接着再调一次只是重复弹窗。命中就走回执，不再发事件。
+           用户主动点 ✕ 时渲染层会调 `image-lab:dismiss` 清标记 ⇒ 那之后要再看就能正常重开。
+           `force` 是给"用户明确说再看一次"留的出口。 */
+        if (!input?.force && shownInLab.has(file)) {
+          return { ok: true, output: `这张图刚刚已经在右下角「图像工坊」里展示给用户看过了（生成完成时就摆在那里），不需要再打开一次。若用户已经关掉、现在确实要再看，再调用时传 force=true。` };
+        }
         const labTaskId = newLabTaskId();
         // ⛔ 这里**不发 close**：这是"把图亮给用户看"，由用户自己关（自动收掉等于没看）
         pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: String(input?.title ?? "").trim() || "图像预览", status: "done", images: [file] });
+        shownInLab.add(file);
         return { ok: true, output: `已在应用内打开图像工坊预览：${file}（用户可放大查看，看完自己关）` };
       } catch (error) {
         return labFail(`无法打开图像预览：${String((error as Error)?.message ?? error)}`);
       }
+    });
+
+    /* 用户在浮窗里**主动点 ✕**（不是生成完成后的自动收起）：清掉"已展示"标记。
+       ⛔ 自动收起不能清 —— 用户确实看到了，清了模型就会重复弹。 */
+    ipcHost.handle("image-lab:dismiss", async (): Promise<{ ok: boolean }> => {
+      shownInLab.clear();
+      return { ok: true };
     });
 
     ctx.effect(() => {

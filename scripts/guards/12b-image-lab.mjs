@@ -175,7 +175,7 @@ ok(
   const declared = entry ? Number(entry[1]) : -1;
   const listed = entry ? (entry[2].match(/"[^"]+"/g) || []).length : -1;
   ok(
-    declared === 5 && declared === listed && /"image-lab:generate"/.test(registry) && /"image-lab:edit"/.test(registry),
+    declared === 6 && declared === listed && /"image-lab:generate"/.test(registry) && /"image-lab:edit"/.test(registry) && /"image-lab:dismiss"/.test(registry),
     `ipc-registry 的 image-lab 域账本自洽（count=${declared} / 列出 ${listed} 条，含 generate 与 edit）`,
   );
 }
@@ -183,6 +183,24 @@ ok(
   ["image-lab:generate", "image-lab:edit", "image-lab:info", "image-lab:view"].every((ch) => manifest.channels.some((c) => c.channel === ch)),
   "manifest 登记了四条独立通道（gen:ipc 据此生成 preload 方法）",
 );
+
+/* ⛔⛔ 11-25 用户实测：生成/修图完成时图**已经在**右下角图像工坊展示过，模型又调一次 image_view
+   重复弹窗。四件事缺一不可：① 产物登记为「已展示」；② view 命中就不再发事件（只回执）；
+   ③ 回执/工具描述要让模型知道不用再调；④ 用户主动点 ✕ 时清标记（自动收起不清 —— 用户确实看过了）。 */
+{
+  const labIpc = read("electron/features/image-lab.ts");
+  const seg08 = read("src/features/app-state/parts/part08/01-seg.tsx");
+  ok(/const shownInLab = new Set/.test(labIpc) && /for \(const file of saved\) shownInLab\.add\(file\)/.test(labIpc),
+    "生图产物登记为「已在浮窗展示过」（修图同理）");
+  ok(/if \(!input\?\.force && shownInLab\.has\(file\)\)/.test(labIpc),
+    "image_view 命中已展示的图就不再弹（force 才允许重开）");
+  ok(/image-lab:dismiss/.test(labIpc) && /shownInLab\.clear\(\)/.test(labIpc),
+    "用户主动点 ✕ 走 dismiss 清标记（⛔ 自动收起不能清，否则模型又会重复弹）");
+  ok(/imageLabDismiss\(\)/.test(modal),
+    "浮窗关闭按钮真的调了 dismiss（只有主进程 handler 没人调 = 死通道）");
+  ok(/不需要再调 image_view 重复展示|别再调/.test(labIpc) && /不需要\*\*再调本工具重复展示/.test(seg08),
+    "回执与工具描述都写清「已经展示过，不用再调」（模型看不到界面，不说就会重复调）");
+}
 
 console.log(`\n【img】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

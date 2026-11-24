@@ -1119,6 +1119,8 @@ ${st.hint}`);
                 const viewed: any = await window.codex.imageView({
                   path: String(args.path ?? ""),
                   title: args.title ? String(args.title) : undefined,
+                  /* 11-25：用户明确要求再看一次时模型会传 force —— 主进程据此跳过「已经展示过」的幂等判断。 */
+                  force: args.force === true,
                 });
                 await toolCallRespond.send(event.id!, {
                   contentItems: [{ type: "inputText", text: viewed?.ok ? String(viewed.output ?? "") : `预览失败：${viewed?.error ?? "未知原因"}` }],

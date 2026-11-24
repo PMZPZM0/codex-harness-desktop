@@ -982,7 +982,9 @@ interface Window {
     /* 图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与修图通道共用同一道闸 */
     readImage(path: string): Promise<{ data: Uint8Array; size: number }>;
     /* 在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证 */
-    imageView(input: { path: string; title?: string }): Promise<{ ok: boolean; output: string; error?: string }>;
+    imageView(input: { path: string; title?: string; force?: boolean }): Promise<{ ok: boolean; output: string; error?: string }>;
+    /* 11-25：用户**主动点 ✕** 关掉浮层时通知主进程 —— 清掉「刚展示过」标记，之后 image_view 才能重新打开（生成完成后的自动收起不调这条） */
+    imageLabDismiss(): Promise<{ ok: boolean }>;
     /* 追加一条（## HH:mm 标题 + 正文） */
     journalAppend(date: string, title: string, body: string): Promise<{ days: JournalDay[]; date: string }>;
     journalList(): Promise<{ days: JournalDay[]; dir: string; today: string }>;

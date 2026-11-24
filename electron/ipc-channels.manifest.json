@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-11-24T10:50:54.758Z",
-  "count": 724,
+  "generatedAt": "2026-11-24T19:51:49.076Z",
+  "count": 725,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -2987,11 +2987,21 @@
       "name": "imageView",
       "channel": "image-lab:view",
       "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { path: string; title?: string }",
+      "paramsDecl": "input: { path: string; title?: string; force?: boolean }",
       "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证"
+    },
+    {
+      "name": "imageLabDismiss",
+      "channel": "image-lab:dismiss",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-25：用户**主动点 ✕** 关掉浮层时通知主进程 —— 清掉「刚展示过」标记，之后 image_view 才能重新打开（生成完成后的自动收起不调这条）"
     },
     {
       "name": "journalAppend",

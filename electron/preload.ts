@@ -583,6 +583,8 @@ contextBridge.exposeInMainWorld("codex", {
   readImage: (path: string) => __ipc("image-lab:read", 1, [{ path }]),
   /* 在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证 */
   imageView: (input: unknown) => __ipc("image-lab:view", 1, [input]),
+  /* 11-25：用户**主动点 ✕** 关掉浮层时通知主进程 —— 清掉「刚展示过」标记，之后 image_view 才能重新打开（生成完成后的自动收起不调这条） */
+  imageLabDismiss: () => __ipc("image-lab:dismiss", 0, []),
   /* 追加一条（## HH:mm 标题 + 正文） */
   journalAppend: (date: string, title: string, body: string) => __ipc("journal:append", 3, [date, title, body]),
   journalList: () => __ipc("journal:list", 0, []),

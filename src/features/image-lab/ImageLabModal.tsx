@@ -222,7 +222,12 @@ export function ImageLabBridge() {
           <span className="image-lab-title" title={state.title}>{state.title}</span>
           <span className={`image-lab-status is-${state.status}`}>{statusText}</span>
           <button type="button" className="image-lab-btn" onClick={() => setMinimized(true)} title="最小化">–</button>
-          <button type="button" className="image-lab-close" onClick={() => setState(null)} title="关闭">✕</button>
+          <button type="button" className="image-lab-close" onClick={() => {
+            setState(null);
+            /* 11-25：用户**主动**关掉浮窗 ⇒ 告诉主进程清掉「刚展示过」标记 ——
+               之后模型再调 image_view 才能重新打开（生成完成后的自动收起不走这条）。 */
+            void window.codex.imageLabDismiss().catch(() => undefined);
+          }} title="关闭">✕</button>
         </div>
         <div className="image-lab-body">
           {error && <div className="image-lab-error">{error}</div>}
