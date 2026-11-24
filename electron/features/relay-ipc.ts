@@ -271,6 +271,96 @@ function registerRelayIpc(deps: RelayIpcDeps) {
     await writeRelayAccount(account);
     return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
   });
+  /* ⛔⛔ 11-24 用户实测：设置 → 中转站点登录报「中转站登录失败: tencent captcha verification failed」。
+     实测（`POST {站点}/api/v1/auth/login` 用假账号也一样）= 站点已开启腾讯 TCaptcha：登录必须先过
+     验证码，请求体要带 `tencent_captcha_ticket` + `tencent_captcha_randstr`（站点前端 LoginView 实证）。
+     而腾讯验证码校验来源域名，桌面端（`file://`）拿不到 ticket ⇒ **API 密码登录这条路对启用验证码的站点走不通**。
+     ⇒ 补一条「网页登录」：开真实站点窗口，用户在站内完成验证码/注册/支付，宿主只读
+       localStorage 的 auth_token / auth_user（与 relay:open-purchase **写**的是同一批键，这里方向相反）。
+     ⛔ 只读不写、独立 partition、沙箱；用户关窗即取消。 */
+  function relayTokenEmail(token: string): string {
+    /* 从 JWT 载荷里取邮箱：站点写入的 auth_user 偶尔为空/结构变化，用它兜底给账号起名。
+       只解码不验签 —— 这个值仅用于本地显示与去重，不参与任何鉴权判断。 */
+    const segment = String(token ?? "").split(".")[1];
+    if (!segment) return "";
+    try {
+      const json = Buffer.from(segment.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+      const payload = JSON.parse(json) as { email?: string; user_email?: string };
+      return String(payload.email ?? payload.user_email ?? "").trim();
+    } catch { return ""; }
+  }
+  let relayLoginWindow: Electron.BrowserWindow | null = null;
+  ipcHost.handle("relay:browser-login", async (_e, input: { baseUrl?: string } = {}) => {
+    const baseUrl = relayBase(input.baseUrl);
+    if (relayLoginWindow && !relayLoginWindow.isDestroyed()) {
+      relayLoginWindow.focus();
+      throw new Error("登录窗口已经打开了，请在那个窗口里完成登录");
+    }
+    const win = windowHost.create({
+      width: 620,
+      height: 820,
+      minWidth: 460,
+      minHeight: 560,
+      title: "登录 / 注册 · 中转站",
+      autoHideMenuBar: true,
+      backgroundColor: "#ffffff",
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        /* ⛔ 独立分区：站点的 localStorage 不与应用其它窗口共享，退出登录态也不会互相污染。 */
+        partition: "persist:relay-web-login",
+      },
+    });
+    relayLoginWindow = win;
+    void win.loadURL(`${baseUrl}/login`).catch((error: unknown) => {
+      console.log("[relay-web-login] 登录页加载失败:", error instanceof Error ? error.message : String(error));
+    });
+    const harvested = await new Promise<{ token: string; refresh: string; email: string } | null>((resolve) => {
+      let settled = false;
+      let poll: NodeJS.Timeout | null = null;
+      let deadline: NodeJS.Timeout | null = null;
+      const finish = (value: { token: string; refresh: string; email: string } | null) => {
+        if (settled) return;
+        settled = true;
+        if (poll) clearInterval(poll);
+        if (deadline) clearTimeout(deadline);
+        resolve(value);
+      };
+      win.once("closed", () => finish(null));
+      deadline = setTimeout(() => finish(null), 6 * 60_000);   // 注册 + 验证码 + 支付都可能要几分钟
+      poll = setInterval(() => {
+        void (async () => {
+          if (win.isDestroyed()) { finish(null); return; }
+          try {
+            const raw = await win.webContents.executeJavaScript(
+              `(() => { try { return JSON.stringify({ t: localStorage.getItem("auth_token") || "", r: localStorage.getItem("refresh_token") || "", u: localStorage.getItem("auth_user") || "" }); } catch { return ""; } })()`,
+              true,
+            );
+            const parsed = JSON.parse(String(raw || "")) as { t?: string; r?: string; u?: string };
+            if (!parsed?.t) return;
+            let email = "";
+            try { email = String((JSON.parse(String(parsed.u || "{}")) as { email?: string }).email ?? ""); } catch { /* auth_user 不是 JSON 就交给 JWT 兜底 */ }
+            finish({ token: parsed.t, refresh: String(parsed.r ?? ""), email: email.trim() });
+          } catch { /* 页面导航中执行上下文被销毁：忽略，下一拍再读 */ }
+        })();
+      }, 700);
+    });
+    if (!win.isDestroyed()) win.destroy();
+    if (relayLoginWindow === win) relayLoginWindow = null;
+    if (!harvested) throw new Error("没有完成登录（窗口被关闭或等待超时），可以重试一次");
+    const email = harvested.email || relayTokenEmail(harvested.token) || "未命名账号";
+    /* ⛔ 不写 passwordEnc：网页登录没有密码，401 时不会自动重登（会提示重新登录）。
+       这是有意的 —— 为了「自动重登」在本地多存一份密码，代价大于收益。 */
+    const account: RelayAccount = {
+      baseUrl,
+      email,
+      accessToken: harvested.token,
+      refreshToken: harvested.refresh || undefined,
+    };
+    await writeRelayAccount(account);
+    return { email, baseUrl };
+  });
   ipcHost.handle("relay:load-account", async () => {
     const account = await readRelayAccount();
     if (!account) return null;

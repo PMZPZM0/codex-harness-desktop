@@ -1132,6 +1132,31 @@
   justify-content: center;
   margin-top: 4px;
 }
+/* 11-24：站点开了腾讯验证码时密码登录走不通，这条是正路 —— 做成次要按钮（不抢主按钮视觉）。 */
+.relay-web-login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.relay-web-login-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.relay-web-login-btn:disabled {
+  cursor: progress;
+  opacity: .65;
+}
 .relay-hero {
   border: 1px solid var(--line);
   background: linear-gradient(135deg, color-mix(in srgb, var(--green) 10%, var(--panel)), var(--panel));

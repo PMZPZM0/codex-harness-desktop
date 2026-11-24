@@ -873,6 +873,8 @@ contextBridge.exposeInMainWorld("codex", {
   relayKeysAll: () => __ipc("relay:keys-all", 0, []),
   relayLoadAccount: () => __ipc("relay:load-account", 0, []),
   relayLogin: (input: { baseUrl: string; email: string; password: string }) => __ipc("relay:login", 1, [input]),
+  /* 11-24 网页登录：站点启用腾讯验证码后 API 密码登录走不通，改开真实站点窗口由用户完成验证码/注册，宿主只读 localStorage 的 auth_token */
+  relayBrowserLogin: (input: { baseUrl?: string }) => __ipc("relay:browser-login", 1, [input]),
   relayOpenPurchase: () => __ipc("relay:open-purchase", 0, []),
   relayOverview: (id?: string) => __ipc("relay:overview", 0, [id]),
   relayPaymentPlans: () => __ipc("relay:payment-plans", 0, []),

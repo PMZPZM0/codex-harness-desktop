@@ -175,5 +175,29 @@ ok(/\.provider-editor-body \.provider-form \{[\s\S]{0,120}?padding: 16px 20px 72
     "登录失败的错误文案带人话指引（连不上 = 代理没开/没生效；地区拒绝 = 换节点），⛔ 不把 reqwest 原文直接甩给用户");
 }
 
+/* ⛔⛔ 11-24 用户实测：中转站登录报 `tencent captcha verification failed`。
+   实测站点 `/api/v1/auth/login` 对假账号也先校验验证码（`tencent_captcha_ticket` + `_randstr`），
+   桌面端拿不到 ticket ⇒ 密码登录对这类站点走不通，只能走「网页登录」窗口。
+   钉四件事：通道在、窗口是沙箱 + 独立分区、只读不写 localStorage、超时/关窗都会退出。 */
+{
+  const relayIpc = read("electron/features/relay-ipc.ts");
+  ok(/ipcHost\.handle\("relay:browser-login"/.test(relayIpc)
+    && /partition: "persist:relay-web-login"/.test(relayIpc)
+    && /sandbox: true/.test(relayIpc) && /nodeIntegration: false/.test(relayIpc),
+    "中转站网页登录通道存在，窗口是独立分区 + 沙箱（⛔ 站点 localStorage 不与主窗口共享）");
+  {
+    /* 取出 executeJavaScript 的那段脚本，确认只有 getItem —— ⛔ 别把它写成注入（relay:open-purchase 才写）。 */
+    const harvest = /executeJavaScript\(([\s\S]{0,600}?)true,/.exec(relayIpc)?.[1] ?? "";
+    ok(harvest.includes('getItem("auth_token"') && !/setItem/.test(harvest),
+      "网页登录只读 localStorage（⛔ 注入 token 是支付窗口的活，两件事别混）");
+  }
+  ok(/setTimeout\(\(\) => finish\(null\), 6 \* 60_000\)/.test(relayIpc) && /win\.once\("closed", \(\) => finish\(null\)\)/.test(relayIpc),
+    "网页登录有超时与关窗退出（⛔ 不许让用户关掉窗口后主进程还挂着等）");
+  const relayLib = read("src/lib/relay.ts");
+  ok(/captcha\|turnstile\|verify_code\|验证码/.test(relayLib)
+    && /relayBrowserLogin\(\{ baseUrl: normalizeCredential\(input\.baseUrl\) \}\)/.test(relayLib),
+    "密码登录遇验证码自动转网页登录（⛔ 只在这一处收口：登录页 / 引导弹窗 / 面板共用同一实现）");
+}
+
 console.log(`\n【provider-setup】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

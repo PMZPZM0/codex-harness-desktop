@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（123 个能力域 / 723 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（123 个能力域 / 724 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -223,9 +223,9 @@ QQ 通道
 内置模型供应商目录（读/存/探测/图像模型）
 通道：builtin:generate-image, builtin:probe, builtin:read, builtin:save
 
-### relay（16 通道）
+### relay（17 通道）
 账号库（OpenAI 账号多账号管理：导入/切换/启停/用量概览）
-通道：relay:login, relay:load-account, relay:accounts, relay:toggle-account, relay:switch-account, relay:remove-account, relay:overview, relay:create-key, relay:select, relay:key-billing, relay:register, relay:payment-plans, relay:open-purchase, relay:keys-all, relay:delete-key, relay:update-key-group
+通道：relay:browser-login, relay:login, relay:load-account, relay:accounts, relay:toggle-account, relay:switch-account, relay:remove-account, relay:overview, relay:create-key, relay:select, relay:key-billing, relay:register, relay:payment-plans, relay:open-purchase, relay:keys-all, relay:delete-key, relay:update-key-group
 
 ### openfilm（12 通道）
 OpenFilm 视频剪辑（第三方开源 github.com/openfilm/openfilm，MIT + 商标条款）对接：设置 → 工具页可**按需下载**命令行与渲染引擎（npm 走 npmmirror、Chromium 走 cdn.npmmirror，失败自动回官方），可卸载、可查最新版（自动更新三档）。数据面只有状态/安装/卸载/查版本；⛔ 不内置上游二进制，卸载只删运行时、不碰用户 film 目录

@@ -89,20 +89,47 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
       setErr("模型自动配置失败：" + (e.message ?? e) + "。可在下方密钥列表手动选择一把 key 重试。");
     }
   };
+  /** 登录成功后的共同收尾（密码登录与网页登录都走这里，别各写一份）。 */
+  const afterLogin = async () => {
+    setDraft((d) => ({ ...d, password: "" }));
+    const acc = await window.codex.relayLoadAccount();
+    if (!acc?.loggedIn) return;
+    setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+    onNotice("中转站登录成功，正在自动配置模型…");
+    setLoginModalOpen(false);
+    void reloadAccounts();
+    await autoConfigure();
+  };
+  /**
+   * 网页登录：站点启用腾讯验证码后，账号密码直连会被服务端拒（`tencent captcha verification failed`），
+   * 而桌面端拿不到验证码 ticket ⇒ 开站点窗口让用户在网页里完成（含验证码/注册），宿主抓登录态。
+   */
+  const browserLogin = async () => {
+    setWorking("web-login"); setErr("");
+    try {
+      await window.codex.relayBrowserLogin({ baseUrl: draft.baseUrl });
+      await afterLogin();
+    } catch (e: unknown) {
+      setErr(String((e as { message?: unknown })?.message ?? e).replace(/^Error invoking remote method '[^']+':\s*/i, ""));
+    } finally { setWorking(""); }
+  };
   const login = async () => {
     setWorking("login"); setErr("");
     try {
       await window.codex.relayLogin({ baseUrl: draft.baseUrl, email: draft.email, password: draft.password });
-      setDraft((d) => ({ ...d, password: "" }));
-      const acc = await window.codex.relayLoadAccount();
-      if (acc?.loggedIn) {
-        setAccount({ baseUrl: acc.baseUrl, email: acc.email });
-        onNotice("中转站登录成功，正在自动配置模型…");
-        setLoginModalOpen(false);
-        void reloadAccounts();
-        await autoConfigure();
+      await afterLogin();
+    } catch (e: any) {
+      const msg = String(e?.message ?? e).replace(/^Error invoking remote method '[^']+':\s*/i, "");
+      /* ⛔ 不再只丢一句「登录失败」：站点开了验证码时密码登录**必然**失败，
+         直接把网页登录打开，用户少走一步（这就是 11-24 卡住的那条）。 */
+      if (/captcha|turnstile|verify_code|验证码|邮箱验证/i.test(msg)) {
+        setErr("这个站点要求验证码，已为你打开网页登录，在窗口里完成即可。");
+        /* 推迟一拍：让本轮 login 的 finally 先跑（否则它会把 browserLogin 刚设的 working 清掉）。 */
+        window.setTimeout(() => { void browserLogin(); }, 0);
+        return;
       }
-    } catch (e: any) { setErr(e.message ?? "登录失败"); } finally { setWorking(""); }
+      setErr(msg || "登录失败");
+    } finally { setWorking(""); }
   };
   const switchAccount = async (id: string) => {
     setWorking(`acc${id}`); setErr("");
@@ -404,5 +431,5 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
   }, [overview]);
   const maskKey = (key: string) => key.length > 14 ? `${key.slice(0, 10)}••••••••${key.slice(-4)}` : key;
 
-  return { busy, activeProvider, onActivate, onNotice, onOpenModelSettings, openAppConfirm, account, setAccount, draft, setDraft, overview, setOverview, err, setErr, working, setWorking, active, isActiveProvider, refreshing, setRefreshing, load, accounts, setAccounts, manageOpen, setManageOpen, loginModalOpen, setLoginModalOpen, reloadAccounts, isLiveRow, autoConfigure, login, switchAccount, removeAccount, toggleAccount, openManage, switchTarget, subs, progress, showKeyForm, setShowKeyForm, newKey, setNewKey, creatingKey, setCreatingKey, keyGroups, setKeyGroups, collapsedGroups, setCollapsedGroups, keysCollapsed, setKeysCollapsed, loadKeyGroups, AFF_CODE, authTab, setAuthTab, regDraft, setRegDraft, plansOpen, setPlansOpen, plans, setPlans, plansLoading, setPlansLoading, plansErr, setPlansErr, watching, setWatching, watchRef, subChangeKey, stopWatch, verifyPayment, startWatch, openPurchase, openPlans, register, groupNameOf, createKey, useKeyFromGroup, keyManage, setKeyManage, changeKeyGroup, deleteKey, keyVisible, setKeyVisible, currentKey, maskKey };
+  return { busy, activeProvider, onActivate, onNotice, onOpenModelSettings, openAppConfirm, account, setAccount, draft, setDraft, overview, setOverview, err, setErr, working, setWorking, active, isActiveProvider, refreshing, setRefreshing, load, accounts, setAccounts, manageOpen, setManageOpen, loginModalOpen, setLoginModalOpen, browserLogin, reloadAccounts, isLiveRow, autoConfigure, login, switchAccount, removeAccount, toggleAccount, openManage, switchTarget, subs, progress, showKeyForm, setShowKeyForm, newKey, setNewKey, creatingKey, setCreatingKey, keyGroups, setKeyGroups, collapsedGroups, setCollapsedGroups, keysCollapsed, setKeysCollapsed, loadKeyGroups, AFF_CODE, authTab, setAuthTab, regDraft, setRegDraft, plansOpen, setPlansOpen, plans, setPlans, plansLoading, setPlansLoading, plansErr, setPlansErr, watching, setWatching, watchRef, subChangeKey, stopWatch, verifyPayment, startWatch, openPurchase, openPlans, register, groupNameOf, createKey, useKeyFromGroup, keyManage, setKeyManage, changeKeyGroup, deleteKey, keyVisible, setKeyVisible, currentKey, maskKey };
 }

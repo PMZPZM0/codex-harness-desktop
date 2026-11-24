@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-11-22T11:06:06.513Z",
-  "count": 723,
+  "generatedAt": "2026-11-24T10:50:54.758Z",
+  "count": 724,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -4759,6 +4759,16 @@
       "invokeArgs": "input",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "relayBrowserLogin",
+      "channel": "relay:browser-login",
+      "paramsImpl": "input: { baseUrl?: string }",
+      "paramsDecl": "input: { baseUrl?: string }",
+      "returns": "Promise<{ email: string; baseUrl: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-24 网页登录：站点启用腾讯验证码后 API 密码登录走不通，改开真实站点窗口由用户完成验证码/注册，宿主只读 localStorage 的 auth_token"
     },
     {
       "name": "relayOpenPurchase",

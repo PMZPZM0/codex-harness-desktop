@@ -229,11 +229,24 @@ export async function performRelayLogin(input: {
       await window.codex.relayLogin({ baseUrl: normalizeCredential(input.baseUrl), email, password });
     } catch (error: any) {
       const reason = relayReason(error, "账号或密码不正确");
-      // 「邮箱或密码不对」是站点最不可自证的一句话：带上网关主机名 + 可操作提示（10-09 实测）
-      const message = /invalid email or password|INVALID_CREDENTIALS|账号或密码/i.test(reason)
-        ? credentialRejectedHint(reason, hostOf(input.baseUrl))
-        : `中转站登录失败（${hostOf(input.baseUrl)}）：${reason}`;
-      return { ok: false, message };
+      /* ⛔⛔ 11-24 用户实测：站点开启腾讯验证码后，登录**一定**先被服务端拒
+         （`tencent captcha verification failed`，假账号也一样 = 它先校验验证码再看账号），
+         而桌面端在 `file://` 下拿不到验证码 ticket ⇒ 密码这条路对这类站点根本走不通。
+         ⇒ 直接转「网页登录」：开站点窗口让用户过验证码，宿主抓登录态；成功就继续原有收尾。
+         ⛔ 放在这里而不是每个调用方：登录页 / 引导弹窗 / 面板共用这一个函数，一处收口才不漏。 */
+      if (/captcha|turnstile|verify_code|验证码/i.test(reason)) {
+        try {
+          await window.codex.relayBrowserLogin({ baseUrl: normalizeCredential(input.baseUrl) });
+        } catch (webError: unknown) {
+          return { ok: false, message: `这个站点要求验证码，网页登录没完成：${relayReason(webError, "窗口已关闭")}` };
+        }
+      } else {
+        // 「邮箱或密码不对」是站点最不可自证的一句话：带上网关主机名 + 可操作提示（10-09 实测）
+        const message = /invalid email or password|INVALID_CREDENTIALS|账号或密码/i.test(reason)
+          ? credentialRejectedHint(reason, hostOf(input.baseUrl))
+          : `中转站登录失败（${hostOf(input.baseUrl)}）：${reason}`;
+        return { ok: false, message };
+      }
     }
   }
   try {

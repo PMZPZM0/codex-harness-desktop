@@ -1273,6 +1273,8 @@ interface Window {
     relayKeysAll(): Promise<{ id: string; email: string; baseUrl: string; active: boolean; selectedKeyId: number | null; keys: any[]; error?: string }[]>;
     relayLoadAccount(): Promise<{ baseUrl: string; email: string; loggedIn: boolean; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyName: string | null } | null>;
     relayLogin(input: { baseUrl: string; email: string; password: string }): Promise<{ email: string; baseUrl: string; balance: number }>;
+    /* 11-24 网页登录：站点启用腾讯验证码后 API 密码登录走不通，改开真实站点窗口由用户完成验证码/注册，宿主只读 localStorage 的 auth_token */
+    relayBrowserLogin(input: { baseUrl?: string }): Promise<{ email: string; baseUrl: string }>;
     relayOpenPurchase(): Promise<{ ok: boolean; url: string }>;
     relayOverview(id?: string): Promise<{ baseUrl: string; email: string; balance: number; subscriptions: any[]; keys: any[]; groups: any[]; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyId: number | null; selectedKeyName: string | null }>;
     relayPaymentPlans(): Promise<any[]>;

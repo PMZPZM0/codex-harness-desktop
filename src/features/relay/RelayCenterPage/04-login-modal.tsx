@@ -2,12 +2,13 @@
  * RelayCenterPageLoginModal —— RelayCenterPage 的 JSX 第 4 段（09-22 从 RelayCenterPage.tsx 分出，纯搬迁）。
  * ⛔ props 类型由 TypeChecker 从**原作用域**推断（不是 any）⇒ 静态检查强度不降。
  */
-import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn, Globe } from "lucide-react";
 import { RelayModal } from "./relay-modal";
 import { Spinner } from "../../../components/CardShell";
 
 type Props = {
   authTab: "login" | "register";
+  browserLogin: () => Promise<void>;
   draft: { baseUrl: string; email: string; password: string; };
   login: () => Promise<void>;
   loginModalOpen: boolean;
@@ -22,7 +23,7 @@ type Props = {
 };
 
 /** 中转站登录/注册弹窗（同一外壳切两个 tab）。 */
-export function RelayCenterPageLoginModal({ authTab, draft, login, loginModalOpen, regDraft, register, setAuthTab, setDraft, setErr, setLoginModalOpen, setRegDraft, working }: Props) {
+export function RelayCenterPageLoginModal({ authTab, browserLogin, draft, login, loginModalOpen, regDraft, register, setAuthTab, setDraft, setErr, setLoginModalOpen, setRegDraft, working }: Props) {
   return (
     loginModalOpen && (
             <RelayModal onClose={() => setLoginModalOpen(false)}>
@@ -42,6 +43,11 @@ export function RelayCenterPageLoginModal({ authTab, draft, login, loginModalOpe
                     <label className="se-field"><span>邮箱</span><input value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} placeholder="你在中转站的账号邮箱" /></label>
                     <label className="se-field"><span>密码</span><input type="password" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder="账号密码" onKeyDown={(event) => { if (event.key === "Enter" && draft.email && draft.password) void login(); }} /></label>
                     <button className="primary-setting relay-login-btn" disabled={working === "login" || !draft.email || !draft.password} onClick={() => void login()}>{working === "login" ? <><Spinner />正在登录…</> : <><LogIn size={15} />登录并自动配置</>}</button>
+                    {/* ⛔ 11-24：站点开了腾讯验证码后，上面的密码登录**必然**被服务端拒
+                        （先校验验证码再看账号），所以这条不是"备选"而是"正路"。 */}
+                    <button type="button" className="relay-web-login-btn" disabled={working === "web-login"} onClick={() => void browserLogin()}>
+                      <Globe size={14} />{working === "web-login" ? "在弹窗里完成登录…" : "站点要求验证码？改用网页登录"}
+                    </button>
                   </>
                 ) : (
                   <>
