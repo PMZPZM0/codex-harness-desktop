@@ -191,18 +191,24 @@ ok(
   const labIpc = read("electron/features/image-lab.ts");
   const seg08 = read("src/features/app-state/parts/part08/01-seg.tsx");
   ok(/const shownInLab = new Map<string, number>/.test(labIpc)
-    && /for \(const file of saved\) shownInLab\.set\(file, Date\.now\(\)\)/.test(labIpc)
-    && /for \(const result of results\) shownInLab\.set\(result\.path, Date\.now\(\)\)/.test(labIpc),
+    && /for \(const file of saved\) shownInLab\.set\(labKeyOf\(file\), Date\.now\(\)\)/.test(labIpc)
+    && /for \(const result of results\) shownInLab\.set\(labKeyOf\(result\.path\), Date\.now\(\)\)/.test(labIpc),
     "生图/修图产物登记为「刚在浮窗展示过」（带时间戳）");
   /* ⛔⛔ 11-25 回归：幂等**不能永久生效** —— 用户过一会儿说「重新打开我看看」也必须能开。 */
   ok(/SHOWN_WINDOW_MS = (\d+)_000/.test(labIpc), "幂等是短时间窗而不是永久（⛔ 永久 = 用户后来要求重开永远打不开）");
-  ok(/const shownAt = shownInLab\.get\(file\)/.test(labIpc) && /Date\.now\(\) - shownAt < SHOWN_WINDOW_MS/.test(labIpc),
+  ok(/const shownAt = shownInLab\.get\(labKeyOf\(file\)\)/.test(labIpc) && /Date\.now\(\) - shownAt < SHOWN_WINDOW_MS/.test(labIpc),
     "image_view 命中已展示的图就不再弹（force 才允许重开）");
   ok(/image-lab:dismiss/.test(labIpc) && /shownInLab\.clear\(\)/.test(labIpc),
     "用户主动点 ✕ 走 dismiss 清标记（⛔ 自动收起不能清，否则模型又会重复弹）");
+  /* ⛔⛔ 11-25 用户第三次反馈：「生成完成后系统把浮窗关了，模型以为没开过又调一次」。
+     成品要**留在浮窗里**（用户自己关），只有失败才自动收 —— close 事件只该剩失败那两处。 */
+  ok((labIpc.match(/phase: "close"/g) || []).length === 2,
+    "生图/修图成功后不再自动收起浮窗（close 只剩失败分支两处）");
+  ok(/成品现在正显示在右下角/.test(labIpc),
+    "回执说的是「正在显示」（⛔ 写「刚展示过」模型会以为已经收了，照样重复调）");
   ok(/imageLabDismiss\(\)/.test(modal),
     "浮窗关闭按钮真的调了 dismiss（只有主进程 handler 没人调 = 死通道）");
-  ok(/不需要再调 image_view 重复展示|别再调/.test(labIpc) && /不需要\*\*再调本工具重复展示/.test(seg08),
+  ok(/不要再调 image_view 重复展示|别再调/.test(labIpc) && /不需要\*\*再调本工具重复展示/.test(seg08),
     "回执与工具描述都写清「已经展示过，不用再调」（模型看不到界面，不说就会重复调）");
 }
 

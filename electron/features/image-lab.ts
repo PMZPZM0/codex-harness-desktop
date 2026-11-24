@@ -357,6 +357,9 @@ export const imageLabFeature = defineFeature<null>({
     /* 幂等只在「刚展示过」的短窗口内生效（模型紧接着重复调用的场景）。
        ⛔ 不能永久生效：用户过一会儿说「重新打开我看看」，那也是合法的展示（用户实测被永久挡掉 ⇒ 以为浮窗被关了）。 */
     const SHOWN_WINDOW_MS = 45_000;
+    /** 「是否同一张图」的比较键：resolve 一次 + 小写 —— 生图侧是 path.join、view 侧是 path.resolve，
+     *  盘符大小写/分隔符不一致时直接比字符串会判不出来（实测就是这么漏的）。 */
+    const labKeyOf = (file: string) => path.resolve(String(file ?? "")).toLowerCase();
 
     ipcHost.handle("image-lab:read", async (_event, input: { path?: string } = {}) => {
       const file = await resolveImagePath(String(input?.path ?? ""));
@@ -416,14 +419,15 @@ export const imageLabFeature = defineFeature<null>({
         pushImageLabEvent({ phase: "close", taskId: labTaskId });
         return labFail(`生成失败：${errors[0] ?? "未知错误"}`);
       }
-      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "done", images: saved, note: `已生成 ${saved.length} 张` });
-      pushImageLabEvent({ phase: "close", taskId: labTaskId });
-      for (const file of saved) shownInLab.set(file, Date.now());
+      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", title: "图像工坊 · 生成结果", status: "done", images: saved, note: `已生成 ${saved.length} 张` });
+      /* ⛔⛔ 11-25 用户实测（第三次同类反馈）：「生成完成后系统把浮窗关了，模型就以为没开过，又调一次」。
+         自动收起会让成品立刻消失 ⇒ 模型有理由重开、用户也看不着。成品**留在浮窗里**，由用户自己关（✕ / 最小化）。 */
+      for (const file of saved) shownInLab.set(labKeyOf(file), Date.now());
       const lines = saved.map((file, i) => `${i + 1}. ${file}`).join("\n");
       const tail = errors.length ? `\n（另有 ${errors.length} 张失败：${errors[0]}）` : "";
       const where = cwd ? "" : "\n（未指定工作目录，文件在应用数据目录的 images/ 下）";
       /* ⛔ 明确告诉模型「已经给用户看过了」——它看不到界面，不说就会再调一次 image_view（用户实测重复弹窗）。 */
-      const shown = "\n（这几张图刚在右下角「图像工坊」里展示给用户了，不需要再调 image_view 重复展示。）";
+      const shown = "\n（成品现在正显示在右下角「图像工坊」里，用户能看见 —— 不要再调 image_view 重复展示；用户关掉之后才需要。）";
       return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}${shown}` };
     });
 
@@ -447,11 +451,11 @@ export const imageLabFeature = defineFeature<null>({
           format: input?.format ? (String(input.format) as ImageFormat) : undefined,
           quality: input?.quality !== undefined ? Number(input.quality) : undefined,
         });
-        pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "done", images: results.map((r) => r.path), note: `已编辑 ${results.length} 张` });
-        pushImageLabEvent({ phase: "close", taskId: labTaskId });
-        for (const result of results) shownInLab.set(result.path, Date.now());
+        pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", title: "图像工坊 · 编辑结果", status: "done", images: results.map((r) => r.path), note: `已编辑 ${results.length} 张` });
+        /* 同 generate：成品留着，别自动收（11-25 用户令）。 */
+        for (const result of results) shownInLab.set(labKeyOf(result.path), Date.now());
         const lines = results.map((r) => `${r.path}（${r.width}×${r.height}，${r.format}，${Math.round(r.bytes / 1024)}KB）`).join("\n");
-        const shown = "\n（结果刚在右下角「图像工坊」里展示给用户了，不需要再调 image_view 重复展示。）";
+        const shown = "\n（结果现在正显示在右下角「图像工坊」里，用户能看见 —— 不要再调 image_view 重复展示。）";
         return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}${shown}` };
       } catch (error) {
         const message = String((error as Error)?.message ?? error);
@@ -487,16 +491,16 @@ export const imageLabFeature = defineFeature<null>({
            模型紧接着再调一次只是重复弹窗。命中就走回执，不再发事件。
            用户主动点 ✕ 时渲染层会调 `image-lab:dismiss` 清标记 ⇒ 那之后要再看就能正常重开。
            `force` 是给"用户明确说再看一次"留的出口。 */
-        const shownAt = shownInLab.get(file) ?? 0;
+        const shownAt = shownInLab.get(labKeyOf(file)) ?? 0;
         if (!input?.force && shownAt && Date.now() - shownAt < SHOWN_WINDOW_MS) {
           /* ⛔ 回执必须说清「这次没有打开」——上一版写成「已经在…展示过」，模型据此回了
              「已经重新打开了」，用户看到浮窗没出来，以为被关了。 */
-          return { ok: true, output: `这张图刚在右下角「图像工坊」里展示过（几十秒前），所以这次**没有再打开**。用户现在要再看的话，重调一次并传 force=true。` };
+          return { ok: true, output: `这张图现在正显示在右下角「图像工坊」里（刚展示过），所以这次**没有再打开**。用户关掉之后要再看，重调一次并传 force=true 即可。` };
         }
         const labTaskId = newLabTaskId();
         // ⛔ 这里**不发 close**：这是"把图亮给用户看"，由用户自己关（自动收掉等于没看）
         pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: String(input?.title ?? "").trim() || "图像预览", status: "done", images: [file] });
-        shownInLab.set(file, Date.now());
+        shownInLab.set(labKeyOf(file), Date.now());
         return { ok: true, output: `已在应用内打开图像工坊预览：${file}（用户可放大查看，看完自己关）` };
       } catch (error) {
         return labFail(`无法打开图像预览：${String((error as Error)?.message ?? error)}`);
