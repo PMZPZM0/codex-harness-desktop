@@ -7,6 +7,7 @@ import { WidgetCard } from "../../components/GenerativeWidget";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { openImageLightbox } from "../../lib/ui-channels";
+import { imageUrl } from "../../lib/image-url";
 import { useCodeSettings, codeFontSize } from "../../lib/code-settings";
 import { highlightCacheKey } from "../../lib/code-highlight-cache.mjs";
 import { HIGHLIGHT_CACHE } from "../../lib/highlight-cache";
@@ -324,7 +325,13 @@ export const MD_COMPONENTS: Components = {
   },
   a: ({ href, children }) => <MarkdownAnchor href={href}>{children}</MarkdownAnchor>,
   img: ({ src, alt }) => {
-    return <img className="message-image" src={src} alt={alt ?? ""} onClick={() => src && openImageLightbox(src, alt ?? "")} />;
+    /* ⛔⛔ 11-25 用户实测「直接全是破图」：模型写的是 `![戈壁滩](D:\测试\…\x.png)` ——
+       **本地绝对路径**。原样丢给 <img src> 会被浏览器当相对 URL
+       （解析成 file:///…/dist/D:\测试\…）⇒ 必然裂成破图。本地路径必须走 harness-image 协议；
+       http(s)/data/blob/harness-image 由 imageUrl 原样放行，不受影响。 */
+    const raw = String(src ?? "").trim();
+    if (!raw) return null;
+    return <img className="message-image" src={imageUrl(raw)} alt={alt ?? ""} onClick={() => openImageLightbox(raw, alt ?? "")} />;
   },
   code: MdCode,
   table: ({ children }) => <MdTable>{children}</MdTable>,

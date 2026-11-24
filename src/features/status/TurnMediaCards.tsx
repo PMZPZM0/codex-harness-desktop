@@ -14,7 +14,7 @@ import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { useState } from "react";
 import { isVideoPath, mediaDisplaySrc } from "../../lib/media-kind.mjs";
 import { isImagePath } from "../../lib/is-image-path";
-import { imageUrl } from "../../lib/image-url";
+import { imageUrl, retryLocalImage } from "../../lib/image-url";
 import { openImageLightbox, openMediaPreview, notifyToast } from "../../lib/ui-channels";
 
 export type TurnMediaFile = { path: string; deletedFile?: boolean };
@@ -140,7 +140,7 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
               onClick={() => open(file)}
             >
               <span className="turn-media-thumb">
-                <img src={imageUrl(file.path)} alt={name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                <img src={imageUrl(file.path)} alt={name} loading="eager" onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageUrl(file.path))} />
                 <span className="turn-media-play"><ImageIcon size={14} /></span>
               </span>
               <span className="turn-media-meta"><b title={file.path}>{name}</b><small>图片</small></span>

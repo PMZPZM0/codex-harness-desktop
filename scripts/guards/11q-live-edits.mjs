@@ -747,5 +747,21 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "模块加载时回填并合并进 reports（⛔ 只回填 generatedByTurn = 汇总卡读不到）");
 }
 
+/* ⛔⛔ 11-25 用户实测「直接全是破图」：模型写的 `![alt](D:\路径.png)` 是本地绝对路径，
+   原样当 <img src> 会被浏览器当相对 URL（file:///…/dist/D:\…）⇒ 必裂；
+   同时缩略图 onError 一按 display:none 就永久空白（一次 abort 之后再也回不来）。
+   两件事各钉一条：① 正文 markdown 图必须过 imageUrl；② 失败要走重试而不是直接隐藏。 */
+{
+  const md = read("src/features/markdown/Markdown.tsx");
+  const media = read("src/features/status/TurnMediaCards.tsx");
+  const imgUrl = read("src/lib/image-url.ts");
+  ok(/img:\s*\(\{ src, alt \}\)[\s\S]{0,600}?imageUrl\(raw\)/.test(md),
+    "正文 markdown 图片过 imageUrl（⛔ 原样 src=本地路径 ⇒ 一律破图）");
+  ok(/export function retryLocalImage/.test(imgUrl) && /dataset\.retried/.test(imgUrl),
+    "图片失败有一次性重试（⛔ 一次 abort 就 display:none = 永久空白）");
+  ok(/onError=\{\(event\) => retryLocalImage\(/.test(media),
+    "本轮媒体缩略图走同一套重试（不再自己写第二份 onError）");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

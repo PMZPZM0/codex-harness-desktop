@@ -17,7 +17,7 @@ import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { TurnMediaCards } from "./TurnMediaCards";
 import { TurnDocCards } from "./TurnDocCards";
 import { openImageLightbox } from "../../lib/ui-channels";
-import { imageUrl } from "../../lib/image-url";
+import { imageUrl, retryLocalImage } from "../../lib/image-url";
 import { isImagePath } from "../../lib/is-image-path";
 import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
@@ -209,7 +209,7 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
                 }}
                 onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: file.path, name }); }}>
                 {isImagePath(file.path)
-                  ? <span className="completed-file-thumb"><img src={imageUrl(file.path)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} /></span>
+                  ? <span className="completed-file-thumb"><img src={imageUrl(file.path)} alt="" loading="eager" onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageUrl(file.path))} /></span>
                   : <FileTypeIcon path={file.path} size={15} className="completed-file-icon" />}
                 <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
                 <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : file.newFile ? <b className="completed-file-new">新增</b> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
