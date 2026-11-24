@@ -110,10 +110,18 @@ export function ImageLabBridge() {
         <div className="image-lab-body">
           {error && <div className="image-lab-error">{error}</div>}
           {!error && urls.length === 0 && (
-            <div className="image-lab-empty">
-              {state.status === "running" ? "正在准备画面…" : "没有可显示的图像"}
-              {state.note && <div className="image-lab-note">{state.note}</div>}
-            </div>
+            state.status === "running" ? (
+              /* 11-24 用户令：生成中不要"转圈等"，用模糊脉冲块表示画面正在成形（Pulse）；
+                 图到之后由 .image-lab-image 的 reveal 动画揭开（见 33-image-lab.css）。 */
+              <div className="image-lab-pulse" role="status" aria-label={state.mode === "generate" ? "正在生成图像" : "正在处理图像"}>
+                <span className="image-lab-pulse-cap">{state.mode === "generate" ? "画面正在成形…" : "处理中…"}</span>
+              </div>
+            ) : (
+              <div className="image-lab-empty">
+                没有可显示的图像
+                {state.note && <div className="image-lab-note">{state.note}</div>}
+              </div>
+            )
           )}
           {!error && urls.length > 0 && (
             <div className="image-lab-grid">

@@ -19,3 +19,78 @@
 .image-lab-note { color: var(--muted); font-size: 12px; max-width: 60ch; }
 .image-lab-error { color: #cf222e; font-size: 13px; text-align: center; padding: 20px; }
 .image-lab-foot { flex: none; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+/* ── 11-24 用户令：「生图的时候对话框加一个 Blur Pulse to Reveal，做好看一点」
+   两段动效，各自只做一件事：
+   · Pulse（生成中）：两团模糊主色缓慢呼吸 —— 表示"正在成形"，而不是转圈等；
+   · Reveal（图到）：从模糊 + 轻微放大 + 低不透明 → 清晰，配合一次斜向高光扫过。
+   ⛔ 时长带：呼吸 2.6s（视作环境动效，不抢注意力）、揭晓 680ms（一次性，用户能感知到"揭开"）；
+     两者都尊重 prefers-reduced-motion（关掉动画只留静态底）。 */
+.image-lab-pulse {
+  position: relative;
+  width: min(520px, 84%);
+  aspect-ratio: 16 / 10;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 62%),
+    radial-gradient(circle at 72% 68%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 58%),
+    var(--panel);
+  filter: blur(0.2px);
+  animation: image-lab-breathe 2.6s ease-in-out infinite;
+}
+/* 呼吸感只作用在内部色团上，容器本身不缩放 —— 否则边框会跟着抖，看着像在加载失败重排。 */
+.image-lab-pulse::before,
+.image-lab-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 32%, transparent), transparent 64%);
+  filter: blur(34px);
+  animation: image-lab-drift 2.6s ease-in-out infinite;
+}
+.image-lab-pulse::after {
+  inset: 12% -10% -22% 40%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 20%, transparent), transparent 66%);
+  animation-delay: -1.3s;
+}
+.image-lab-pulse-cap {
+  position: absolute;
+  inset: auto 0 12px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: .04em;
+}
+@keyframes image-lab-breathe {
+  0%, 100% { opacity: .82; }
+  50% { opacity: 1; }
+}
+@keyframes image-lab-drift {
+  0%, 100% { transform: translate3d(-4%, -2%, 0) scale(1); }
+  50% { transform: translate3d(4%, 3%, 0) scale(1.12); }
+}
+
+/* Reveal：图挂载即从「雾里」揭开。
+   ⛔ 用 animation（挂载必跑）而不是「onLoad 加 class + 初始 opacity:0」——
+      图片走 blob/缓存时 onLoad 可能先于 React 绑定触发，那样图会**永远隐形**。
+      动画带 forwards 的终态，就算中途被打断也停在清晰态。 */
+.image-lab-image {
+  animation: image-lab-reveal 680ms cubic-bezier(.22, .61, .36, 1) both, image-lab-shine 720ms ease-out 1;
+}
+@keyframes image-lab-reveal {
+  from { opacity: 0; filter: blur(18px) saturate(.85); transform: scale(1.045); }
+  to { opacity: 1; filter: blur(0) saturate(1); transform: scale(1); }
+}
+@keyframes image-lab-shine {
+  0% { box-shadow: inset 0 0 0 0 transparent; }
+  40% { box-shadow: inset 0 0 42px -12px color-mix(in srgb, var(--accent) 45%, transparent); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-lab-pulse, .image-lab-pulse::before, .image-lab-pulse::after { animation: none; }
+  .image-lab-image { animation: none; }
+}
