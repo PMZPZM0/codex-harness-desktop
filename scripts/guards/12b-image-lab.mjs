@@ -153,6 +153,16 @@ ok(
   stylesEntry.includes("styles/33-image-lab") && /image-lab-layer/.test(css) && !/image-lab-backdrop/.test(css),
   "styles.css 引入 33-image-lab，且浮层是非模态浮窗（⛔ 不许退回整屏遮罩 —— 会挡住对话框）",
 );
+/* 11-24 用户：「这个图没有点击预览功能，鼠标放上去可以动态展示一个放大镜效果」
+   ⛔ 两条都要钉：只有 hover 效果不能点 = 还是看不了大图；只有点击没有视觉反馈 = 用户不知道能点。 */
+ok(
+  /image-lab-shot/.test(modal) && /openImageLightbox\(/.test(modal),
+  "结果图点开走既有图片灯箱（⛔ 别在这里自己写第二套预览浮层）",
+);
+ok(
+  /image-lab-shot/.test(css) && /image-lab-zoom/.test(css) && /--mx/.test(css) && /prefers-reduced-motion/.test(css),
+  "放大镜悬停效果齐备（容器缩放 + 跟随指针柔光 + 徽标，且尊重减少动态效果）",
+);
 
 /* ── ⑥ 接线生成物：域表 / 账本 ── */
 ok(

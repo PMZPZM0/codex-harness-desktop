@@ -7,7 +7,9 @@
 // ⛔ 单通道三态：open（弹出）/ update（换状态与图）/ close（收起）。close 后**先亮一下最终结果**
 //    再卸载（~900ms）——否则"编辑很快"的工具会让浮层一闪而过，用户根本看不清。
 import { useEffect, useRef, useState } from "react";
+import { ZoomIn } from "lucide-react";
 import { ImageGenFx } from "./ImageGenFx";
+import { openImageLightbox } from "../../lib/ui-channels";
 
 type LabEvent = {
   phase: "open" | "update" | "close";
@@ -244,9 +246,39 @@ export function ImageLabBridge() {
           )}
           {!error && urls.length > 0 && (
             <div className="image-lab-grid">
-              {urls.map((url, index) => (
-                <img key={url} className="image-lab-image" src={url} alt={`结果 ${index + 1}`} />
-              ))}
+              {urls.map((url, index) => {
+                /* 点开大图要用**原始文件路径**（灯箱按路径读图），blob URL 只负责这里的小图。 */
+                const sourcePath = state.images[index] ?? "";
+                return (
+                  <button
+                    key={url}
+                    type="button"
+                    className="image-lab-shot"
+                    title={sourcePath ? "点击查看大图" : undefined}
+                    /* 放大镜的底图就是这张图本身（blob URL 也能当 background-image）。 */
+                    style={{ "--shot": `url("${url}")` } as React.CSSProperties}
+                    onClick={() => { if (sourcePath) openImageLightbox(sourcePath, state.title || `结果 ${index + 1}`); }}
+                    /* 指针位置换算成「透镜内该显示哪块」：直接写 CSS 变量，
+                       ⛔ 不用 state（每次移动都重渲染会把主线程打满）。 */
+                    onMouseMove={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      if (!rect.width || !rect.height) return;
+                      const x = event.clientX - rect.left;
+                      const y = event.clientY - rect.top;
+                      const style = event.currentTarget.style;
+                      style.setProperty("--mx", `${x}px`);
+                      style.setProperty("--my", `${y}px`);
+                      /* 透镜放大 2 倍、直径 120（与 CSS 里的 .image-lab-lens 常量一致）。 */
+                      style.setProperty("--bs", `${rect.width * 2}px ${rect.height * 2}px`);
+                      style.setProperty("--bx", `${-(x * 2 - 60)}px`);
+                      style.setProperty("--by", `${-(y * 2 - 60)}px`);
+                    }}
+                  >
+                    <img className="image-lab-image" src={url} alt={`结果 ${index + 1}`} />
+                    <span className="image-lab-zoom" aria-hidden="true"><ZoomIn size={13} />查看大图</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
