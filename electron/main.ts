@@ -176,6 +176,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } },
   /* 10-20：本地媒体流式播放 + 音乐取流令牌代理（Range/206；handler 在 features/boot.ts）。 */
   { scheme: "harness-media", privileges: { secure: true, supportFetchAPI: true, stream: true } }, { scheme: "harness-music", privileges: { secure: true, supportFetchAPI: true, stream: true } },
+  /* 11-24：PPT 预览页里的「用其他应用打开」（file:// 页面调不到 IPC）。 */
+  { scheme: "harness-open", privileges: { secure: true, supportFetchAPI: true } },
   { scheme: "pet", privileges: { secure: true, supportFetchAPI: true } },
   { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);

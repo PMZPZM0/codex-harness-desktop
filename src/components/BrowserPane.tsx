@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, Star, X, Search } from "lucide-react";
 import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
+import { getSlidePreviewUrl, subscribeSlideReload } from "../lib/ppt-preview-store.mjs";
 
 /**
  * 中央主区「浏览器」视图（sidebar 顶部「浏览器」入口切换进来）。
@@ -128,6 +129,18 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
       if (typeof wv.reloadIgnoringCache === "function") wv.reloadIgnoringCache();
       else wv.reload?.();
     } catch { /* 加载中 / 元素刚重建时忽略，下一次变更还会再通知 */ }
+  }), [active.url]);
+
+  /* PPT 实时预览（11-24）：同一个 file:// 路径被反复重写，所以靠信号重载当前标签。
+     ⛔ 只在当前标签就是 PPT 预览页时重载（用户在看别的网页时不抢）。 */
+  useEffect(() => subscribeSlideReload((url) => {
+    if (!url || active.url !== getSlidePreviewUrl() || active.url !== url) return;
+    const wv = wvRef.current as unknown as { reloadIgnoringCache?: () => void; reload?: () => void } | null;
+    if (!wv) return;
+    try {
+      if (typeof wv.reloadIgnoringCache === "function") wv.reloadIgnoringCache();
+      else wv.reload?.();
+    } catch { /* 加载中忽略，下次更新还会再通知 */ }
   }), [active.url]);
 
   const toggleBookmark = useCallback(() => {

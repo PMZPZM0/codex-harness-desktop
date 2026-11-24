@@ -195,6 +195,7 @@ import { WallpaperLayer } from "../wallpaper";
 /* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。
    ⛔ 只在主窗口挂（独立弹窗没有右栏）；它返回 null，不产生 DOM。 */
 import { HtmlPreviewBridge } from "../html-preview";
+import { PptPreviewBridge } from "../ppt-preview/PptPreviewBridge";
 import { RemoteScreenNotice } from "../../components/RemoteScreenNotice";
 import { DevPortBridge } from "../dev-port";
 /* OpenFilm Studio → 右栏内置浏览器（10-27）：主进程 open 完广播 studio 事件，这里接管打开。 */
@@ -596,6 +597,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
+      {/* 11-24：模型调 slide_show 时把幻灯片推到右栏页签（可随时叉掉） */}
+      {!popoutThreadId && <PptPreviewBridge app={app} />}
       {/* 本机测试端口（10-29）：当前会话命令输出里出现带端口的 localhost ⇒ 自动开右栏浏览器 + 加宽 */}
       {!popoutThreadId && <DevPortBridge app={app} threadId={thread?.id ?? ""} />}
       <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} />

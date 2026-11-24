@@ -686,5 +686,27 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "心跳校对保留（90s 阈值 + resume 对账 + 「状态已同步」结论）—— ⛔ 它才是 turn/completed 丢失时解死局的那条");
 }
 
+/* ⛔⛔ 11-24 用户令：侧栏 PPT 实时预览 + 模型要知道能推进度。
+   四件事各钉一条，缺一处这个能力就是"看着有、实际不通"：
+   ① 工具目录（不给岗位就看不见）；② 工具 schema（模型不知道有它）；
+   ③ 渲染层分发（调了就落地）；④ 打开协议的白名单（⛔ 绝不能让网页用默认程序跑 .exe）。 */
+{
+  const profiles = read("electron/tool-profiles.ts");
+  const seg08 = read("src/features/app-state/parts/part08/01-seg.tsx");
+  const req02 = read("src/features/app-state/parts/part05/event-router/02-request.tsx");
+  const store = read("src/lib/ppt-preview-store.mjs");
+  const openProto = read("electron/harness-open-protocol.ts");
+  ok(/HOST_TOOL_CATALOG[\s\S]{0,2400}?"slide_show"/.test(profiles) && (profiles.match(/"slide_show"/g) || []).length >= 2,
+    "slide_show 进 HOST_TOOL_CATALOG 且至少给一个岗位增量（否则模型工具面里没有它）");
+  ok(/name: "slide_show"/.test(seg08) && /action: \{ type: "string", enum: \["start", "page", "finish"\]/.test(seg08),
+    "slide_show 的工具 schema 在渲染层 dynamicTools（三动作 start/page/finish）");
+  ok(/tool === "slide_show"/.test(req02) && /upsertSlidePage\(/.test(req02) && /startSlideDeck\(/.test(req02),
+    "渲染层分发真的落地到 ppt-preview-store（⛔ 只有 schema 没有分发 = 调了没反应）");
+  ok(/current = \{[\s\S]{0,200}?pages: \[/.test(store),
+    "store 用**换新对象**更新（⛔ 原地改 pages 会让 useSyncExternalStore 快照引用不变 ⇒ 桥永远不刷新）");
+  ok(/OPENABLE = \/\\\.\(pptx\?\|pptm/.test(openProto) && !/exe\|bat\|ps1\|cmd\|msi/i.test(openProto.split("const OPENABLE")[1]?.split("\n")[0] ?? ""),
+    "harness-open 协议只放行办公文档（⛔ shell.openPath 对 .exe 等于执行：放进白名单就是本地代码执行入口）");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

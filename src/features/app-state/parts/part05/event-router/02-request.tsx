@@ -8,6 +8,7 @@ import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
 import { matchRpaRecipe } from "../../../../../lib/rpa-recipes.mjs";
 import { cancelRpaRun, pendingRpaRecipeId, trackRpaRun } from "../../../../../lib/rpa-run-tracker.mjs";
+import { startSlideDeck, upsertSlidePage, finishSlideDeck, getSlideDeck } from "../../../../../lib/ppt-preview-store.mjs";
 import { noteGeneratedFiles } from "../../../../../lib/turn-file-changes.mjs";
 import { handleDataAccessTool } from "../../../../data-access";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
@@ -944,6 +945,24 @@ ${st.hint}`);
                 const answer = await new Promise<string>((resolve) => bag.setAgentAsk({ threadId: askThreadId, question, options, recommended: options[0] ?? null, allowFree: args.allowFree !== false, multiple: askMulti, resolve }));
                 // ESC 关闭问答卡时 answer 为空串：明确告知引擎用户跳过了选择，避免它等一个不存在的选项
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: answer ? `[用户选择] ${answer}` : "[用户取消了选择] 请继续其它工作，或稍后换一种方式再问。" }], success: true });
+              } else if (event.params?.tool === "slide_show") {
+                /* 11-24：侧栏 PPT 实时预览。模型只给内容，桥负责渲染成 HTML 并推到右栏页签。 */
+                const slideAction = String(args.action ?? "page");
+                try {
+                  if (slideAction === "start") {
+                    startSlideDeck({ title: String(args.title ?? "幻灯片预览"), total: Number(args.total) || 1, sourcePath: args.sourcePath ? String(args.sourcePath) : undefined });
+                  } else if (slideAction === "finish") {
+                    finishSlideDeck();
+                  } else {
+                    const page = (args.page && typeof args.page === "object") ? args.page : {};
+                    upsertSlidePage({ ...page, total: Number(args.total) || undefined });
+                  }
+                } catch { /* 预览失败不堵模型：下面照常回一条结果 */ }
+                const slideNow = getSlideDeck();
+                const slideText = slideNow
+                  ? `侧栏预览已更新：第 ${slideNow.pages.length} / ${slideNow.total} 页（用户现在能在右侧看到）`
+                  : "侧栏预览未更新（缺会话工作区）。可以改用直接写 .pptx 文件的方式继续。";
+                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: slideText }], success: true });
               } else if (event.params?.tool === "skill_search") {
                 const query = String(args.query ?? "").trim();
                 const [market, local] = await Promise.all([

@@ -55,12 +55,14 @@ export const HOST_TOOL_CATALOG: readonly string[] = [
   "connector_search", "connector_install", "feishu_cli", "filee_convert", "openmaic", "apkstart", "husk",
   "rpa_save", "rpa_run", "rpa_schedule",
   "openfilm_status", "openfilm_make_film", "openfilm_check", "openfilm_render", "openfilm_get", "openfilm_skill",
+  /* 11-24：幻灯片推到侧栏实时预览（模型只给内容，版式由宿主渲染）。 */
+  "slide_show",
 ];
 
 /** 岗位增量：按专家 profession / 团队 category 里的关键词匹配，命中即并入。 */
 export const ROLE_EXTRAS: Record<string, readonly string[]> = {
   // 产品 / 运营 / 内容
-  product: ["media_search", "media_detail", "media_preview", "skill_search", "memory_recall", "github_trending"],
+  product: ["media_search", "media_detail", "media_preview", "skill_search", "memory_recall", "github_trending", "slide_show"],
   // 工程 / 研发 / 后端 / 前端
   engineering: [
     "frontend_get_doc", "frontend_apply_doc", "ui_component_search", "ui_component_get", "design_md",
@@ -72,7 +74,7 @@ export const ROLE_EXTRAS: Record<string, readonly string[]> = {
   // 设计 / 视觉 / 影音
   design: [
     "frontend_get_doc", "frontend_apply_doc", "ui_component_search", "ui_component_get", "design_md",
-    "image_edit", "image_info", "photocraft",
+    "image_edit", "image_info", "photocraft", "slide_show",
     "media_search", "media_detail", "openfilm_status", "openfilm_make_film", "openfilm_get",
   ],
 };

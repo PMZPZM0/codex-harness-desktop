@@ -7,6 +7,7 @@
  *    局部常量 + setWeixinGateway() 写回 —— 语义等价，且 main 侧引用点零改动。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from "electron";
+import { registerHarnessOpenProtocol } from "../harness-open-protocol";
 import fs from "node:fs/promises";
 import { createReadStream, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -596,6 +597,8 @@ export async function bootApp() {
   } catch (error) {
     console.warn("[boot] model-catalog self-heal failed (降级继续):", error);
   }
+  /* 11-24：PPT 预览页里的「用其他应用打开」（file:// 页调不到 IPC，只能走协议）。 */
+  registerHarnessOpenProtocol();
   protocol.handle("harness-image", async (request) => {
     let imagePath = new URL(request.url).searchParams.get("path");
     if (!imagePath) return new Response("Missing path", { status: 400 });
