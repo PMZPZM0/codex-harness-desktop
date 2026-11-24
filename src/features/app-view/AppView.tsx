@@ -597,8 +597,19 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
-      {/* 11-24：模型调 slide_show 时把幻灯片推到右栏页签（可随时叉掉） */}
-      {!popoutThreadId && <PptPreviewBridge app={app} />}
+      {/* 11-24：模型调 slide_show 时把幻灯片推到右栏页签（可随时叉掉）。
+          ⛔ 带上 threadId：deck 按会话归属，后台会话的稿子不许抢这一栏。 */}
+      {!popoutThreadId && (
+        <PptPreviewBridge
+          app={{
+            workspace: app.workspace,
+            threadId: thread?.id ?? "",
+            openInBrowserPane: app.openInBrowserPane,
+            setPanelWidth: app.setPanelWidth,
+            panelWidth: app.panelWidth,
+          }}
+        />
+      )}
       {/* 本机测试端口（10-29）：当前会话命令输出里出现带端口的 localhost ⇒ 自动开右栏浏览器 + 加宽 */}
       {!popoutThreadId && <DevPortBridge app={app} threadId={thread?.id ?? ""} />}
       <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} />

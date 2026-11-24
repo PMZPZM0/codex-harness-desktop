@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, Star, X, Search } from "lucide-react";
 import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
-import { getSlidePreviewUrl, subscribeSlideReload } from "../lib/ppt-preview-store.mjs";
+import { getSlidePreviewUrl, setSlidePreviewClosed, subscribeSlideReload } from "../lib/ppt-preview-store.mjs";
 
 /**
  * 中央主区「浏览器」视图（sidebar 顶部「浏览器」入口切换进来）。
@@ -85,6 +85,10 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
 
   const closeTab = useCallback((id: string) => {
     setTabs((current) => {
+      /* 11-24：关掉的是 PPT 预览页就记一笔 —— 桥下次推页才知道「标签已经没了、要重开」，
+         否则它只会广播重载，而没有任何标签可以重载（用户以为预览坏了）。 */
+      const closing = current.find((entry) => entry.id === id);
+      if (closing?.url && closing.url === getSlidePreviewUrl()) setSlidePreviewClosed(true);
       const next = current.filter((entry) => entry.id !== id);
       // 关掉最后一个时补一个空标签，避免出现「没有标签页」的死状态
       const safe = next.length ? next : [{ id: `tab-${++seqRef.current}`, url: "", title: "浏览器", loading: false }];

@@ -13,13 +13,16 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { BrowserWindow, app, session, shell } from "electron";
 import { egoAppPath, egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "../toolchain";
+import { BROWSER_PARTITION } from "../browser-partition";
 import { ensureEgoBrowserSkill } from "../builtin-skills";
 import { filePreviewAllowed } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-/** 内置浏览器 webview 的**持久分区**：登录态跟着它落盘（⛔ 别改成内存分区，否则重启就掉登录）。 */
-export const BROWSER_PARTITION = "persist:harness-browser";
+/** 内置浏览器 webview 的**持久分区**：登录态跟着它落盘（⛔ 别改成内存分区，否则重启就掉登录）。
+ *  11-24：常量搬到 `../browser-partition`（boot.ts 也要用它给该分区注册自定义协议，
+ *  而 boot 不能 import 本文件 —— 本文件 import `../main`，会成环）；此处原样转出，引用方零改动。 */
+export { BROWSER_PARTITION };
 
 /** 官方入口（用户 11-01 指正）：`https://lite.ego.app/zh-cn`。
  *  ⛔ 原来用 `https://lite.ego.app/download?auto=1` —— 实测那个地址**无视 UA 强制给 Mac 版**

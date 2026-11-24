@@ -698,12 +698,36 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const openProto = read("electron/harness-open-protocol.ts");
   ok(/HOST_TOOL_CATALOG[\s\S]{0,2400}?"slide_show"/.test(profiles) && (profiles.match(/"slide_show"/g) || []).length >= 2,
     "slide_show 进 HOST_TOOL_CATALOG 且至少给一个岗位增量（否则模型工具面里没有它）");
+  /* ⛔ 11-24 审查修正：只挂岗位增量时，**普通会话**（allow = CORE_TOOLS）里它被裁出工具面，
+     而它的执行写在渲染层、主进程能力表没有 → 网关也调不通 = 对普通会话完全不可用。
+     用户令是「codex 要知道」，所以必须进 CORE。 */
+  const coreBody = profiles.slice(profiles.indexOf("export const CORE_TOOLS"), profiles.indexOf("/** 已知的宿主工具名目录"));
+  ok(/"slide_show"/.test(coreBody),
+    "slide_show 在 CORE_TOOLS（⛔ 只挂岗位增量的普通会话里既看不见也调不通）");
   ok(/name: "slide_show"/.test(seg08) && /action: \{ type: "string", enum: \["start", "page", "finish"\]/.test(seg08),
     "slide_show 的工具 schema 在渲染层 dynamicTools（三动作 start/page/finish）");
   ok(/tool === "slide_show"/.test(req02) && /upsertSlidePage\(/.test(req02) && /startSlideDeck\(/.test(req02),
     "渲染层分发真的落地到 ppt-preview-store（⛔ 只有 schema 没有分发 = 调了没反应）");
-  ok(/current = \{[\s\S]{0,200}?pages: \[/.test(store),
-    "store 用**换新对象**更新（⛔ 原地改 pages 会让 useSyncExternalStore 快照引用不变 ⇒ 桥永远不刷新）");
+  /* ⛔ 11-24 审查修正：原来这条只测「文件里出现过 current = { 紧跟 pages: [」——
+     startSlideDeck 就满足它，把 upsert 改成原地修改照样绿（恒真断言）。
+     改成分别在 upsertSlidePage / finishSlideDeck 的**函数体内**找「换新对象」（展开 ...current）。 */
+  const upsertBody = store.slice(store.indexOf("export function upsertSlidePage"), store.indexOf("export function finishSlideDeck"));
+  const finishBody = store.slice(store.indexOf("export function finishSlideDeck"), store.indexOf("export function renderSlideHtml"));
+  ok(/current = \{[\s\S]{0,400}?\.\.\.current/.test(upsertBody) && /current = \{[\s\S]{0,160}?\.\.\.current/.test(finishBody),
+    "store 的 upsert / finish 都**换新对象**更新（⛔ 原地改会让 useSyncExternalStore 快照引用不变 ⇒ 桥永远不刷新）");
+  ok(/threadId/.test(store) && /isSlidePreviewClosed/.test(store) && /current\.threadId !== owner/.test(store),
+    "deck 按会话归属（后台会话不许盖掉当前稿）+ 被用户叉掉的页签会被重开");
+  /* ⛔ 预览页里的「用其他应用打开」必须是 fetch，不能是导航：导航会把整页替换成协议响应
+     （一句 "ok" / 415 文案）—— 用户的预览页就这么没了。 */
+  ok(/preventDefault/.test(store) && /no-cors/.test(store),
+    "「用其他应用打开」用 preventDefault + fetch 发请求（⛔ 直接导航 = 点一下预览页就没了）");
+  /* ⛔⛔ 11-24 实测：`protocol.handle` 只登记在**默认 session**；右栏浏览器 webview 在
+     persist:harness-browser 分区。只注册默认 session ⇒ 预览页里的「用其他应用打开」会导航到
+     未注册协议（页面变错误页），本地配图也全裂。两个协议都必须给分区补注册。 */
+  const bootSrc = read("electron/features/boot.ts");
+  ok(/fromPartition\(BROWSER_PARTITION\)\.protocol\.handle\("harness-image"/.test(bootSrc)
+    && /fromPartition\(BROWSER_PARTITION\)\.protocol\.handle\("harness-open"/.test(openProto),
+    "harness-image / harness-open 都注册到内置浏览器分区（⛔ 只注册默认 session = 预览页里全不可用）");
   ok(/OPENABLE = \/\\\.\(pptx\?\|pptm/.test(openProto) && !/exe\|bat\|ps1\|cmd\|msi/i.test(openProto.split("const OPENABLE")[1]?.split("\n")[0] ?? ""),
     "harness-open 协议只放行办公文档（⛔ shell.openPath 对 .exe 等于执行：放进白名单就是本地代码执行入口）");
 }

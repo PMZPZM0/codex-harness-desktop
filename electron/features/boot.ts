@@ -7,6 +7,7 @@
  *    局部常量 + setWeixinGateway() 写回 —— 语义等价，且 main 侧引用点零改动。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from "electron";
+import { BROWSER_PARTITION } from "../browser-partition";
 import { registerHarnessOpenProtocol } from "../harness-open-protocol";
 import fs from "node:fs/promises";
 import { createReadStream, existsSync, readFileSync } from "node:fs";
@@ -599,7 +600,7 @@ export async function bootApp() {
   }
   /* 11-24：PPT 预览页里的「用其他应用打开」（file:// 页调不到 IPC，只能走协议）。 */
   registerHarnessOpenProtocol();
-  protocol.handle("harness-image", async (request) => {
+  const handleHarnessImage: Parameters<typeof protocol.handle>[1] = async (request) => {
     let imagePath = new URL(request.url).searchParams.get("path");
     if (!imagePath) return new Response("Missing path", { status: 400 });
     // 双编码兼容：渲染层传的是双编码路径（Chromium 会自行解一层）；若解出来还不是
@@ -628,7 +629,12 @@ export async function bootApp() {
     } catch {
       return placeholderPngResponse();
     }
-  });
+  };
+  protocol.handle("harness-image", handleHarnessImage);
+  /* ⛔⛔ 11-24 实测：主进程 protocol.handle 只登记在**默认 session**，而右栏浏览器 webview
+     跑在 persist:harness-browser 分区 ⇒ PPT 预览页里的本地配图在那个分区里取不到（全裂）。
+     同一 handler 给该分区也注册一份。 */
+  session.fromPartition(BROWSER_PARTITION).protocol.handle("harness-image", handleHarnessImage);
   /* `harness-media://`：本地视频/音频**流式读取**（10-20，对话媒体播放器）。
      ⛔ 不能复用 harness-image：它只放图片后缀，非图片 415；也不能用 file://（渲染层 CSP/webSecurity 挡）。
      ⛔ 必须支持 Range：<video>/<audio> 拖进度依赖 206 + Content-Range；整文件 base64 读进内存不可取。

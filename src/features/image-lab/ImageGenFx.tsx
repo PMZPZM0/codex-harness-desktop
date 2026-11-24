@@ -59,7 +59,14 @@ export function ImageGenFx() {
       }
     };
 
-    if (reduced) { draw(0); return; }
+    if (reduced) {
+      /* 静态一帧。⛔ 必须盯容器尺寸：挂载那一刻可能还没布局（rect 为 0），只画一次就永久空白；
+         窗口缩放后也要补画。 */
+      draw(0);
+      const observer = new ResizeObserver(() => draw(0));
+      observer.observe(canvas);
+      return () => observer.disconnect();
+    }
     const loop = (stamp: number) => {
       rafRef.current = window.requestAnimationFrame(loop);
       draw(stamp);

@@ -10,18 +10,25 @@
  *    本地代码执行入口。所以这里只放行办公文档，其余一律 415。
  * ⛔ 不做路径存在性/可信根校验：与项目 10-29 的既定立场一致（预览/打开不判可信根），
  *    真正的闸门是「这类文件双击也只是被办公软件打开」。
+ * ⛔⛔ 必须**同时**注册到内置浏览器分区（11-24 实测）：`protocol.handle` 只作用于默认 session，
+ *    而右栏浏览器 webview 跑在 `persist:harness-browser` 分区。只注册默认 session 的话，
+ *    预览页里点这个链接会导航到「未注册协议」⇒ 页面直接变成「打不开这个网页」错误页。
  */
-import { protocol, shell } from "electron";
+import { protocol, session, shell } from "electron";
+import { BROWSER_PARTITION } from "./browser-partition";
 
 /** 允许交给系统默认应用打开的文件类型（办公文档；⛔ 绝不加入可执行/脚本类）。 */
 const OPENABLE = /\.(pptx?|pptm|potx|ppsx?|key|odp|xlsx?|xlsm|xlsb|csv|ods|docx?|docm|odt|rtf|pdf)$/i;
+
+/** 与 `protocol.handle` 的 handler 同型（⛔ 别手写一份会漂移的签名）。 */
+type ProtocolHandler = Parameters<typeof protocol.handle>[1];
 
 /**
  * 注册协议：`harness-open://open?path=<绝对路径>` → 用系统默认程序打开。
  * 返回 200 = 已交给系统；415 = 类型不在白名单；500 = 系统没有关联程序（body 是原因文案）。
  */
 export function registerHarnessOpenProtocol(): void {
-  protocol.handle("harness-open", async (request) => {
+  const handler: ProtocolHandler = async (request) => {
     const target = new URL(request.url).searchParams.get("path") ?? "";
     if (!target) return new Response("Missing path", { status: 400 });
     if (!OPENABLE.test(target)) return new Response("Unsupported file type", { status: 415 });
@@ -31,5 +38,8 @@ export function registerHarnessOpenProtocol(): void {
     } catch (error) {
       return new Response(String(error), { status: 500 });
     }
-  });
+  };
+  protocol.handle("harness-open", handler);
+  /* ⛔ 内置浏览器分区单独注册一份（同一个 handler，两套 session 各存各的注册表）。 */
+  session.fromPartition(BROWSER_PARTITION).protocol.handle("harness-open", handler);
 }

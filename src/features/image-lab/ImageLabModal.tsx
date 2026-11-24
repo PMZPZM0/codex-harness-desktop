@@ -34,11 +34,31 @@ const LINGER_MS = 900;
 /** 浮窗拖动位置记忆（用户的窗口别每次都弹回原位）。 */
 const IMAGE_LAB_POS_KEY = "image-lab-float-pos";
 
+/** 拿不到卡片实际尺寸时的兜底（CSS 里宽 340；高度按常见三行内容估）。 */
+const DIALOG_FALLBACK_SIZE = { width: 340, height: 240 };
+
+/**
+ * 把位置钳进当前视口：⛔ 边界必须按**卡片实际尺寸**算。
+ * 用固定值（比如"至少露 120px"）会让卡片拖到右下角时大面积出屏 —— 用户只看到一条边，
+ * 而且这个位置还会被记住，下次打开还是「只剩一条」。
+ */
+function clampPos(left: number, top: number, size?: { width: number; height: number }): { left: number; top: number } {
+  const width = size?.width || DIALOG_FALLBACK_SIZE.width;
+  const height = size?.height || DIALOG_FALLBACK_SIZE.height;
+  return {
+    left: Math.max(8, Math.min(left, Math.max(8, window.innerWidth - width - 8))),
+    top: Math.max(8, Math.min(top, Math.max(8, window.innerHeight - height - 8))),
+  };
+}
+
 /** 图像工坊浮层桥：接主进程的开/关指令，把生成或编辑结果挂成可预览的 URL。 */
 export function ImageLabBridge() {
   const [state, setState] = useState<LabState | null>(null);
   const [urls, setUrls] = useState<string[]>([]);
   const [error, setError] = useState("");
+  /* 最小化状态：⛔ 新任务开始时必须复位 —— 否则上一轮最小化成胶囊后，
+     下一轮生图只冒出一枚小胶囊，用户会以为「没开始」。 */
+  const [minimized, setMinimized] = useState(false);
   const urlsRef = useRef<string[]>([]);
   const lingerRef = useRef<number | null>(null);
 
@@ -54,6 +74,9 @@ export function ImageLabBridge() {
         return;
       }
       clearLinger();
+      /* 新任务开窗：把上一轮的「最小化」复位，否则用户只看到一枚胶囊。
+         ⛔ 不用闭包里的 state 判「是否同一任务」—— 这个 effect 只跑一次，闭包里是首帧的 null。 */
+      if (event.phase === "open") setMinimized(false);
       setState((prev) => {
         // 新的 open 或同 id 的 update 才接受；过期任务的 update 直接丢
         if (prev && prev.taskId !== event.taskId && event.phase === "update") return prev;
@@ -98,7 +121,6 @@ export function ImageLabBridge() {
   useEffect(() => () => { urlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
   /* ── 11-24：可拖动 / 可最小化 + 进度百分比 ─────────────────────────────── */
-  const [minimized, setMinimized] = useState(false);
   /* 位置记忆：用户拖到哪儿，下次还在那儿（默认右下角 —— 不压对话）。 */
   const [pos, setPos] = useState<{ left: number; top: number } | null>(() => {
     try {
@@ -107,16 +129,20 @@ export function ImageLabBridge() {
       if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
         /* ⛔ 必须按**当前**视口钳一次：上次拖到副屏 / 窗口缩小后，旧的 left/top 可能落在屏幕外，
            卡片就再也看不见了（用户会以为"生图弹窗坏了"）。 */
-        return {
-          left: Math.max(8, Math.min(Number(parsed.left), window.innerWidth - 120)),
-          top: Math.max(8, Math.min(Number(parsed.top), window.innerHeight - 80)),
-        };
+        return clampPos(Number(parsed.left), Number(parsed.top));
       }
     } catch { /* 隐私模式 / 坏数据：用默认位置 */ }
     return null;
   });
   const [percent, setPercent] = useState(1);
-  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  /* 拖动时要记住「按下点相对卡片左上角的偏移」+ **卡片当时的尺寸**（钳边界要用真实尺寸）。 */
+  const dragRef = useRef<{ dx: number; dy: number; width: number; height: number } | null>(null);
+  /* 窗口尺寸变了要重钳：否则拖到右下角的位置在窗口缩小后会跑到屏幕外。 */
+  useEffect(() => {
+    const onResize = () => setPos((current) => (current ? clampPos(current.left, current.top) : current));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   /* 上游生图接口是同步的、不返回解码进度 ⇒ 百分比只能按时间估算：
      指数曲线 26 秒时间常数、封顶 95%，**出图那一刻**由 status=done 直接跳 100。
      ⛔ 别把它写成"假进度条"式的匀速 —— 真实生图是前快后慢，匀速反而一眼假。 */
@@ -131,25 +157,26 @@ export function ImageLabBridge() {
     return () => window.clearInterval(timer);
   }, [state?.status, state?.taskId]);
 
-  const clampPos = (left: number, top: number) => ({
-    left: Math.max(8, Math.min(left, window.innerWidth - 120)),
-    top: Math.max(8, Math.min(top, window.innerHeight - 80)),
-  });
   const onHeadPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     /* ⛔ 点在按钮上不启动拖动，否则「最小化 / 关闭」会连带把窗口挪走。 */
     if ((event.target as HTMLElement).closest("button")) return;
     const rect = (event.currentTarget.closest(".image-lab-dialog") as HTMLElement | null)?.getBoundingClientRect();
     if (!rect) return;
-    dragRef.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+    dragRef.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top, width: rect.width, height: rect.height };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onHeadPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) return;
-    setPos(clampPos(event.clientX - dragRef.current.dx, event.clientY - dragRef.current.dy));
+    const drag = dragRef.current;
+    if (!drag) return;
+    setPos(clampPos(event.clientX - drag.dx, event.clientY - drag.dy, drag));
   };
-  const onHeadPointerUp = () => {
+  const onHeadPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = null;
-    if (pos) { try { localStorage.setItem(IMAGE_LAB_POS_KEY, JSON.stringify(pos)); } catch { /* 隐私模式 */ } }
+    /* ⛔ 存 DOM 上的真实位置，别存 state 里的 pos：pointermove 的 setPos 是异步的，
+        松手那一帧闭包里的 pos 可能还差一步（下次打开就偏几像素）。 */
+    const rect = (event.currentTarget.closest(".image-lab-dialog") as HTMLElement | null)?.getBoundingClientRect();
+    const next = rect ? { left: Math.round(rect.left), top: Math.round(rect.top) } : pos;
+    if (next) { try { localStorage.setItem(IMAGE_LAB_POS_KEY, JSON.stringify(next)); } catch { /* 隐私模式 */ } }
   };
 
   if (!state) return null;

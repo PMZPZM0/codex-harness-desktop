@@ -14,8 +14,10 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { toFileUrl } from "../../lib/file-url.mjs";
 import {
   getSlideDeck,
+  isSlidePreviewClosed,
   notifySlideReload,
   renderSlideHtml,
+  setSlidePreviewClosed,
   setSlidePreviewUrl,
   subscribeSlideDeck,
 } from "../../lib/ppt-preview-store.mjs";
@@ -23,6 +25,8 @@ import {
 /** 本板块用到的宿主能力（结构化 props，⛔ 不深链 HarnessAppApi —— 守卫【130】）。 */
 export type PptPreviewHost = {
   workspace: string;
+  /** 当前会话 id：deck 按会话归属，别的会话的稿子不许抢这一栏。 */
+  threadId: string;
   openInBrowserPane: (url: string) => void;
   setPanelWidth: (width: number) => void;
   panelWidth: number;
@@ -50,6 +54,10 @@ export function PptPreviewBridge({ app }: { app: PptPreviewHost }) {
     if (!deck || !deck.pages.length) return;
     const workspace = String(hostRef.current.workspace ?? "").trim();
     if (!workspace) return;
+    /* ⛔ 只画**本会话**的稿：后台会话调 slide_show 不该把用户正在看的那份顶掉，
+       也不该把右栏抢到自己工作区的文件上（bridge 头注释承诺的就是这条）。 */
+    const threadId = String(hostRef.current.threadId ?? "");
+    if (deck.threadId && threadId && deck.threadId !== threadId) return;
     /* 同一页重复渲染没有意义（工具重试、父组件重渲都会触发）⇒ 用「deck id + 页数 + 时间戳」去重。 */
     const signature = `${deck.id}|${deck.pages.length}|${deck.updatedAt}`;
     if (signature === lastSigRef.current) return;
@@ -63,8 +71,11 @@ export function PptPreviewBridge({ app }: { app: PptPreviewHost }) {
         return;   // 写盘失败（工作区不可写）就不开预览：宁可没有，也不要开个空白页
       }
       setSlidePreviewUrl(url);
-      if (openedUrlRef.current !== url) {
+      /* ⛔ 页签可能已被用户叉掉（"随时可以叉掉"是产品要求）：URL 没变，但已经没有
+         可刷新的标签了 ⇒ 这里必须重开，否则模型再推页用户也看不见。 */
+      if (openedUrlRef.current !== url || isSlidePreviewClosed()) {
         openedUrlRef.current = url;
+        setSlidePreviewClosed(false);
         hostRef.current.openInBrowserPane(url);
         const target = Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(window.innerWidth * PANEL_RATIO)));
         if (hostRef.current.panelWidth < target) hostRef.current.setPanelWidth(target);
@@ -74,7 +85,7 @@ export function PptPreviewBridge({ app }: { app: PptPreviewHost }) {
     })();
   /* ⛔ 依赖里必须有 workspace：新会话刚建时 workspace 可能还是空串（桥先跑一次拿不到路径），
      等它到位必须重跑 —— 否则用户切到有工作区的会话后，PPT 预览永远不会出现。 */
-  }, [deck, app.workspace]);
+  }, [deck, app.workspace, app.threadId]);
 
   return null;
 }

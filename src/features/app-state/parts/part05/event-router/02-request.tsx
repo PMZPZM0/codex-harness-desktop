@@ -946,22 +946,27 @@ ${st.hint}`);
                 // ESC 关闭问答卡时 answer 为空串：明确告知引擎用户跳过了选择，避免它等一个不存在的选项
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: answer ? `[用户选择] ${answer}` : "[用户取消了选择] 请继续其它工作，或稍后换一种方式再问。" }], success: true });
               } else if (event.params?.tool === "slide_show") {
-                /* 11-24：侧栏 PPT 实时预览。模型只给内容，桥负责渲染成 HTML 并推到右栏页签。 */
+                /* 11-24：侧栏 PPT 实时预览。模型只给内容，桥负责渲染成 HTML 并推到右栏页签。
+                   ⛔ threadId 必须带上：deck 是**会话的**，不带归属时后台会话会盖掉
+                     用户正在看的稿子（并把右栏抢过去）。 */
                 const slideAction = String(args.action ?? "page");
+                const slideThreadId = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
                 try {
                   if (slideAction === "start") {
-                    startSlideDeck({ title: String(args.title ?? "幻灯片预览"), total: Number(args.total) || 1, sourcePath: args.sourcePath ? String(args.sourcePath) : undefined });
+                    startSlideDeck({ threadId: slideThreadId, title: String(args.title ?? "幻灯片预览"), total: Number(args.total) || 1, sourcePath: args.sourcePath ? String(args.sourcePath) : undefined });
                   } else if (slideAction === "finish") {
                     finishSlideDeck();
                   } else {
                     const page = (args.page && typeof args.page === "object") ? args.page : {};
-                    upsertSlidePage({ ...page, total: Number(args.total) || undefined });
+                    upsertSlidePage({ ...page, threadId: slideThreadId, total: Number(args.total) || undefined });
                   }
                 } catch { /* 预览失败不堵模型：下面照常回一条结果 */ }
                 const slideNow = getSlideDeck();
+                /* 报「最新一页」用最大页码（模型可能乱序推页），不拿页数冒充页码。 */
+                const slideIndex = slideNow?.pages.reduce((max, page) => Math.max(max, Number(page?.index) || 0), 0) ?? 0;
                 const slideText = slideNow
-                  ? `侧栏预览已更新：第 ${slideNow.pages.length} / ${slideNow.total} 页（用户现在能在右侧看到）`
-                  : "侧栏预览未更新（缺会话工作区）。可以改用直接写 .pptx 文件的方式继续。";
+                  ? `侧栏预览已更新：第 ${slideIndex} 页（已出 ${slideNow.pages.length} / ${slideNow.total} 页，用户现在能在右侧看到）`
+                  : "预览还没建立起来（没收到 start 也没有页）。先调 slide_show({action:\"start\"}) 或直接推第一页。";
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: slideText }], success: true });
               } else if (event.params?.tool === "skill_search") {
                 const query = String(args.query ?? "").trim();
