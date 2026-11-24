@@ -448,12 +448,33 @@ function registerRelayIpc(deps: RelayIpcDeps) {
       selectedKeyName: account.selectedKeyName ?? null,
     };
   });
+  /* ⛔⛔ 11-24 用户实测：自动配置报 `relayCreateKey: 中转站请求失败: internal error`。
+     站点前端（KeysView）建密钥的表单初始值是一整份结构体，**逐字**如下 ——
+     只发 `{ name }` 时服务端按结构体解析，缺 `status` / `enable_*` 会在内部炸成 500
+     （不是参数校验错误，所以看不到「哪个字段不对」）。⇒ 以站点默认值为底再覆盖 name / group_id。
+     ⛔ 别「精简」这份默认值：多传的字段老站点会忽略，少传的字段新站点会 500。 */
+  const relayKeyDefaults = {
+    status: "active",
+    use_custom_key: false,
+    custom_key: "",
+    enable_ip_restriction: false,
+    ip_whitelist: "",
+    ip_blacklist: "",
+    enable_quota: false,
+    quota: null,
+    enable_rate_limit: false,
+    rate_limit_5h: null,
+    rate_limit_1d: null,
+    rate_limit_7d: null,
+    enable_expiration: false,
+    expiration_preset: "30",
+    expiration_date: "",
+  } as const;
   ipcHost.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null; accountId?: string }) => {
     // accountId 可选：面板看哪个账号就把密钥建在哪个账号上（原先只能建在当前生效账号上）
     const account = input.accountId ? (await readRelayStore()).accounts.find((a) => a.id === String(input.accountId)) ?? null : await readRelayAccount();
     if (!account?.accessToken) throw new Error("尚未登录中转站");
-    const body: Record<string, unknown> = { name: input.name };
-    if (input.groupId != null) body.group_id = input.groupId;
+    const body: Record<string, unknown> = { ...relayKeyDefaults, name: input.name, group_id: input.groupId ?? null };
     return relayAuthedFetch(account, "/api/v1/keys", body);
   });
   // 密钥管理（10-09 自 PPcode 同步：已建的密钥要能删、能换分组）

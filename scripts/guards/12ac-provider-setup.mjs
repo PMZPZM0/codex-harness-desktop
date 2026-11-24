@@ -201,5 +201,18 @@ ok(/\.provider-editor-body \.provider-form \{[\s\S]{0,120}?padding: 16px 20px 72
     "密码登录遇验证码自动转网页登录（⛔ 只在这一处收口：登录页 / 引导弹窗 / 面板共用同一实现）");
 }
 
+/* ⛔⛔ 11-24 用户实测：自动配置报 `relayCreateKey: 中转站请求失败: internal error`。
+   实测站点前端 KeysView 的建密钥表单初始值是一整份结构体（status / use_custom_key /
+   enable_ip_restriction / enable_quota / enable_rate_limit / enable_expiration …）；
+   只发 `{ name }` 时服务端按结构体解析，缺字段在内部炸成 500（不是参数校验错误，
+   所以看不到「哪个字段不对」）。钉住：请求体必须以那份默认值为底。 */
+{
+  const relayIpc = read("electron/features/relay-ipc.ts");
+  ok(/const relayKeyDefaults = \{/.test(relayIpc)
+    && /status: "active"/.test(relayIpc) && /enable_expiration: false/.test(relayIpc)
+    && /\.\.\.relayKeyDefaults, name: input\.name, group_id: input\.groupId \?\? null/.test(relayIpc),
+    "建密钥请求体按站点表单默认值补齐（⛔ 只发 {name} = 站点回 500 internal error）");
+}
+
 console.log(`\n【provider-setup】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
