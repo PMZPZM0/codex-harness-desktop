@@ -63,12 +63,18 @@ export function ImageLabBridge() {
   const [minimized, setMinimized] = useState(false);
   const urlsRef = useRef<string[]>([]);
   const lingerRef = useRef<number | null>(null);
+  /* 当前浮窗是哪个任务开出来的（close 事件据此判断该不该收尾）。 */
+  const taskIdRef = useRef("");
 
   useEffect(() => {
     const clearLinger = () => { if (lingerRef.current !== null) { window.clearTimeout(lingerRef.current); lingerRef.current = null; } };
     const off = window.codex.onImageLabEvent((event: LabEvent) => {
       if (!event?.taskId) return;
       if (event.phase === "close") {
+        /* ⛔⛔ 11-25 用户实测「回合结束又给我关了图像工坊」：旧代码**不看任务**，任何一条 close
+           都会在 900ms 后把浮窗关掉 —— 包括上一条事件延迟到达、或用户正用 image_view 看某张图时
+           另一路生图刚好结束。只认「当前显示的这个任务」。 */
+        if (taskIdRef.current !== event.taskId) return;
         // 先亮最终态，再卸载
         setState((prev) => (prev && prev.taskId === event.taskId ? { ...prev, status: prev.status === "error" ? "error" : "done" } : prev));
         clearLinger();
@@ -78,7 +84,7 @@ export function ImageLabBridge() {
       clearLinger();
       /* 新任务开窗：把上一轮的「最小化」复位，否则用户只看到一枚胶囊。
          ⛔ 不用闭包里的 state 判「是否同一任务」—— 这个 effect 只跑一次，闭包里是首帧的 null。 */
-      if (event.phase === "open") setMinimized(false);
+      if (event.phase === "open") { taskIdRef.current = event.taskId; setMinimized(false); }
       setState((prev) => {
         // 新的 open 或同 id 的 update 才接受；过期任务的 update 直接丢
         if (prev && prev.taskId !== event.taskId && event.phase === "update") return prev;
@@ -224,6 +230,7 @@ export function ImageLabBridge() {
           <button type="button" className="image-lab-btn" onClick={() => setMinimized(true)} title="最小化">–</button>
           <button type="button" className="image-lab-close" onClick={() => {
             setState(null);
+            taskIdRef.current = "";
             /* 11-25：用户**主动**关掉浮窗 ⇒ 告诉主进程清掉「刚展示过」标记 ——
                之后模型再调 image_view 才能重新打开（生成完成后的自动收起不走这条）。 */
             void window.codex.imageLabDismiss().catch(() => undefined);

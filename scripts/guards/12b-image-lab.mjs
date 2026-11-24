@@ -190,9 +190,13 @@ ok(
 {
   const labIpc = read("electron/features/image-lab.ts");
   const seg08 = read("src/features/app-state/parts/part08/01-seg.tsx");
-  ok(/const shownInLab = new Set/.test(labIpc) && /for \(const file of saved\) shownInLab\.add\(file\)/.test(labIpc),
-    "生图产物登记为「已在浮窗展示过」（修图同理）");
-  ok(/if \(!input\?\.force && shownInLab\.has\(file\)\)/.test(labIpc),
+  ok(/const shownInLab = new Map<string, number>/.test(labIpc)
+    && /for \(const file of saved\) shownInLab\.set\(file, Date\.now\(\)\)/.test(labIpc)
+    && /for \(const result of results\) shownInLab\.set\(result\.path, Date\.now\(\)\)/.test(labIpc),
+    "生图/修图产物登记为「刚在浮窗展示过」（带时间戳）");
+  /* ⛔⛔ 11-25 回归：幂等**不能永久生效** —— 用户过一会儿说「重新打开我看看」也必须能开。 */
+  ok(/SHOWN_WINDOW_MS = (\d+)_000/.test(labIpc), "幂等是短时间窗而不是永久（⛔ 永久 = 用户后来要求重开永远打不开）");
+  ok(/const shownAt = shownInLab\.get\(file\)/.test(labIpc) && /Date\.now\(\) - shownAt < SHOWN_WINDOW_MS/.test(labIpc),
     "image_view 命中已展示的图就不再弹（force 才允许重开）");
   ok(/image-lab:dismiss/.test(labIpc) && /shownInLab\.clear\(\)/.test(labIpc),
     "用户主动点 ✕ 走 dismiss 清标记（⛔ 自动收起不能清，否则模型又会重复弹）");
