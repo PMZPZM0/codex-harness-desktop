@@ -1,77 +1,124 @@
-/* 33-image-lab.css —— 图像工坊浮层（image-lab 域，2026-10-09 立）
-   Codex 调用 image_generate / image_edit / image_view 时弹出：生成中/处理中 → 产物实时预览，结束后自动收起。
+/* 33-image-lab.css —— 图像工坊浮层（image-lab 域，2026-10-09 立；11-24 改非模态浮窗）
+   Codex 调用 image_generate / image_edit / image_view 时出现：生成中/处理中 → 产物实时预览，结束后自动收起。
    视觉基调遵循 DESIGN.md：--panel/--line/--text 递进，唯一主色 --accent，不写死色值。
-   层叠层级带（守卫【198】）：全局模态 400 —— 与 model-viewer 同带（都盖主界面与设置 backdrop）。 */
 
-.image-lab-backdrop { position: fixed; inset: 0; z-index: 400; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; }
-.image-lab-dialog { width: min(820px, 92vw); max-height: min(680px, 88vh); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; overflow: hidden; }
-.image-lab-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex: none; }
-.image-lab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text); }
-.image-lab-status { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+   ⛔ 11-24 用户：「这个窗口挡住我看对话框」⇒ 不再是整屏遮罩的模态，改成**右下角可拖动、可最小化**的浮窗：
+      容器只负责定位（pointer-events: none），卡片自己接收事件；尺寸从 820 收到 340，
+      默认落在右下角 —— 对话区始终可见可点。
+   层叠层级带（守卫【198】）：400 —— 与 model-viewer 同带（盖主界面与设置 backdrop），
+   但因为不再有遮罩、且容器不接收事件，实际不会挡住任何交互。 */
+
+.image-lab-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  pointer-events: none;   /* ⛔ 整层放行鼠标：底下的对话框照常能写、能点 */
+}
+.image-lab-dialog {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: min(340px, calc(100vw - 32px));
+  max-height: 62vh;
+  pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.image-lab-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;      /* 拖动时别让浏览器插手滚动手势 */
+}
+.image-lab-head:active { cursor: grabbing; }
+.image-lab-grip { flex: none; color: var(--muted); font-size: 10px; letter-spacing: -2px; opacity: .7; }
+.image-lab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.image-lab-status { flex: none; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
 .image-lab-status.is-done { background: rgba(46, 160, 67, 0.14); color: #2ea043; }
 .image-lab-status.is-error { background: rgba(207, 34, 46, 0.14); color: #cf222e; }
-.image-lab-close { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; }
-.image-lab-close:hover { background: var(--accent-soft); color: var(--accent); }
-.image-lab-body { flex: 1; min-height: 0; overflow: auto; background: var(--panel-2, var(--panel)); display: flex; align-items: center; justify-content: center; padding: 14px; }
-.image-lab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; width: 100%; }
-.image-lab-image { width: 100%; max-height: 60vh; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.image-lab-btn,
+.image-lab-close {
+  flex: none; border: none; background: transparent; color: var(--muted);
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 6px; border-radius: 6px;
+}
+.image-lab-btn:hover, .image-lab-close:hover { background: var(--accent-soft); color: var(--accent); }
+
+.image-lab-body { flex: 1; min-height: 0; overflow: auto; background: var(--panel-2, var(--panel)); display: flex; align-items: center; justify-content: center; padding: 10px; }
+.image-lab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; width: 100%; }
+.image-lab-image { width: 100%; max-height: 50vh; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .image-lab-empty { display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; }
 .image-lab-note { color: var(--muted); font-size: 12px; max-width: 60ch; }
-.image-lab-error { color: #cf222e; font-size: 13px; text-align: center; padding: 20px; }
-.image-lab-foot { flex: none; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.image-lab-error { color: #cf222e; font-size: 12.5px; text-align: center; padding: 14px; }
+.image-lab-foot { flex: none; padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; }
 
-/* ── 11-24 用户令：「生图的时候对话框加一个 Blur Pulse to Reveal，做好看一点」
-   两段动效，各自只做一件事：
-   · Pulse（生成中）：两团模糊主色缓慢呼吸 —— 表示"正在成形"，而不是转圈等；
-   · Reveal（图到）：从模糊 + 轻微放大 + 低不透明 → 清晰，配合一次斜向高光扫过。
-   ⛔ 时长带：呼吸 2.6s（视作环境动效，不抢注意力）、揭晓 680ms（一次性，用户能感知到"揭开"）；
-     两者都尊重 prefers-reduced-motion（关掉动画只留静态底）。 */
-.image-lab-pulse {
+/* ── 生成中的点阵等待画面（11-24 用户指定参考 owui-fx：中心扩散点阵 + 阶段文案 + 百分比）──
+   点阵由 canvas 画（ImageGenFx.tsx），这里只管容器与两处文字；
+   ⛔ 外圈那层径向白晕是参考图的关键：没有它点阵会"铺满整块"，边界很硬。 */
+.image-lab-fx {
   position: relative;
-  width: min(520px, 84%);
-  aspect-ratio: 16 / 10;
-  border-radius: 12px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 46vh;
+  border-radius: 10px;
   overflow: hidden;
+  background: var(--panel);
   border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 62%),
-    radial-gradient(circle at 72% 68%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 58%),
-    var(--panel);
-  filter: blur(0.2px);
-  animation: image-lab-breathe 2.6s ease-in-out infinite;
 }
-/* 呼吸感只作用在内部色团上，容器本身不缩放 —— 否则边框会跟着抖，看着像在加载失败重排。 */
-.image-lab-pulse::before,
-.image-lab-pulse::after {
+.image-lab-fx::after {
   content: "";
-  position: absolute;
-  inset: -18%;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 32%, transparent), transparent 64%);
-  filter: blur(34px);
-  animation: image-lab-drift 2.6s ease-in-out infinite;
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(120% 120% at 50% 50%, transparent 55%, color-mix(in srgb, var(--panel) 88%, transparent) 100%);
 }
-.image-lab-pulse::after {
-  inset: 12% -10% -22% 40%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 20%, transparent), transparent 66%);
-  animation-delay: -1.3s;
+.image-lab-fx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.image-lab-fx-cap {
+  position: absolute; left: 11px; top: 9px; z-index: 2;
+  display: inline-flex; align-items: baseline; gap: 1px;
+  font-size: 11.5px; color: var(--muted); letter-spacing: .02em;
 }
-.image-lab-pulse-cap {
-  position: absolute;
-  inset: auto 0 12px 0;
-  text-align: center;
+/* 三个跳动的小点（参考图里那种"..."呼吸），⛔ 用 i 标签而不是文字，避免换行影响对齐。 */
+.image-lab-fx-cap .d {
+  width: 2px; height: 2px; margin-left: 3px; border-radius: 50%;
+  background: currentColor; opacity: .25;
+  animation: image-lab-dot 1.3s ease-in-out infinite;
+}
+.image-lab-fx-cap .d:nth-of-type(2) { animation-delay: .2s; }
+.image-lab-fx-cap .d:nth-of-type(3) { animation-delay: .4s; }
+.image-lab-fx-pct {
+  position: absolute; right: 10px; bottom: 8px; z-index: 2;
+  font-size: 11.5px; line-height: 1; color: var(--muted);
+  font-variant-numeric: tabular-nums; letter-spacing: .04em;
+}
+@keyframes image-lab-dot { 0%, 100% { opacity: .2; } 50% { opacity: 1; } }
+
+/* 最小化后的胶囊：只报进度，点一下展开。⛔ 关掉就看不到进度了，所以给"收起来"而不是"只能关闭"。 */
+.image-lab-mini {
+  position: fixed; right: 20px; bottom: 20px; z-index: 400;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+  color: var(--text);
   font-size: 12px;
-  color: var(--muted);
-  letter-spacing: .04em;
+  cursor: pointer;
 }
-@keyframes image-lab-breathe {
-  0%, 100% { opacity: .82; }
-  50% { opacity: 1; }
+.image-lab-mini:hover { border-color: var(--accent); }
+.image-lab-mini-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: image-lab-dot 1.3s ease-in-out infinite;
 }
-@keyframes image-lab-drift {
-  0%, 100% { transform: translate3d(-4%, -2%, 0) scale(1); }
-  50% { transform: translate3d(4%, 3%, 0) scale(1.12); }
-}
+.image-lab-mini.is-done .image-lab-mini-dot { animation: none; background: #2ea043; }
+.image-lab-mini.is-error .image-lab-mini-dot { animation: none; background: #cf222e; }
 
 /* Reveal：图挂载即从「雾里」揭开。
    ⛔ 用 animation（挂载必跑）而不是「onLoad 加 class + 初始 opacity:0」——
@@ -91,6 +138,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .image-lab-pulse, .image-lab-pulse::before, .image-lab-pulse::after { animation: none; }
+  .image-lab-fx-cap .d, .image-lab-mini-dot { animation: none; }
   .image-lab-image { animation: none; }
 }

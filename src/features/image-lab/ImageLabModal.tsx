@@ -7,6 +7,7 @@
 // ⛔ 单通道三态：open（弹出）/ update（换状态与图）/ close（收起）。close 后**先亮一下最终结果**
 //    再卸载（~900ms）——否则"编辑很快"的工具会让浮层一闪而过，用户根本看不清。
 import { useEffect, useRef, useState } from "react";
+import { ImageGenFx } from "./ImageGenFx";
 
 type LabEvent = {
   phase: "open" | "update" | "close";
@@ -29,6 +30,9 @@ type LabState = {
 
 /** close 之后停留多久再卸载（让用户看清最后一帧）。 */
 const LINGER_MS = 900;
+
+/** 浮窗拖动位置记忆（用户的窗口别每次都弹回原位）。 */
+const IMAGE_LAB_POS_KEY = "image-lab-float-pos";
 
 /** 图像工坊浮层桥：接主进程的开/关指令，把生成或编辑结果挂成可预览的 URL。 */
 export function ImageLabBridge() {
@@ -93,28 +97,111 @@ export function ImageLabBridge() {
 
   useEffect(() => () => { urlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
+  /* ── 11-24：可拖动 / 可最小化 + 进度百分比 ─────────────────────────────── */
+  const [minimized, setMinimized] = useState(false);
+  /* 位置记忆：用户拖到哪儿，下次还在那儿（默认右下角 —— 不压对话）。 */
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(IMAGE_LAB_POS_KEY);
+      const parsed = raw ? JSON.parse(raw) as { left?: number; top?: number } : null;
+      if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+        return { left: Number(parsed.left), top: Number(parsed.top) };
+      }
+    } catch { /* 隐私模式 / 坏数据：用默认位置 */ }
+    return null;
+  });
+  const [percent, setPercent] = useState(1);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  /* 上游生图接口是同步的、不返回解码进度 ⇒ 百分比只能按时间估算：
+     指数曲线 26 秒时间常数、封顶 95%，**出图那一刻**由 status=done 直接跳 100。
+     ⛔ 别把它写成"假进度条"式的匀速 —— 真实生图是前快后慢，匀速反而一眼假。 */
+  useEffect(() => {
+    if (state?.status !== "running") return;
+    const startedAt = Date.now();
+    setPercent(1);
+    const timer = window.setInterval(() => {
+      const seconds = (Date.now() - startedAt) / 1000;
+      setPercent(Math.max(1, Math.min(95, Math.round(95 * (1 - Math.exp(-seconds / 26))))));
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [state?.status, state?.taskId]);
+
+  const clampPos = (left: number, top: number) => ({
+    left: Math.max(8, Math.min(left, window.innerWidth - 120)),
+    top: Math.max(8, Math.min(top, window.innerHeight - 80)),
+  });
+  const onHeadPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    /* ⛔ 点在按钮上不启动拖动，否则「最小化 / 关闭」会连带把窗口挪走。 */
+    if ((event.target as HTMLElement).closest("button")) return;
+    const rect = (event.currentTarget.closest(".image-lab-dialog") as HTMLElement | null)?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onHeadPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    setPos(clampPos(event.clientX - dragRef.current.dx, event.clientY - dragRef.current.dy));
+  };
+  const onHeadPointerUp = () => {
+    dragRef.current = null;
+    if (pos) { try { localStorage.setItem(IMAGE_LAB_POS_KEY, JSON.stringify(pos)); } catch { /* 隐私模式 */ } }
+  };
+
   if (!state) return null;
 
   const statusText = state.status === "running"
-    ? (state.mode === "generate" ? "生成中…" : "处理中…")
+    ? (state.mode === "generate" ? "生成中" : "处理中")
     : state.status === "error" ? "失败" : "完成";
+  const percentText = state.status === "done" ? 100 : state.status === "error" ? 0 : percent;
+  const stageText = percentText >= 80 ? "正在最后打磨" : percentText >= 55 ? "正在细化质感" : percentText >= 25 ? "正在铺陈光影" : "正在勾勒草图";
+
+  /* 最小化：只留一枚小胶囊（⛔ 用户要的是"别挡住对话框"，不是"关掉"—— 关了就看不着进度了）。 */
+  if (minimized) {
+    return (
+      <button type="button" className={`image-lab-mini is-${state.status}`} onClick={() => setMinimized(false)} title="展开图像工坊">
+        <span className="image-lab-mini-dot" />
+        <span>{state.status === "running" ? `${stageText} ${percentText}%` : statusText}</span>
+      </button>
+    );
+  }
 
   return (
-    <div className="image-lab-backdrop" onClick={() => setState(null)}>
-      <div className="image-lab-dialog" onClick={(event) => event.stopPropagation()}>
-        <div className="image-lab-head">
+    /* ⛔ 11-24 用户：「这个窗口挡住我看对话框」⇒ 不再用整屏遮罩的模态：
+       容器只做定位（pointer-events:none），卡片自身可拖动、可最小化，
+       默认落在右下角、宽 340 —— 主体对话始终可见可点。 */
+    <div className="image-lab-layer">
+      <div
+        className="image-lab-dialog"
+        style={pos ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" } : undefined}
+        role="dialog"
+        aria-label="图像工坊"
+      >
+        <div
+          className="image-lab-head"
+          onPointerDown={onHeadPointerDown}
+          onPointerMove={onHeadPointerMove}
+          onPointerUp={onHeadPointerUp}
+          onPointerCancel={onHeadPointerUp}
+          title="按住拖动"
+        >
+          <span className="image-lab-grip" aria-hidden="true">⋮⋮</span>
           <span className="image-lab-title" title={state.title}>{state.title}</span>
           <span className={`image-lab-status is-${state.status}`}>{statusText}</span>
-          <button type="button" className="image-lab-close" onClick={() => setState(null)}>✕</button>
+          <button type="button" className="image-lab-btn" onClick={() => setMinimized(true)} title="最小化">–</button>
+          <button type="button" className="image-lab-close" onClick={() => setState(null)} title="关闭">✕</button>
         </div>
         <div className="image-lab-body">
           {error && <div className="image-lab-error">{error}</div>}
           {!error && urls.length === 0 && (
             state.status === "running" ? (
-              /* 11-24 用户令：生成中不要"转圈等"，用模糊脉冲块表示画面正在成形（Pulse）；
-                 图到之后由 .image-lab-image 的 reveal 动画揭开（见 33-image-lab.css）。 */
-              <div className="image-lab-pulse" role="status" aria-label={state.mode === "generate" ? "正在生成图像" : "正在处理图像"}>
-                <span className="image-lab-pulse-cap">{state.mode === "generate" ? "画面正在成形…" : "处理中…"}</span>
+              /* 11-24 用户：参考 owui-fx 的点阵效果 —— 中心扩散的点阵 + 阶段文案 + 右下角百分比。 */
+              <div className="image-lab-fx">
+                <ImageGenFx />
+                <span className="image-lab-fx-cap">
+                  {stageText}
+                  <i className="d" /><i className="d" /><i className="d" />
+                </span>
+                <span className="image-lab-fx-pct">{percentText}%</span>
               </div>
             ) : (
               <div className="image-lab-empty">

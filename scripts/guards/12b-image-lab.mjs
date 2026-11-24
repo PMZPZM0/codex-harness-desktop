@@ -148,8 +148,10 @@ ok(
   "收到 close 相位后延时自动卸载（用户要求：工具调用完成自动消失）",
 );
 ok(
-  stylesEntry.includes("styles/33-image-lab") && /image-lab-backdrop/.test(css),
-  "styles.css 引入 33-image-lab（类前缀 image-lab，三前缀同源）",
+  /* 11-24：用户「这个窗口挡住我看对话框」⇒ 整屏遮罩的模态改成右下角可拖动/可最小化的浮窗，
+     判据随之改为 image-lab-layer（容器只定位、pointer-events:none），⛔ 不许退回 backdrop 遮罩态。 */
+  stylesEntry.includes("styles/33-image-lab") && /image-lab-layer/.test(css) && !/image-lab-backdrop/.test(css),
+  "styles.css 引入 33-image-lab，且浮层是非模态浮窗（⛔ 不许退回整屏遮罩 —— 会挡住对话框）",
 );
 
 /* ── ⑥ 接线生成物：域表 / 账本 ── */
