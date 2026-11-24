@@ -169,7 +169,7 @@ function showToastEverywhere(title: string, text?: string) {
 
 /** 消息内图片：点开灯箱，右键可复制。 */
 export function ImagePreview({ path, alt, onCopy }: { path: string; alt: string; onCopy?: () => void }) {
-  return <img className="message-image" src={imageDisplaySrc(path)} alt={alt} onClick={() => openImageLightbox(path, alt)} onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageDisplaySrc(path))} onContextMenu={(event) => { if (!onCopy) return; event.preventDefault(); onCopy(); }} />;
+  return <img className="message-image" src={imageDisplaySrc(path)} alt={alt} onClick={() => openImageLightbox(path, alt)} onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageDisplaySrc(path), path)} onContextMenu={(event) => { if (!onCopy) return; event.preventDefault(); onCopy(); }} />;
 }
 
 /** 大图灯箱：缩放与拖拽平移，Esc / 点遮罩关闭。 */
@@ -208,7 +208,7 @@ export function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; al
         onMouseLeave={endDrag}
         onWheel={(event) => setZoom((current) => clampZoom(current * (event.deltaY < 0 ? 1.15 : 0.87)))}
       >
-        <img src={imageDisplaySrc(path)} alt={alt} draggable={false} onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageDisplaySrc(path))} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }} />
+        <img src={imageDisplaySrc(path)} alt={alt} draggable={false} onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageDisplaySrc(path), path)} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }} />
       </div>
     </div>
   );

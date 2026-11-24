@@ -828,9 +828,11 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
     : fail("external:open 又放行任意 file: 了 —— 渲染层可让系统执行任意本地程序");
   /* ⛔ 10-29 用户令：协议**故意**不再判可信根（图片 / PDF 预览要能看任意位置的文件）。
-     反转断言：扩展名白名单必须仍在、可信根必须**不在** —— 防有人把闸加回去。 */
-  (/protocol\.handle\("harness-image"[\s\S]{0,1200}?Unsupported media type/.test(mainForSec)
-    && !/protocol\.handle\("harness-image"[\s\S]{0,1200}?Forbidden/.test(mainForSec)
+     反转断言：扩展名白名单必须仍在、可信根必须**不在** —— 防有人把闸加回去。
+     ⚠️ 11-25：距离放到 2600 —— handler 抽成命名函数 + 注册点后加了启动探针，
+     1200 字符已经够不到 MIME 白名单（不是丢了白名单，是锚点太近）。 */
+  (/protocol\.handle\("harness-image"[\s\S]{0,2600}?Unsupported media type/.test(mainForSec)
+    && !/protocol\.handle\("harness-image"[\s\S]{0,2600}?Forbidden/.test(mainForSec)
     ? ok("harness-image 只留 MIME 白名单、不判可信根（10-29 用户令：任意位置图片 / PDF 可预览）")
     : fail("harness-image 又被加回了路径收敛，或丢了 MIME 白名单"));
   // 导航与新窗口收敛必须有

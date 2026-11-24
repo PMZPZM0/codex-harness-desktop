@@ -10,7 +10,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from "electron";
 import { BROWSER_PARTITION } from "../browser-partition";
 import { registerHarnessOpenProtocol } from "../harness-open-protocol";
 import fs from "node:fs/promises";
-import { createReadStream, existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import os from "node:os";
@@ -598,8 +598,13 @@ export async function bootApp() {
   } catch (error) {
     console.warn("[boot] model-catalog self-heal failed (降级继续):", error);
   }
+  /* ⛔⛔ 11-25：协议注册的每一步都必须**各自** try —— 任一步抛错都会让 boot 后续整段不执行
+     （含 harness-image / harness-media），表现为「所有本地图片破图」而且没有任何报错。
+     探针把每步结果写进 <userData>/harness-proto-probe.log，下次出问题一眼定位。 */
+  const protoProbe: string[] = [];
   /* 11-24：PPT 预览页里的「用其他应用打开」（file:// 页调不到 IPC，只能走协议）。 */
-  registerHarnessOpenProtocol();
+  try { registerHarnessOpenProtocol(); protoProbe.push("harness-open: ok"); }
+  catch (error) { protoProbe.push(`harness-open: FAIL ${String((error as Error)?.message ?? error)}`); }
   const handleHarnessImage: Parameters<typeof protocol.handle>[1] = async (request) => {
     let imagePath = new URL(request.url).searchParams.get("path");
     if (!imagePath) return new Response("Missing path", { status: 400 });
@@ -631,10 +636,21 @@ export async function bootApp() {
     }
   };
   protocol.handle("harness-image", handleHarnessImage);
+  try {
+    protoProbe.push("harness-image(default): " + String(await session.defaultSession.protocol.isProtocolHandled("harness-image")));
+  } catch { /* 探针失败不影响启动 */ }
   /* ⛔⛔ 11-24 实测：主进程 protocol.handle 只登记在**默认 session**，而右栏浏览器 webview
      跑在 persist:harness-browser 分区 ⇒ PPT 预览页里的本地配图在那个分区里取不到（全裂）。
-     同一 handler 给该分区也注册一份。 */
-  session.fromPartition(BROWSER_PARTITION).protocol.handle("harness-image", handleHarnessImage);
+     同一 handler 给该分区也注册一份。⛔ 11-25：这一步包 try —— 分区注册失败不该拖垮主流程。 */
+  try {
+    session.fromPartition(BROWSER_PARTITION).protocol.handle("harness-image", handleHarnessImage);
+    protoProbe.push("harness-image(partition): ok");
+  } catch (error) {
+    protoProbe.push(`harness-image(partition): FAIL ${String((error as Error)?.message ?? error)}`);
+  }
+  try {
+    writeFileSync(path.join(app.getPath("userData"), "harness-proto-probe.log"), protoProbe.join("\n") + "\n", "utf8");
+  } catch { /* 探针失败不影响启动 */ }
   /* `harness-media://`：本地视频/音频**流式读取**（10-20，对话媒体播放器）。
      ⛔ 不能复用 harness-image：它只放图片后缀，非图片 415；也不能用 file://（渲染层 CSP/webSecurity 挡）。
      ⛔ 必须支持 Range：<video>/<audio> 拖进度依赖 206 + Content-Range；整文件 base64 读进内存不可取。

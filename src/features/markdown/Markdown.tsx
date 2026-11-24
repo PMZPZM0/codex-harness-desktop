@@ -7,7 +7,7 @@ import { WidgetCard } from "../../components/GenerativeWidget";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { openImageLightbox } from "../../lib/ui-channels";
-import { imageUrl } from "../../lib/image-url";
+import { imageUrl, retryLocalImage } from "../../lib/image-url";
 import { useCodeSettings, codeFontSize } from "../../lib/code-settings";
 import { highlightCacheKey } from "../../lib/code-highlight-cache.mjs";
 import { HIGHLIGHT_CACHE } from "../../lib/highlight-cache";
@@ -331,7 +331,7 @@ export const MD_COMPONENTS: Components = {
        http(s)/data/blob/harness-image 由 imageUrl 原样放行，不受影响。 */
     const raw = String(src ?? "").trim();
     if (!raw) return null;
-    return <img className="message-image" src={imageUrl(raw)} alt={alt ?? ""} onClick={() => openImageLightbox(raw, alt ?? "")} />;
+    return <img className="message-image" src={imageUrl(raw)} alt={alt ?? ""} onClick={() => openImageLightbox(raw, alt ?? "")} onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageUrl(raw), raw)} />;
   },
   code: MdCode,
   table: ({ children }) => <MdTable>{children}</MdTable>,

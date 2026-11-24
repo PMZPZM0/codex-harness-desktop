@@ -140,7 +140,7 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
               onClick={() => open(file)}
             >
               <span className="turn-media-thumb">
-                <img src={imageUrl(file.path)} alt={name} loading="eager" onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageUrl(file.path))} />
+                <img src={imageUrl(file.path)} alt={name} loading="eager" onError={(event) => retryLocalImage(event as unknown as { currentTarget: HTMLImageElement }, imageUrl(file.path), file.path)} />
                 <span className="turn-media-play"><ImageIcon size={14} /></span>
               </span>
               <span className="turn-media-meta"><b title={file.path}>{name}</b><small>图片</small></span>

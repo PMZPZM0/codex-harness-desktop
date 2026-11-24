@@ -757,6 +757,9 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const imgUrl = read("src/lib/image-url.ts");
   ok(/img:\s*\(\{ src, alt \}\)[\s\S]{0,600}?imageUrl\(raw\)/.test(md),
     "正文 markdown 图片过 imageUrl（⛔ 原样 src=本地路径 ⇒ 一律破图）");
+  /* ⛔⛔ 11-25（第三轮）：只重试协议是不够的 —— 协议本身偶发不可用时图永远裂。必须有 IPC 回落。 */
+  ok(/window\.codex\.readImage\(path\)/.test(imgUrl) && /createObjectURL/.test(imgUrl),
+    "图片失败时回落到 IPC 取字节建 Blob（⛔ 只重试协议 = 协议坏了图就永远裂）");
   ok(/export function retryLocalImage/.test(imgUrl) && /dataset\.retried/.test(imgUrl),
     "图片失败有一次性重试（⛔ 一次 abort 就 display:none = 永久空白）");
   ok(/onError=\{\(event\) => retryLocalImage\(/.test(media),
