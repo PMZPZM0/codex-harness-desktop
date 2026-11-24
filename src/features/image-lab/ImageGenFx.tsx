@@ -12,9 +12,10 @@ import { useEffect, useRef } from "react";
 /**
  * 点阵等待画面：以中心为圆心向外扩散的呼吸波，边缘渐隐。
  *
- * 参数只暴露颜色强度（`tone`），尺寸完全由容器决定 —— 调用方给一个定高容器即可。
+ * 尺寸完全由容器决定 —— 调用方给一个定高容器即可；没有可调参数（YAGNI：
+ * 真要换配色时再加，⛔ 不留只有一个取值的空壳开关）。
  */
-export function ImageGenFx({ tone = "accent" }: { tone?: "accent" }) {
+export function ImageGenFx() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -25,8 +26,8 @@ export function ImageGenFx({ tone = "accent" }: { tone?: "accent" }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    /* 主色：与 DESIGN 的 accent 同族的蓝紫（GPT 官网那种冷蓝点阵看着最"在计算"）。 */
-    const base = tone === "accent" ? [86, 116, 208] : [120, 120, 120];
+    /* 主色：冷蓝（参考页同款）—— 看着最像在计算。 */
+    const base = [86, 116, 208];
 
     const draw = (stamp: number) => {
       const rect = canvas.getBoundingClientRect();
@@ -68,7 +69,7 @@ export function ImageGenFx({ tone = "accent" }: { tone?: "accent" }) {
       if (rafRef.current != null) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [tone]);
+  }, []);
 
   return <canvas ref={canvasRef} className="image-lab-fx-canvas" aria-hidden="true" />;
 }

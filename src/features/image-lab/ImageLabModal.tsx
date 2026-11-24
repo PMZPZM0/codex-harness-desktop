@@ -105,7 +105,12 @@ export function ImageLabBridge() {
       const raw = localStorage.getItem(IMAGE_LAB_POS_KEY);
       const parsed = raw ? JSON.parse(raw) as { left?: number; top?: number } : null;
       if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
-        return { left: Number(parsed.left), top: Number(parsed.top) };
+        /* ⛔ 必须按**当前**视口钳一次：上次拖到副屏 / 窗口缩小后，旧的 left/top 可能落在屏幕外，
+           卡片就再也看不见了（用户会以为"生图弹窗坏了"）。 */
+        return {
+          left: Math.max(8, Math.min(Number(parsed.left), window.innerWidth - 120)),
+          top: Math.max(8, Math.min(Number(parsed.top), window.innerHeight - 80)),
+        };
       }
     } catch { /* 隐私模式 / 坏数据：用默认位置 */ }
     return null;
