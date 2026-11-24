@@ -164,6 +164,10 @@ ok(/\.provider-editor-body \.provider-form \{[\s\S]{0,120}?padding: 16px 20px 72
   ok(/resolveLiveProxy/.test(authImport)
     && /useProxy\(await resolveLiveProxy\(\)\.catch\(\(\) => ""\)\)/.test(openaiIpc),
     "OpenAI 设备码登录：resolveProxy 拿不到代理时回落本地端口实测（⛔ 只靠 resolveProxy = 代理开着也会连不上）");
+  ok(/const normalized = \/\^\[a-z\]\[a-z0-9\+\.\-\]\*/.test(openaiIpc) && !/\^https\?:/.test(openaiIpc),
+    "代理地址的 scheme 原样透传（⛔ 只认 http(s) 会把用户填的 socks5:// 拼成 http://socks5://…，直接连不上）");
+  ok(/resetLiveProxyCache\(\);\s*\n\s*useProxy\(await resolveLiveProxy\(\)/.test(openaiIpc),
+    "探测本地端口前先清缓存（⛔ resolveLiveProxy 把「全都不通」缓存 60 秒；用户开完代理立刻重试会继续用旧空值）");
   ok(/function loginErrorText\(/.test(openaiIpc)
     && /连不上 OpenAI 授权服务器/.test(openaiIpc)
     && /当前代理出口地区不被 OpenAI 支持/.test(openaiIpc)

@@ -104,7 +104,10 @@ export const openaiFeature = defineFeature<null>({
       const useProxy = (value: string) => {
         const url = String(value ?? "").trim();
         if (!url) return;
-        const normalized = /^https?:\/\//i.test(url) ? url : `http://${url}`;
+        /* ⛔ 只给「没有 scheme」的值补 http://。原实现只认 http(s)，会把用户填的
+           `socks5://127.0.0.1:7891` 拼成 `http://socks5://...` ⇒ 引擎直接连不上。
+           reqwest 本身认 socks5://，所以带 scheme 的一律原样透传。 */
+        const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `http://${url}`;
         proxyEnv.HTTPS_PROXY = normalized; proxyEnv.HTTP_PROXY = normalized;
       };
       try {
@@ -123,7 +126,13 @@ export const openaiFeature = defineFeature<null>({
              resolveProxy 可能返回 DIRECT（应用启动时代理未启、配置未刷新、或 TUN 模式不写系统代理）。
              ⇒ 与 `openaiFetch` 用同一套 `resolveLiveProxy()`（读用户填过的地址 + 逐个实测本地常用端口），
                 ⛔ 不要只依赖 resolveProxy 一条路。 */
-          if (!proxyEnv.HTTPS_PROXY) useProxy(await resolveLiveProxy().catch(() => ""));
+          if (!proxyEnv.HTTPS_PROXY) {
+            /* ⛔ 先清缓存再探：`resolveLiveProxy` 会把「全都不通」也缓存 60 秒（value 可能是空串），
+               而用户典型动作正是「登录失败 → 去开代理 → 立刻回来重试」—— 不清缓存就会继续用
+               那一分钟前的空结果，看起来像「开了代理也没用」。点登录这一次重新实测是值得的。 */
+            resetLiveProxyCache();
+            useProxy(await resolveLiveProxy().catch(() => ""));
+          }
         }
       } catch { /* 代理解析失败就直连尝试 */ }
       const child = spawn(codexBinaryPath(), ["login", "--device-auth"], {
