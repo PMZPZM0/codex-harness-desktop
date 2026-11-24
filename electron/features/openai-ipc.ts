@@ -20,7 +20,7 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { codexBinaryPath } from "../codex-server";
-import { OPENAI_FALLBACK_MODELS, fetchOpenaiModels, openaiAuthFile, openaiFetch, openaiProxyFile, readOpenaiAuth, resetLiveProxyCache } from "./openai-auth";
+import { OPENAI_FALLBACK_MODELS, fetchOpenaiModels, openaiAuthFile, openaiFetch, openaiProxyFile, readOpenaiAuth, resetLiveProxyCache, resolveLiveProxy } from "./openai-auth";
 import { readCustomModels } from "../main";
 import { codexHome, customModelFile, server, upsertCustomModel } from "../runtime-refs";
 import { openaiJwtClaims, readOpenaiVault, writeOpenaiVault } from "../openai-vault";
@@ -62,6 +62,25 @@ function openaiImportPick(obj: any, paths: string[][]): string {
   return "";
 }
 
+/**
+ * 把引擎吐的裸网络错误翻成用户能懂的话。
+ *
+ * `error sending request for url` 是 Rust reqwest 的连接层失败 —— 直接甩给用户等于什么也没说；
+ * 实测（11-24）它 100% 出现在「代理没开 / 没生效」这一种情形里（同一台机器带 7897 代理跑
+ * `codex login --device-auth` 立刻成功）。地区拒绝则是另一句 `unsupported_country_region_territory`。
+ * 只加后缀，不吞原文（排障时要能原样看到）。
+ */
+function loginErrorText(raw: string, fallback: string): string {
+  const text = String(raw ?? "").trim() || fallback;
+  if (/error sending request|dns error|tcp connect|os error 100\d\d|timed out|connection (refused|reset)/i.test(text)) {
+    return `${text}（连不上 OpenAI 授权服务器：先开启代理并确认它能访问 auth.openai.com；节点地区不受支持时也会被拒）`;
+  }
+  if (/unsupported_country_region_territory|Country, region, or territory not supported/i.test(text)) {
+    return `${text}（当前代理出口地区不被 OpenAI 支持，换一个地区节点再试）`;
+  }
+  return text;
+}
+
 const OPENAI_CHANNELS = [
   "openai:login-start", "openai:login-status", "openai:login-cancel", "openai:usage", "openai:set-proxy", "openai:models",
   "openai:capture-login", "openai:import-file",
@@ -80,20 +99,31 @@ export const openaiFeature = defineFeature<null>({
     ipcHost.handle("openai:login-start", async (_e, input: { proxy?: string } = {}) => {
       if (openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
       openaiLogin.lines = []; openaiLogin.url = ""; openaiLogin.code = ""; openaiLogin.error = "";
-      // OpenAI 对部分地区/IP 限制访问（直连 403）：用户手填代理 > 进程环境变量 > 系统代理解析
+      // OpenAI 对部分地区/IP 限制访问（直连 403）：用户手填代理 > 进程环境变量 > 系统代理解析 > 本地端口实测
       const proxyEnv: Record<string, string> = {};
+      const useProxy = (value: string) => {
+        const url = String(value ?? "").trim();
+        if (!url) return;
+        const normalized = /^https?:\/\//i.test(url) ? url : `http://${url}`;
+        proxyEnv.HTTPS_PROXY = normalized; proxyEnv.HTTP_PROXY = normalized;
+      };
       try {
         const manual = String(input?.proxy ?? "").trim();
-        const direct = manual || process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || process.env.all_proxy;
-        if (direct) {
-          proxyEnv.HTTPS_PROXY = direct; proxyEnv.HTTP_PROXY = direct;
-        } else {
-          const rule = await (await import("electron")).session.defaultSession.resolveProxy("https://auth.openai.com");
+        const envProxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || process.env.all_proxy;
+        if (manual) useProxy(manual);
+        else if (envProxy) useProxy(envProxy);
+        else {
+          /* ① Chromium 视角的系统代理（Windows = WinINET 设置）。 */
+          let rule = "";
+          try { rule = await (await import("electron")).session.defaultSession.resolveProxy("https://auth.openai.com"); } catch { /* 取不到就往下兜底 */ }
           const match = rule.match(/PROXY\s+([^;\s]+)/i);
-          if (match && !/^direct/i.test(rule)) {
-            const proxyUrl = match[1].startsWith("http") ? match[1] : `http://${match[1]}`;
-            proxyEnv.HTTPS_PROXY = proxyUrl; proxyEnv.HTTP_PROXY = proxyUrl;
-          }
+          if (match && !/^direct/i.test(rule)) useProxy(match[1]);
+          /* ②⛔⛔ 11-24 用户实测：代理**开着**（verge-mihomo 127.0.0.1:7897，实测 `codex login --device-auth`
+             走它能拿到验证码）但引擎仍报 `error sending request` —— 因为这一刻 Chromium 的
+             resolveProxy 可能返回 DIRECT（应用启动时代理未启、配置未刷新、或 TUN 模式不写系统代理）。
+             ⇒ 与 `openaiFetch` 用同一套 `resolveLiveProxy()`（读用户填过的地址 + 逐个实测本地常用端口），
+                ⛔ 不要只依赖 resolveProxy 一条路。 */
+          if (!proxyEnv.HTTPS_PROXY) useProxy(await resolveLiveProxy().catch(() => ""));
         }
       } catch { /* 代理解析失败就直连尝试 */ }
       const child = spawn(codexBinaryPath(), ["login", "--device-auth"], {
@@ -106,11 +136,11 @@ export const openaiFeature = defineFeature<null>({
         // 进程退出且没拿到授权 URL = 登录请求本身失败（典型：无代理直连 403），把最后错误行透出
         if (!openaiLogin.url) {
           const last = [...openaiLogin.lines].reverse().map((l) => l.trim()).find((l) => l && !/warning/i.test(l));
-          openaiLogin.error = last || `登录进程已退出（exit ${code ?? "?"}）`;
+          openaiLogin.error = loginErrorText(last ?? "", `登录进程已退出（exit ${code ?? "?"}）`);
         } else if (!existsSync(openaiAuthFile())) {
           // URL 已发出但进程退出且 auth.json 没落地 = 授权没完成/令牌交换失败（如代码过期、代理中断）
           const last = [...openaiLogin.lines].reverse().map((l) => l.trim()).find((l) => l && !/warning/i.test(l));
-          openaiLogin.error = last || `登录进程已退出（exit ${code ?? "?"}）但未完成授权，请重新登录获取新的验证码`;
+          openaiLogin.error = loginErrorText(last ?? "", `登录进程已退出（exit ${code ?? "?"}）但未完成授权，请重新登录获取新的验证码`);
         }
       });
       child.stdout.on("data", (chunk: Buffer) => {

@@ -153,5 +153,23 @@ ok(/\.provider-editor-body \.settings-actions \{[\s\S]{0,320}?position: absolute
 ok(/\.provider-editor-body \.provider-form \{[\s\S]{0,120}?padding: 16px 20px 72px;/.test(css),
   "表单底部留出保存条的高度（72px），最后一行内容不被遮住");
 
+/* ⛔⛔ 11-24 用户实测：代理开着（verge-mihomo 127.0.0.1:7897，`codex login --device-auth` 走它能拿到
+   验证码），应用内登录却报 `error sending request for url .../deviceauth/usercode` ——
+   因为 login-start 的代理解析**只**看 Chromium 的 resolveProxy，那一刻它可能返回 DIRECT。
+   两条一起钉：① 必须有本地端口实测兜底（与 openaiFetch 共用 resolveLiveProxy）；
+              ② 裸网络错误必须翻成中文指引（否则用户只看到一行 Rust 报错，不知道是代理）。 */
+{
+  const openaiIpc = read("electron/features/openai-ipc.ts");
+  const authImport = openaiIpc.split("\n").find((line) => line.includes('from "./openai-auth"')) ?? "";
+  ok(/resolveLiveProxy/.test(authImport)
+    && /useProxy\(await resolveLiveProxy\(\)\.catch\(\(\) => ""\)\)/.test(openaiIpc),
+    "OpenAI 设备码登录：resolveProxy 拿不到代理时回落本地端口实测（⛔ 只靠 resolveProxy = 代理开着也会连不上）");
+  ok(/function loginErrorText\(/.test(openaiIpc)
+    && /连不上 OpenAI 授权服务器/.test(openaiIpc)
+    && /当前代理出口地区不被 OpenAI 支持/.test(openaiIpc)
+    && /openaiLogin\.error = loginErrorText\(/.test(openaiIpc),
+    "登录失败的错误文案带人话指引（连不上 = 代理没开/没生效；地区拒绝 = 换节点），⛔ 不把 reqwest 原文直接甩给用户");
+}
+
 console.log(`\n【provider-setup】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
