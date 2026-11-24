@@ -72,7 +72,9 @@ export function PptPreviewBridge({ app }: { app: PptPreviewHost }) {
       }
       notifySlideReload();
     })();
-  }, [deck]);
+  /* ⛔ 依赖里必须有 workspace：新会话刚建时 workspace 可能还是空串（桥先跑一次拿不到路径），
+     等它到位必须重跑 —— 否则用户切到有工作区的会话后，PPT 预览永远不会出现。 */
+  }, [deck, app.workspace]);
 
   return null;
 }
