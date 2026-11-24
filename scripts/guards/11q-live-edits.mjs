@@ -732,5 +732,20 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "harness-open 协议只放行办公文档（⛔ shell.openPath 对 .exe 等于执行：放进白名单就是本地代码执行入口）");
 }
 
+/* ⛔⛔ 11-24 用户实测：「刷新一下或者重启一下，汇总消息下面的图片缩略图就不见了」。
+   根因：宿主生成的图片清单只在内存 Map 里（11-21 那条修复只对**当轮**有效），刷新/重载即清空，
+   而引擎不会为宿主写盘补 fileChange ⇒ 回放后汇总卡里一张图都没有。
+   三件事缺一不可：① 有持久化键；② 登记当轮就写盘；③ 模块加载时回填**并合并进 reports**
+   （汇总卡读的是 reports，只回填 generatedByTurn 等于没修）。 */
+{
+  const tfc = read("src/lib/turn-file-changes.mjs");
+  ok(/PERSIST_KEY = "harness\.turn-generated-files\.v1"/.test(tfc) && /localStorage\.setItem\(PERSIST_KEY/.test(tfc),
+    "宿主生成的文件清单落 localStorage（⛔ 只在内存里 = 重启后缩略图全没）");
+  ok(/writePersistedGenerated\(id, \[\.\.\.map\.keys\(\)\]\)/.test(tfc),
+    "noteGeneratedFiles 当轮就回写持久化（⛔ 等收尾再存会漏掉中途关窗的回合）");
+  ok(/restorePersistedGenerated\(\);/.test(tfc) && /reports\.set\(turnId, mergeGenerated\(turnId, reports\.get\(turnId\) \?\? \[\]\)\)/.test(tfc),
+    "模块加载时回填并合并进 reports（⛔ 只回填 generatedByTurn = 汇总卡读不到）");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
