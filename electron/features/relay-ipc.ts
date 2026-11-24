@@ -111,6 +111,9 @@ function registerRelayIpc(deps: RelayIpcDeps) {
   // ⛔ 这三项都是高权限能力（读 userData、触碰系统密钥库、创建窗口）——
   //    留在域里直接 import electron 就等于"插件自选安全策略"，那是内核该守的边界。
   const { app: appHost, secure, window: windowHost } = deps.host;
+  /* 网页登录窗口里站点可能 `window.open`（客服、支付中间页…）：Electron 默认会给新窗口
+     **不带**沙箱/隔离选项 ⇒ 一律拒掉、改用系统浏览器打开。 */
+  const shellHost = deps.host.shell;
   // ⛔⛔ **`server` 必须延后取，不能从 deps 解构**：`export let server!` 是活绑定，而
   //    `setServer(new CodexServer(...))` 在 main.ts 第 337 行才执行 —— 本域改由组合表挂载
   //    （import 在第 96 行）⇒ **挂载时 server 仍是 undefined**。解构会把它永久捕获成
@@ -313,6 +316,10 @@ function registerRelayIpc(deps: RelayIpcDeps) {
       },
     });
     relayLoginWindow = win;
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) void shellHost.openExternal(url).catch(() => undefined);
+      return { action: "deny" };
+    });
     void win.loadURL(`${baseUrl}/login`).catch((error: unknown) => {
       console.log("[relay-web-login] 登录页加载失败:", error instanceof Error ? error.message : String(error));
     });

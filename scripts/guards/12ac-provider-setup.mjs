@@ -191,6 +191,8 @@ ok(/\.provider-editor-body \.provider-form \{[\s\S]{0,120}?padding: 16px 20px 72
     ok(harvest.includes('getItem("auth_token"') && !/setItem/.test(harvest),
       "网页登录只读 localStorage（⛔ 注入 token 是支付窗口的活，两件事别混）");
   }
+  ok(/setWindowOpenHandler\(\(\{ url \}\) => \{[\s\S]{0,200}?action: "deny"/.test(relayIpc),
+    "网页登录窗口拒绝站点自行开新窗（⛔ Electron 给 window.open 的新窗口默认不带 sandbox/隔离选项，改用系统浏览器）");
   ok(/setTimeout\(\(\) => finish\(null\), 6 \* 60_000\)/.test(relayIpc) && /win\.once\("closed", \(\) => finish\(null\)\)/.test(relayIpc),
     "网页登录有超时与关窗退出（⛔ 不许让用户关掉窗口后主进程还挂着等）");
   const relayLib = read("src/lib/relay.ts");

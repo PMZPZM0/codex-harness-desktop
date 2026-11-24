@@ -123,7 +123,8 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
       /* ⛔ 不再只丢一句「登录失败」：站点开了验证码时密码登录**必然**失败，
          直接把网页登录打开，用户少走一步（这就是 11-24 卡住的那条）。 */
       if (/captcha|turnstile|verify_code|验证码|邮箱验证/i.test(msg)) {
-        setErr("这个站点要求验证码，已为你打开网页登录，在窗口里完成即可。");
+        /* ⛔ 用气泡而不是 setErr：browserLogin 一进来就 setErr("")，写进错误行会被立刻清掉。 */
+        onNotice("这个站点要求验证码，已在弹窗里打开网页登录");
         /* 推迟一拍：让本轮 login 的 finally 先跑（否则它会把 browserLogin 刚设的 working 清掉）。 */
         window.setTimeout(() => { void browserLogin(); }, 0);
         return;
