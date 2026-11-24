@@ -15,6 +15,7 @@ import { useRunProcessMode } from "../../lib/run-process-mode";
 import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { TurnMediaCards } from "./TurnMediaCards";
+import { TurnDocCards } from "./TurnDocCards";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
 import { isImagePath } from "../../lib/is-image-path";
@@ -173,6 +174,8 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
     <>
       {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。 */}
       <TurnMediaCards files={files} />
+      {/* 11-24：办公文档（ppt / excel / pdf …）卡与媒体卡并列，打开方式与右键都用 FileRefCard 那套。 */}
+      <TurnDocCards files={files} />
       {/* 11-21 用户对照 Qoder：底部只留**一条**「已编辑 N 个文件」汇总条（默认收起，点开是行列表），
          正文里的紧凑文件行另由 ProgressiveAgentBody 渲染；⛔ 不再在这里重复文件卡片。 */}
       {files.length > 0 && (

@@ -3096,3 +3096,28 @@
   max-height: 160px;
   overflow: auto;
 }
+
+/* ── 11-24 用户令：把 ppt / Excel / PDF 等办公文档卡放进「本轮产物」（消息汇总下面）。
+   外观直接复用 .turn-output-card（= FileRefCard），这里只负责容器排列与折叠按钮，
+   ⛔ 不再写第二套卡片皮肤。 ── */
+.turn-doc-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
+.turn-doc-cards .turn-output-card { width: 100%; }
+.turn-doc-more {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.turn-doc-more:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
