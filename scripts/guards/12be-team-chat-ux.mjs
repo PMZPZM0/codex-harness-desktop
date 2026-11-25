@@ -350,11 +350,13 @@ const catalog = [
   const dispatch = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const badge = codeOnly(read("src/features/dispatch/DispatchMenu.tsx"));
   ok(/export async function ensureTalkThread/.test(chan) && /export async function runTalkTurn/.test(chan)
-    && /dynamicTools: surface \?\? buildGroupTalkTools\(\)/.test(chan)
+    /* ⛔ 11-25：工具面先过身份表（applyToolIdentity）再落首行 —— 群聊 = workPartner，
+       dispatch / 群编排全关；这层不能省，否则又会走回"渲染层/调用方自己判身份"的老路。 */
+    && /dynamicTools: applyToolIdentity\(surface \?\? buildGroupTalkTools\(\), "workPartner"\)/.test(chan)
     /* ⛔ 11-11：团群主理人要挂真调度工具 ⇒ 新建走 surface，老会话**必须**在 resume 前改写首行
        （附录 Z：resume 传 dynamicTools 引擎整份忽略）。两条缺一，老群聊会话的工具面永远升不上去。 */
     && /await syncToolSurfaceAsync\(codexHome, threadId, options\.tools\)/.test(chan),
-    "群聊每人一条长期引擎会话（thread/start 挂自己的工具，resume 复用；老会话按附录 Z 升级工具面）");
+    "群聊每人一条长期引擎会话（thread/start 挂过完身份表的工具，resume 复用；老会话按附录 Z 升级工具面）");
   ok(!/runDelegatedTask|delegateRegistry|canDispatchFrom|delegateScopeBlock/.test(chan + tools + talk),
     "⛔ 独立通道一行都不碰外面的调度链（不是改提示词糊弄）");
   ok(/group_say/.test(tools) && /group_read/.test(tools) && /group_members/.test(tools)

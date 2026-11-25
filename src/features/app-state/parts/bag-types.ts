@@ -1381,6 +1381,8 @@ export interface Bag {
   /** 群聊伙伴会话台账快照（threadId → 群/成员/身份）：侧栏「伙伴」徽标 + 外面会话的回合头共用。 */
   talkThreads: import("../../../lib/team-talk-threads.mjs").TeamTalkThreadsState;
   delegateDescendantsOf: (rootId: string) => string[];
+  /* ⛔ 11-25：工具面**不含会话身份**（渲染层不再按类型增删）；身份由主进程在写 rollout 首行时
+     按目标会话的类型裁（electron/tool-surface.ts）⇒ 这里的返回值对任何会话都安全。 */
   buildDynamicTools: () => Promise<any[]>;
   createEmptyThread: () => Promise<import("../../app-view/types.ts").Thread | null>;
   send: (event?: React.FormEvent<Element> | undefined) => Promise<void>;

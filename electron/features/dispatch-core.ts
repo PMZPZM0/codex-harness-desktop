@@ -621,7 +621,9 @@ function dispatchMcpTools(): unknown[] {
        ⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——提示模型用独有 teamId。 */
     {
       name: "expert_save",
-      description: "创建或更新一个专家 / 专家团（写进应用的专家列表，重启应用后可见）。displayNameZh 与 lead（name + systemPrompt）必填；多角色协作加 members。不确定用户要单人专家还是多人团队时先问一句。",
+      description: "创建或更新一个专家 / 专家团（写进应用的专家列表，重启应用后可见）。displayNameZh 与 lead（name + systemPrompt）必填；多角色协作加 members。不确定用户要单人专家还是多人团队时先问一句。"
+        + "⛔ **本工具只建「定义」，不派活** —— 用户说「让 XX 去干这件事」请用 agent_invoke；"
+        + "缺 displayNameZh 会被直接拒绝（别再试，先问用户叫什么名字），否则会建出一条「未命名团队」垃圾条目。",
       inputSchema: {
         type: "object",
         properties: {

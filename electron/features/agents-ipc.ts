@@ -17,7 +17,7 @@
 import { dispatchToolDescription, dispatchSelectionChangeNotice, dispatchAllowOf } from "../dispatch";
 import { broadcastHarnessEvent } from "./window-bus";
 import { buildDispatchCatalog, restrictedThreadRole } from "./dispatch-core";
-import { dispatchGatewayCatalogText, dispatchRpcCall } from "./dispatch-rpc";
+import { RENDERER_DEDICATED, dispatchGatewayCatalogText, dispatchRpcCall } from "./dispatch-rpc";
 import { runDelegatedTask } from "./delegation";
 import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
 import { defineFeature } from "../context";
@@ -124,6 +124,17 @@ export const agentsFeature = defineFeature<null>({
       if (tool === "list") return { ok: true, output: dispatchGatewayCatalogText() };
       const caller = String(input?.callerThreadId ?? "");
       if (!caller) return { ok: false, output: "", error: "缺少 callerThreadId（宿主内部错误：渲染层必须从引擎事件取，不许用模型自报的值）" };
+      /* ⛔⛔ 11-25：渲染层自带专用工具的能力**不许**从网关走。
+         `dispatchRpcCall` 里 `agent_invoke` 是完整实现，而这里原先不校验名字 ⇒ 工具列表里
+         没有它的会话，仍能用 harness_tools({name:"agent_invoke"}) 把活派出去 —— 一条
+         目录里不列、实际能调的隐性双通道（`subagent_invoke` 老坑的变体：同一能力两个入口，
+         模型挑最直白的那个，另一套被绕过）。一个能力只保留一个入口。 */
+      if (RENDERER_DEDICATED.has(tool)) {
+        return {
+          ok: false, output: "",
+          error: `「${tool}」不在能力网关里：它是独立工具，当前会话的工具列表里没有就是没有（⛔ 不要用网关绕过）。`,
+        };
+      }
       const args = input?.args && typeof input.args === "object" && !Array.isArray(input.args) ? input.args : {};
       return dispatchRpcCall(tool, args as Record<string, unknown>, caller);
     });

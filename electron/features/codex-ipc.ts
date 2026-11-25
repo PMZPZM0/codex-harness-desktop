@@ -24,6 +24,9 @@ import { safeProviderId } from "../provider-id";
 import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, syncToolSurfaceAsync } from "../rollout-pool";
 import { markMissingRollouts, mergeThreadList } from "../tools/session-tools";
 import { withStepParam } from "../../src/lib/step-note.mjs";
+/* 11-25：工具面的**身份裁剪**只在这里（主进程写首行前）发生 —— 渲染层不再按会话类型增删工具。
+   详见 electron/tool-surface.ts 的文件头（三次同型事故的根因与分工）。 */
+import { applyToolIdentity, splitIdentity } from "../tool-surface";
 import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
 import { noteThreadModel } from "../thread-model";
 import { dropStoredCompactions, storedCompactionsForThread } from "../compaction-watch";
@@ -142,15 +145,24 @@ export const codexFeature = defineFeature<null>({
               合并失败时渲染层自己那批照样能拿到（漏掉就是"工具卡有时没标题"的幽灵差异）。
            ⛔ 只在有工具面时动：`thread/start` 也可能不带 dynamicTools（引擎侧纯空会话）。 */
         if (Array.isArray((params as any)?.dynamicTools)) {
+          /* ⛔⛔ 11-25：**身份类与会话类型绑定，其余走 CORE 收窄**（两者互不重叠，顺序见下）。
+             thread/start 走这条路的只有「渲染层新建会话」= normal（中枢对工具面与 normal 同形），
+             ⇒ 类型在这里是**常量**，不读任何渲染层状态（这是"切会话/新建会话串状态"的根治点）。
+             派生会话（专家/团/伙伴/被调度）不走这里：它们由各自域 direct 发 thread/start，
+             并在 delegation.ts 里过同一张表（口径只有一份）。 */
+          const split = splitIdentity((params as any).dynamicTools as unknown[]);
+          let narrowed: unknown[] = split.rest;
           /* 11-19 阶段 2：普通会话按 CORE 画像收窄 schema（其余能力从 harness_tools 网关调用）。
-             ⛔ 只裁已知宿主工具，MCP 连接器（带 __ 命名空间）原样保留；rollback 见 tool-profiles.ts。 */
+             ⛔ 只裁已知宿主工具，MCP 连接器（带 __ 命名空间）原样保留；rollback 见 tool-profiles.ts。
+             ⛔ 只裁 split.rest：身份类（派活 / 群编排）由下面的 applyToolIdentity 按会话类型决定，
+                先裁会把它们一起裁掉（新建没有、resume 又有 = 状态不稳定）。 */
           try {
             const { allowedToolsFor, filterToolSurface } = await import("../tool-profiles");
-            (params as any).dynamicTools = filterToolSurface((params as any).dynamicTools, allowedToolsFor("normal"));
+            narrowed = filterToolSurface(split.rest as any[], allowedToolsFor("normal")) as unknown[];
           } catch (error: any) {
             console.warn("[tool-profile] 收窄失败（按全量继续）：", String(error?.message ?? error).slice(0, 160));
           }
-          (params as any).dynamicTools = withStepParam((params as any).dynamicTools);
+          (params as any).dynamicTools = withStepParam([...narrowed, ...applyToolIdentity(split.identity, "normal")]);
         }
       }
       /* ⛔⛔ 老会话的工具面升级（10-11 实测定案，与「resume 会重注册工具」的旧认知相反）：
@@ -236,17 +248,26 @@ export const codexFeature = defineFeature<null>({
               if (!key) continue;
               byName.set(key, tool);
             }
-            let surface = withStepParam([...byName.values()]) as unknown[];
+            /* ⛔⛔ 11-25 架构位：**先拆身份类，再收窄其余**。
+               · 身份类（派活三件套 / 群编排九件套）的可见性只由**目标会话类型**决定
+                 （`hostKind` 来自主进程台账 sessionOwnsHostToolSurface / restrictedThreadRole，
+                 ⛔ 不读渲染层任何状态）；其余走 CORE 画像收窄（11-19 的 schema 瘦身）。
+               ⛔ 顺序不能反：先收窄会把身份工具一起裁掉 ⇒ 同一条会话「新建时没有群工具、
+                  resume 一次又回来」（正是用户说的「来回跳转就乱套」）。 */
+            const split = splitIdentity([...byName.values()]);
+            let narrowed: unknown[] = split.rest;
             /* 11-22：resume 曾把已经收窄的 17 个工具整份覆盖回 58 个（实测 rollout 首行
                19KB → 53KB，首轮多花约 1 万 tokens）。与 thread/start 同口径再裁一次。 */
             if (hostKind === "normal") {
               try {
                 const { allowedToolsFor, filterToolSurface } = await import("../tool-profiles");
-                surface = withStepParam(filterToolSurface(surface as any[], allowedToolsFor("normal")) as unknown[]);
+                narrowed = filterToolSurface(split.rest as any[], allowedToolsFor("normal")) as unknown[];
               } catch (error: any) {
                 console.warn("[tool-profile] resume 收窄失败（按未收窄继续）：", String(error?.message ?? error).slice(0, 160));
               }
             }
+            /* 身份类按**目标会话**裁剪后拼回；withStepParam 在最后统一包（两类都要有 step）。 */
+            const surface = withStepParam([...narrowed, ...applyToolIdentity(split.identity, hostKind || "normal")]) as unknown[];
             await syncToolSurfaceAsync(codexHome, resumeThreadId, surface);
             console.log("[tool-surface] resume 升级 " + resumeThreadId.slice(0, 8) + " → " + String(surface.length) + " 个（宿主 " + String(resumeTools.length) + " + 主进程 " + String(extras.length) + "）");
           } catch (error: any) {

@@ -11,8 +11,9 @@
 //   ③ 渲染层注册 + 分发；callerThreadId 必须取**引擎事件的 threadId**（负向：不许用 args 里模型自报的）；
 //   ④ 通道三处登记齐（handler / manifest / preload / ipc-registry 计数）。
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { readAppUi } from "./_ctx.mjs";   // 渲染层聚合读取（⛔ 必须递归，见 _ctx 注释）
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -35,6 +36,14 @@ ok(/export function dispatchGatewayTools\(\)/.test(rpc) && /export function disp
   "导出工具面 + 清单文案（name=\"list\" 的返回）");
 ok(/return dispatchRpcCall\(tool, args as Record<string, unknown>, caller\)/.test(agents),
   "⛔ agents:dispatch-call 把调用**原样转给 dispatchRpcCall**（同一套实现与闸，不是第二份逻辑）");
+/* ⛔⛔ 11-25：这份清单**同时是执行端拒绝清单**。dispatchRpcCall 里 agent_invoke 是完整实现，
+   网关入口若不校验名字，「工具面里没有它」的会话仍能用 harness_tools({name:"agent_invoke"})
+   派活 —— 一条目录里不列、实际能调的隐性双通道（subagent_invoke 老坑的变体）。
+   判据落在**执行分支**上（不是"常量还在"）：没有 if 分支就等于没拦。 */
+ok(/if \(RENDERER_DEDICATED\.has\(tool\)\)/.test(agents),
+  "⛔ agents:dispatch-call 拒绝渲染层专用工具（否则网关就是 agent_invoke 的隐性后门）");
+ok(/if \(!String\(args\.displayNameZh \?\? ""\)\.trim\(\)\)/.test(rpc),
+  "⛔ expert_save 校验 displayNameZh（不校验 ⇒ normalize 把它默认成「未命名团队」，用户得手动删垃圾条目）");
 
 /* ── ② 工具面：MCP − 渲染层自带专用工具的（10-09：图像四件套已搬去 image-lab 域自己的通道）── */
 {
@@ -124,9 +133,13 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
   /* ⛔ 判据查的是**接线**不是"这个词还在"：变异把 `await bag.buildDynamicTools()` 换成
      `const dynamicTools: any[] = []` 时，"函数体里出现 dynamicTools" 仍然为真 ⇒ 那样写就是**假绿**
      （本轮实测踩到：先写成查词，变异测试当场没红）。所以分别钉住"来源"与"真的拼进请求"。 */
-  ok(/dynamicTools\s*=\s*await bag\.buildDynamicTools\(\)/.test(listSrc)
+  ok(/const dynamicTools = await bag\.buildDynamicTools\(\)/.test(listSrc)
     && /\.\.\.\(dynamicTools\.length \? \{ dynamicTools \} : \{\}\)/.test(listSrc),
     "⛔ 唯一入口 resumeThreadWithTurns 取当前工具面并真的拼进 resume 请求（漏了 ⇒ 老会话工具面被打回创建时快照）");
+  /* ⛔⛔ 11-25：工具面**不含会话身份**（渲染层不再按类型增删）⇒ 这里不许再传角色。
+     身份由主进程写首行时按目标会话裁（electron/tool-surface.ts），见下面 ③ 的真跑。 */
+  ok(!/buildDynamicTools\(role\)/.test(listSrc),
+    "⛔ 渲染层不再把「会话角色」塞进工具面（否则切会话/新建会话必串身份）");
   // 只数**调用点**：声明本身（`function resumeThreadWithTurns(`）也要扣掉，否则永远差 1
   const defs = (appUi.match(/function resumeThreadWithTurns\(/g) ?? []).length;
   const calls = (appUi.match(/resumeThreadWithTurns\(/g) ?? []).length - defs;
@@ -153,5 +166,111 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
     + "（只 setThread 不 resume ⇒ 新分支继承源会话的旧工具面）");
 }
 
+/* ── ③ 工具面的**身份裁剪**（11-25 架构位）：真跑 + 表驱动 + 接线 ────────────
+   ⛔ 为什么必须真跑：这张表是"谁该有哪些身份工具"的唯一实现，写错了（比如把 group_* 记成
+      dispatch）上面所有文本断言都照样绿。真跑 = 子进程 import 那个 TS，逐类比对期望集合。 */
+{
+  const codexIpc = readFileSync(join(ROOT, "electron", "features", "codex-ipc.ts"), "utf8");
+  const toolSurfaceSrc = readFileSync(join(ROOT, "electron", "tool-surface.ts"), "utf8");
+  const delegationSrc = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8");
+
+  /* 接线：**五个写面**都必须过表（少一处 = 那条路仍按旧身份走）。
+     ⛔ 这五处覆盖用户点名的五类会话：normal/hub（codex-ipc start+resume）、expert（delegation）、
+        expertTeam（teams-ipc 主理人 + 成员）、workPartner（group-talk）。 */
+  ok(/const split = splitIdentity\(\(params as any\)\.dynamicTools as unknown\[\]\)/.test(codexIpc)
+    && /applyToolIdentity\(split\.identity, "normal"\)/.test(codexIpc)
+    && !/filterToolSurface\(\(params as any\)\.dynamicTools/.test(codexIpc),
+    "thread/start：身份类按 normal 裁、其余按 CORE 收窄（⛔ 顺序反了会把身份工具一起裁掉）");
+  ok(/const split = splitIdentity\(\[\.\.\.byName\.values\(\)\]\)/.test(codexIpc)
+    && /applyToolIdentity\(split\.identity, hostKind \|\| "normal"\)/.test(codexIpc)
+    && !/filterToolSurface\(surface as any\[\]/.test(codexIpc),
+    "thread/resume：按**目标会话**类型裁身份类、只收窄其余（切会话的唯一重写点）");
+  ok(/applyToolIdentity\(desiredTools as unknown\[\], "expert"\)/.test(delegationSrc)
+    && /dynamicTools: filterToolSurface\(identityTools,/.test(delegationSrc),
+    "派生会话（专家/团/伙伴/被调度）用同一张表 + 真的用上了裁剪后的数组");
+  const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8");
+  const groupSrc = readFileSync(join(ROOT, "electron", "features", "group-talk", "01-channel.ts"), "utf8");
+  ok((teamsSrc.match(/applyToolIdentity\(/g) ?? []).length >= 2
+    && /applyToolIdentity\(\[teamTool, teamPhaseTool, buildDelegateHarnessTool\(\)\], "expertTeam"\)/.test(teamsSrc)
+    && /applyToolIdentity\(\[buildRoleMemoryTool\(/.test(teamsSrc),
+    "专家团主理人 / 成员两个写面都过表（团队会话不许有派活与群编排工具）");
+  ok(/applyToolIdentity\(surface \?\? buildGroupTalkTools\(\), "workPartner"\)/.test(groupSrc),
+    "工作伙伴（群聊）会话写面也过表（dispatch / 群编排全关）");
+
+  /* 期望表：正常/中枢 = 派活三件套 + 群编排九件套；派生四类 = 空。
+     ⛔ 这里逐名字写死，就是为了让"表里写错一个能力位"当场红。 */
+  const EXPECT = {
+    normal: ["agent_archive_sessions", "agent_invoke", "agent_list_children",
+      "group_add_member", "group_assign", "group_browser_setup", "group_create", "group_delete",
+      "group_escalate", "group_remove_member", "group_review", "group_status"],
+    hub: null, // 与 normal 相同（下面断言）
+    expertTeam: [], expert: [], workPartner: [], delegate: [],
+  };
+  const BODY = `
+import { applyToolIdentity, identityToolsOf, splitIdentity, IDENTITY_TOOLS } from "./electron/tool-surface.ts";
+const names = Object.keys(IDENTITY_TOOLS);
+const mk = () => names.map((n) => ({ type: "function", name: n }));
+const of = (k) => identityToolsOf(k).slice().sort();
+const src = mk();
+const after = applyToolIdentity(src, "delegate");
+const R = {
+  normal: of("normal"),
+  hub: of("hub"),
+  expertTeam: of("expertTeam"),
+  expert: of("expert"),
+  workPartner: of("workPartner"),
+  delegate: of("delegate"),
+  idempotent: JSON.stringify(applyToolIdentity(applyToolIdentity(mk(), "expert"), "expert")) === "[]",
+  noMutation: src.length === names.length && after.length === 0,
+  orderStable: JSON.stringify(applyToolIdentity(mk(), "normal").map((t) => t.name)) === JSON.stringify(names),
+  unknownAsNormal: applyToolIdentity(mk(), "no_such_kind").length === names.length,
+  splitPartition: (() => { const sp = splitIdentity([...mk(), { type: "function", name: "harness_tools" }]); return sp.identity.length === names.length && sp.rest.length === 1 && sp.rest[0].name === "harness_tools"; })(),
+  total: names.length,
+};
+console.log("DATA " + JSON.stringify(R));
+`;
+  let raw = "";
+  let data = null;
+  try {
+    raw = execFileSync(process.execPath, [
+      "--experimental-strip-types",
+      "--import", pathToFileURL(join(ROOT, "scripts", "guards", "_ts-register.mjs")).href,
+      "--input-type=module", "-e", BODY,
+    ], { cwd: ROOT, encoding: "utf8", timeout: 120000, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (error) {
+    raw = `${error?.stdout ?? ""}${error?.stderr ?? ""}`;
+  }
+  raw = raw.replace(/^.*MODULE_TYPELESS.*$|^.*Reparsing.*$|^.*To eliminate.*$|^.*trace-warnings.*$/gm, "");
+  const line = raw.split("\n").find((l) => l.trim().startsWith("DATA "));
+  if (line) { try { data = JSON.parse(line.trim().slice(5)); } catch { data = null; } }
+  ok(Boolean(data), "身份表真跑出结果（⛔ 没解析到 = 脚本没跑起来，别当成通过）");
+  ok(JSON.stringify(data?.normal) === JSON.stringify(EXPECT.normal),
+    `正常会话的身份工具正好是派活三件套 + 群编排九件套（实际 ${data?.total ?? "?"} 个：${(data?.normal ?? []).join(",")}）`);
+  ok(JSON.stringify(data?.hub) === JSON.stringify(EXPECT.normal),
+    "中枢会话与正常会话身份面相同（capabilitiesOf：两者 dispatch / bossGroup 都开）");
+  ok(["expertTeam", "expert", "workPartner", "delegate"].every((k) => Array.isArray(data?.[k]) && data[k].length === 0),
+    "专家 / 专家团 / 工作伙伴 / 被调度会话：身份工具**一个都不给**（派活与群编排全关）");
+  ok(data?.idempotent === true && data?.noMutation === true && data?.orderStable === true,
+    "身份裁剪是纯函数：幂等、不改入参、结果与输入顺序无关（并发/反复切换下不会互相污染）");
+  ok(data?.splitPartition === true,
+    "splitIdentity 是**划分**：身份类与非身份类互不重叠、不漏（先收窄再裁的前提）");
+  ok(data?.unknownAsNormal === true,
+    "未知类型按 normal 处理（与 session-kind 同口径 —— 判不出来时不误禁）");
+  /* ⛔⛔ 11-25：表里的群工具名与渲染层常量是**两份字面量**（表在 electron、常量在 src）。
+     只真跑表自身证明不了它们一致：渲染层改名（历史真发生过 group_browser → group_browser_setup）
+     而表没跟 ⇒ 该裁的不裁、且没有任何报错。这里按名字集合逐条比对。 */
+  {
+    const tbl = [...toolSurfaceSrc.matchAll(/^\s+(group_[a-z_]+): "bossGroup"/gm)].map((m) => m[1]).sort();
+    const constSrc = readFileSync(join(ROOT, "src", "features", "app-view", "constants", "05-boss-group-tools.tsx"), "utf8");
+    const cons = [...constSrc.matchAll(/name: "(group_[a-z_]+)"/g)].map((m) => m[1]).sort();
+    ok(tbl.length > 0 && JSON.stringify(tbl) === JSON.stringify(cons),
+      "身份表的群编排名单与 BOSS_GROUP_TOOLS 逐条一致（表 " + tbl.length + " / 常量 " + cons.length + "）");
+  }
+  ok(/IDENTITY_TOOLS: Readonly<Record<string, IdentityCap>>/.test(toolSurfaceSrc)
+    && !/SESSION_CAPS\s*=/.test(toolSurfaceSrc),
+    "身份表不复制能力矩阵（只维护「工具名 → 能力位」，矩阵仍只有 src/lib/session-kind.mjs 一份）");
+}
+
 console.log("\n【gw】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
+process.exit(fails ? 1 : 0);
 process.exit(fails ? 1 : 0);

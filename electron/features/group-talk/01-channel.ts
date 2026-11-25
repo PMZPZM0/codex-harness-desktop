@@ -14,6 +14,8 @@
  * 也⛔ 不写进 delegate 台账 —— 群会话不参与外面的「调度来源 / 上级」推导。
  */
 import { ensureProjectAgentsMd } from "../../project-conventions";
+/* 11-25：工作伙伴会话同样过身份表（dispatch / 群编排都关）—— 与主会话口径一致。 */
+import { applyToolIdentity } from "../../tool-surface";
 import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -362,7 +364,7 @@ export async function ensureTalkThread(
        改成按调用方传入（缺省保持旧值，不影响既有行为）。 */
     sandbox: options.sandbox || "workspace-write",
     approvalPolicy: options.approvalPolicy || "never",
-    dynamicTools: surface ?? buildGroupTalkTools(),
+    dynamicTools: applyToolIdentity(surface ?? buildGroupTalkTools(), "workPartner"),
     ...talkShellConfig(options.shellEnv),
   });
   const threadId = String(started?.thread?.id ?? "");

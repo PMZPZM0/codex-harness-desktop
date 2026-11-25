@@ -128,7 +128,9 @@ export /** 调度头像轨（09-16 用户要求「跟专家团那个展示一样
  * 表现就是「切会话后上个会话的回答没了」。因此 resume 后 turns 为空时改用
  * thread/turns/list 分页（asc + itemsView:full）拉齐全部回合再返回。
  * excludeTurns:true 的调用（权限推送等元数据场景）原样透传，不做额外请求。 */
-/** 只声明需要的那一个方法（⛔ 不 import Bag：app-view 不反向依赖 app-state）。 */
+/** 只声明需要的那一个方法（⛔ 不 import Bag：app-view 不反向依赖 app-state）。
+ *  11-25：恢复"只传工具面"—— 工具面**不含会话身份**，身份由主进程写首行时按目标会话裁
+ *  （electron/tool-surface.ts）；这里再传角色就是把身份交回渲染层状态，迟早复发。 */
 type ResumeToolFace = { buildDynamicTools: () => Promise<unknown[]> };
 
 /* ⛔⛔ 10-05（用户报「定时任务/知识库等能力全挂了」的真凶之一）起：**每一次** thread/resume 都
@@ -143,6 +145,7 @@ type ResumeToolFace = { buildDynamicTools: () => Promise<unknown[]> };
    ⛔ 本函数是全应用唯一的恢复入口（守卫【gw】钉住：src/** 只允许 2 处直发 thread/resume，
    另一处是 resumeThreadLight，其调用方 open-thread 已显式传工具面）。 */
 export async function resumeThreadWithTurns(bag: ResumeToolFace, params: { threadId: string; excludeTurns?: boolean } & Record<string, unknown>): Promise<any> {
+  /* ⛔ 11-25：工具面只取"与身份无关"的那份；身份裁剪在主进程写首行时做（见 tool-surface.ts）。 */
   const dynamicTools = await bag.buildDynamicTools();
   const result = await window.codex.request("thread/resume", { ...params, ...(dynamicTools.length ? { dynamicTools } : {}) });
   const thread = result?.thread;

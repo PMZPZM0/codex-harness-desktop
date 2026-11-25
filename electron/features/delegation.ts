@@ -26,6 +26,9 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
+/* 11-25：派生会话的工具面也过**同一张身份表**（tool-surface.ts）—— 口径只有一份，
+   将来新增身份类工具不会"只在主会话生效"。派生会话 dispatch / bossGroup 都为 false ⇒ 恒等。 */
+import { applyToolIdentity } from "../tool-surface";
 /* 11-12 会话类型隔离：「没有来源会话」时用矩阵的普通会话形态（⛔ 别手写字面量） */
 import { roleOfKind } from "../../src/lib/session-kind.mjs";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
@@ -252,6 +255,10 @@ export async function runDelegatedTask(input: {
     ...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : []),
     ...(reaSpec ? toDynamicTools([reaSpec]) : []),
   ]);
+  /* ⛔ 11-25：跑一次身份表再落盘/传参（与主进程写首行的是**同一个函数**）。
+     派生会话一律 expert/expertTeam/workPartner/delegate ⇒ dispatch 与 bossGroup 都为 false，
+     所以这里对现状是恒等映射；它的作用是让"身份"只有一处实现（守卫 11i 会比对三类取值相同）。 */
+  const identityTools = applyToolIdentity(desiredTools as unknown[], "expert");
   const targetKey = `${target.kind}:${target.key}`;
   let threadId = "";
   let reused = false;
@@ -272,7 +279,7 @@ export async function runDelegatedTask(input: {
          ⛔ 11-14：REA 装好后，复用中的专家/子智能体会话首行可能还是「装之前」的工具面
          ⇒ 也同步一次（desiredTools 就是它新建时该有的那份，不是宿主通用工具面）。 */
       if (leadOfTeam || reaSpec) {
-        try { await syncToolSurfaceAsync(codexHome, reusable.threadId, desiredTools as unknown[]); }
+        try { await syncToolSurfaceAsync(codexHome, reusable.threadId, identityTools as unknown[]); }
         catch { /* 工具面升级失败：新建分支仍会带全套工具 */ }
       }
       const resumed: any = await server.request("thread/resume", {
@@ -327,7 +334,7 @@ export async function runDelegatedTask(input: {
     // 10-21：`withStepParam` 给这批工具注入可选的「这一步在干什么」参数（卡片标题）。
     // ⛔ 主进程自己发的 thread/start **不经过** codex-ipc 的拦截 ⇒ 这里必须各自包一层。
     /* 11-19 阶段 2：按岗位（产品/工程/设计）收窄；识别不出岗位时回落 CORE。 */
-    dynamicTools: filterToolSurface(desiredTools, allowedToolsFor("expert", `${displayName} ${String(target.kind ?? "")}`)),
+    dynamicTools: filterToolSurface(identityTools, allowedToolsFor("expert", `${displayName} ${String(target.kind ?? "")}`)),
   });
   threadId = String(started?.thread?.id ?? "");
   }

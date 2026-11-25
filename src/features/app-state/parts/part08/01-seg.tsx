@@ -487,6 +487,12 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
    *     ⇒ 这份数组在 resume 上的唯一作用：主进程拿它去**改写老会话 rollout 的首行**
    *       （electron/rollout-worker.cjs 的 syncToolSurface，见 codex-ipc 的 thread/resume 分支），
    *       否则创建于旧版本的会话永远拿不到新工具（症状：agent_ask 写着"可多选"却只能选一个）。 */
+  /* ⛔⛔ 11-25 架构位：**工具面在这里不再看会话类型**。
+     身份类工具（agent_invoke 三件套 / 群编排九件套）一律照常展开，由**主进程**在写 rollout
+     首行时按目标会话的类型裁掉（`electron/tool-surface.ts`）。原因（三次同型事故）：
+     这里读的是 `bag.threadRole`，而它只描述**当前显示**的会话；切会话 / 新建会话时那一刻
+     state 还停在上一条会话上 ⇒ 新会话被贴上旧身份（普通会话缺派活工具、专家会话多出派活工具）。
+     只要"身份"还由渲染层的可变状态决定，加多少个 await 都会被下一种时序打穿。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     /* Laya 判断工具（10-18 用户：「如果安装了 laya 模型，就再暴露这个工具给 codex」）：
        ⛔ 条件注册是需求本身（没装就别让模型看见）；`layaStatus` 在主进程有 30s pip 缓存，
@@ -572,7 +578,6 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          ⛔ 这里曾注册过 `subagent_invoke`（subAgentTools）：那条通道与「调度」开关**完全脱钩**、
             还与 agent_invoke 形成两套调度工具 ⇒ 模型只挑名字最直白的它，专家/专家团永远被绕过
             （用户症状：「只能调度子智能体」）。已整体删除，⛔ 不许再加回来。 */
-      ...(bag.threadRole.caps.dispatch ? [
       {
         type: "function",
         name: "agent_invoke",
@@ -618,7 +623,6 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: [],
         },
       },
-      ] : []),
       /* ⭐ 能力网关（10-05 立 / 10-09 收窄）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，
          模型直接调用一律 `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 /
          专家与子智能体管理 / 连接器注册这些能力对模型**全不可达**。dynamicTools 是唯一可见通道。
@@ -816,7 +820,8 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
             于是它自己新建了一个演示群、造了四个同名角色，在假群里派活+自审，再把假群进度当真事
             汇报到用户眼前 —— 用户这边一个成员产出都看不到。⇒ 与上面的 agent_invoke 同一道闸：
             受限会话一律不挂 BOSS 群编排工具；真正派活只认 team_member_invoke（当前群成员）。 */
-      ...(bag.threadRole.caps.bossGroup ? (BOSS_GROUP_TOOLS as unknown as any[]) : []),
+      /* ⛔ 11-25：群编排工具同样**不再按会话类型**在这里增删 —— 由主进程写首行时按 caps.bossGroup 裁。 */
+      ...(BOSS_GROUP_TOOLS as unknown as any[]),
       /* 10-29：收藏夹 / 开发日记 / 密码本 —— 用户指定的权限模型（会话级授权、默认关、
          只读 + 只追加、密码本明文不进上下文）。⛔ 注册**不带开关条件**：dynamicTools 只在
          thread/start 与 resume 定死，带条件就会出现「刚打开开关，模型还是没有工具」；

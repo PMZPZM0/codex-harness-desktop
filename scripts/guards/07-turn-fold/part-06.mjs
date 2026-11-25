@@ -313,10 +313,11 @@ export async function run() {
        合并去重后的 `surface`，不再直接是 withStepParam(resumeTools)。要求的语义没变——
        **两处注入都必须带 step**；所以盯「surface 由 withStepParam 产生」+「同步的就是 surface」，
        不再绑实参字面（绑了的话，以后改合并逻辑就会假红，而真语义其实没动）。 */
-    (/withStepParam\(\(params as any\)\.dynamicTools\)/.test(codexIpcSrc)
-      /* 11-22：resume 那处现在会按 CORE 画像再收窄一次 ⇒ surface 是 let（先 withStepParam，
-         可能被 filterToolSurface 后重新 withStepParam）。语义没变：仍是 withStepParam 产生的。 */
-      && /(const|let) surface = withStepParam\(/.test(codexIpcSrc)
+    /* 11-25：start 那处改成了「收窄后的其余 + 裁过的身份类」再统一 withStepParam ⇒ 判据跟接线走，
+       语义不变：**两处最终写进首行的数组都必须过 withStepParam**。 */
+    (/\(params as any\)\.dynamicTools = withStepParam\(\[\.\.\.narrowed/.test(codexIpcSrc)
+      /* 11-22：resume 那处会按 CORE 画像收窄「其余」再拼回身份类 ⇒ surface 仍由 withStepParam 产生。 */
+      && /const surface = withStepParam\(/.test(codexIpcSrc)
       && /syncToolSurfaceAsync\(codexHome, resumeThreadId, surface\)/.test(codexIpcSrc) ? ok : fail)(
       "【127】注入点是主进程工具面**两处**（thread/start MCP 合并后 + resume 改写 rollout 首行前）—— ⛔ 少 resume 那处，老会话 resume 一次就退回无 step 的旧形态"
     );
@@ -332,8 +333,10 @@ export async function run() {
     );
     const delegateSrc = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8").replace(/\r/g, "");
     const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
-    (/withStepParam\((filterToolSurface\()?\[teamTool, teamPhaseTool/.test(teamsSrc) && /const desiredTools = withStepParam\(\[[\s\S]{0,120}?\.\.\.teamTools/.test(delegateSrc) ? ok : fail)(
-      "【127】委派 / 团队会话的工具面也包了（主进程自己发的 thread/start **不经过** codex-ipc 拦截）"
+    /* ⛔ 11-25：工具面多了一层身份裁剪（applyToolIdentity）⇒ 判据跟着接线走，仍要求
+       「withStepParam 在外、filterToolSurface 在中」这两层包装不能少（少了 = 卡片没标题 / 画像没收窄）。 */
+    (/withStepParam\(filterToolSurface\(applyToolIdentity\(\[teamTool, teamPhaseTool/.test(teamsSrc) && /const desiredTools = withStepParam\(\[[\s\S]{0,120}?\.\.\.teamTools/.test(delegateSrc) ? ok : fail)(
+      "【127】委派 / 团队会话的工具面也包了（主进程自己发的 thread/start **不经过** codex-ipc 拦截；11-25 起再多一层身份表）"
     );
     /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」：正则绿着、函数是坏的也照样过） */
     {

@@ -383,6 +383,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
      ⛔ 视频必须两段式：提交立刻返回 jobId（不能阻塞回合），查询另一次调用；jobId 由主进程落盘，
         关画布 / 重启应用都能续查。 */
   if (name === "expert_save") {
+    /* ⛔ 11-25：名称校验**原始入参** —— normalize 会把空名默认成「未命名团队」，已造出垃圾专家（详情见 11i 守卫同名断言）。 */
+    if (!String(args.displayNameZh ?? "").trim()) return { ok: false, error: "displayNameZh（专家/专家团名称）必填 —— 不传会建出「未命名团队」垃圾条目；只是要派活请用 agent_invoke，⛔ 不是本工具" };
     const team = normalizeTeamConfig({
       displayName: { zh: String(args.displayNameZh ?? ""), en: String(args.displayNameEn ?? "") },
       profession: { zh: String(args.profession ?? "") },
@@ -393,9 +395,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       members: Array.isArray(args.members) ? args.members : [],
       quickPrompts: Array.isArray(args.quickPrompts) ? args.quickPrompts.map((q: unknown) => ({ zh: String(q) })) : [],
     });
-    if (!team.lead?.name || !String(team.lead?.systemPrompt ?? "").trim()) {
-      return { ok: false, error: "lead 的 name 与 systemPrompt 必填（专家没有系统提示词就无法工作）" };
-    }
+    if (!team.lead?.name || !String(team.lead?.systemPrompt ?? "").trim()) return { ok: false, error: "lead 的 name 与 systemPrompt 必填（专家没有系统提示词就无法工作）" };
     const list = await readExpertTeams();
     const existed = list.some((entry) => entry.teamId === team.teamId);
     const next = existed ? list.map((entry) => (entry.teamId === team.teamId ? team : entry)) : [team, ...list];
@@ -1120,9 +1120,9 @@ async function writeDispatchPortFile(port: number): Promise<void> {
        里（10-09 实测 29 份 schema 全拆 = 每次请求常驻约 25KB，得不偿失）。
      ⇒ 于是 `dispatchGatewayTools()` = 当前 MCP 工具面 − 渲染层自带专用工具的。 */
 
-/** 渲染层另有**专用 dynamicTool** 的能力（同名会在 dynamicTools 里撞车 ⇒ 不进网关）。
+/** 渲染层另有**专用 dynamicTool** 的能力（同名会撞车 ⇒ 不进网关）。⛔ 11-25 起这份清单**同时是执行端拒绝清单**（agents:dispatch-call 用它挡「工具面没有、却从网关绕过」的隐性双通道）。
     ⛔ 图像四件套不在列 —— 它们已从 `dispatchMcpTools` 移除，不再属于本工具面。 */
-const RENDERER_DEDICATED = new Set(["agent_invoke", "agent_archive_sessions"]);
+export const RENDERER_DEDICATED = new Set(["agent_invoke", "agent_archive_sessions"]);
 
 /** 网关暴露的工具面（= MCP 工具面 − 渲染层自带专用工具的）。 */
 export function dispatchGatewayTools(): Array<{ name: string; description: string; inputSchema: unknown }> {

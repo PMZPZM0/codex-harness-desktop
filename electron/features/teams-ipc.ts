@@ -22,6 +22,8 @@ import { memberThreadName } from "../team-runs";
 import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
 import { allowedToolsFor, filterToolSurface } from "../tool-profiles";
+/* 11-25：团队会话的工具面也过**同一张身份表**（tool-surface.ts）—— 口径只有一份。 */
+import { applyToolIdentity } from "../tool-surface";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 /* 11-07：团队/成员会话首任务显式写发送者（用户启动团队 vs 主理人派成员）。 */
@@ -136,7 +138,7 @@ export const teamsFeature = defineFeature<null>({
         config: shouldBindHarness(customModel) ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
         // 10-21：主进程自己发的 thread/start 不经过 codex-ipc 的拦截 ⇒ 工具面各自包一层 `withStepParam`
         /* 11-19 阶段 2：成员会话按岗位收窄（三个调度工具本来就少，这里只做档案口径统一）。 */
-        dynamicTools: withStepParam(filterToolSurface([teamTool, teamPhaseTool, buildDelegateHarnessTool()], allowedToolsFor("expert", `${team.displayName?.zh ?? ""}`))),
+        dynamicTools: withStepParam(filterToolSurface(applyToolIdentity([teamTool, teamPhaseTool, buildDelegateHarnessTool()], "expertTeam"), allowedToolsFor("expert", `${team.displayName?.zh ?? ""}`))),
       });
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
@@ -194,7 +196,7 @@ export const teamsFeature = defineFeature<null>({
         // 10-05：成员会话能写自己的私有记忆（主进程侧应答，见 role-memory-tool.ts）
         // 10-10：+ 能力网关（用户令「全开 harness_tools」；见 delegate-harness-tool.ts。
         //        ⛔ 权限边界在执行端，被拒时工具会如实回报原因）
-        dynamicTools: filterToolSurface([buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()], allowedToolsFor("expert", `${member.profession ?? ""} ${team.displayName.zh}`)),
+        dynamicTools: filterToolSurface(applyToolIdentity([buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()], "expertTeam"), allowedToolsFor("expert", `${member.profession ?? ""} ${team.displayName.zh}`)),
       });
       const equipmentQuery = JSON.stringify({ teamId: team.teamId, memberId: member.id });
       const systemBase = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n任务需要配套技能或工具时，调用 expert_list(${equipmentQuery}) 核对状态。按缺项返回的安装指引处理，安装后复检。`;

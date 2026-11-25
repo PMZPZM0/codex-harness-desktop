@@ -280,10 +280,14 @@ try {
        但**里面那三个成员必须还在**（别为了包装把它拆掉）。 */
     /* ⛔⛔ 11-07：工具面提到 `desiredTools` 单一真相源（新建 + resume 同步共用一份）。
        复用会话必须在 thread/resume **之前**同步，否则老会话首行还是旧工具面 ⇒ 主代理喊不动成员。 */
+    /* ⛔⛔ 11-25：派生会话的工具面统一由 `applyToolIdentity(desiredTools, "expert")` 产出
+       （身份裁剪的唯一实现，见 electron/tool-surface.ts）⇒ 新建与复用都必须用**这一份**
+       identityTools，⛔ 不许一处 raw desiredTools、一处过表（那就是两套工具面）。 */
     ok(/const desiredTools = withStepParam\(\[\s*\.\.\.teamTools, buildDelegateHarnessTool\(\)/.test(delegation)
-      && /dynamicTools: (desiredTools|filterToolSurface\(desiredTools)/.test(delegation)
-      && /syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegation),
-      "被委派会话（子智能体 / 专家 / 团主理人）拿到能力网关，复用会话的工具面在 resume 前同步");
+      && /const identityTools = applyToolIdentity\(desiredTools as unknown\[\], "expert"\)/.test(delegation)
+      && /dynamicTools: filterToolSurface\(identityTools,/.test(delegation)
+      && /syncToolSurfaceAsync\(codexHome, reusable\.threadId, identityTools/.test(delegation),
+      "被委派会话（子智能体 / 专家 / 团主理人）拿到能力网关；新建与复用共用过完身份表的同一份工具面，且复用先于 resume 同步");
     ok(/const desiredTools = withStepParam\(/.test(delegation),
       "委派会话工具面包了 `withStepParam`（主进程自建会话**不经过** codex-ipc 的注入点，漏了 = 子智能体的卡片没有标题）");
     const teamHits = teams.match(/buildDelegateHarnessTool\(\)/g) ?? [];

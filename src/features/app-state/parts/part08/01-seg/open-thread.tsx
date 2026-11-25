@@ -238,6 +238,9 @@ export async function openThread(bag: Bag, id: string, freshThread?: Thread | nu
       // 整份忽略，10-11 实测）——它的作用是交给主进程去**改写老会话 rollout 首行的
       // session_meta.dynamic_tools**（引擎 spawn 会话时读的就是那一行）。缺了它，创建于
       // 旧版本的会话永远拿不到新工具（agent_ask.multiple 之类）。
+      /* ⛔ 11-25：工具面**不含任何会话身份**（渲染层不再按类型增删）⇒ 这里传什么都一样，
+         身份由主进程在写首行时按**目标会话**的类型裁（electron/tool-surface.ts）。
+         ⛔ 别再把"目标会话的角色"塞回这条路：那等于把身份重新交给渲染层状态，时序一变就复发。 */
       const dynamicTools = await bag.buildDynamicTools();
       const result = await bag.resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval, dynamicTools });
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的

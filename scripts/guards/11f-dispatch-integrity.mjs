@@ -596,15 +596,22 @@ try {
     && /只有用户直接创建的主会话可以调度/.test(seg08Src),
     "工具描述与 MCP 孪生都标明：只有主会话可调度，子会话没有权限");
   const seg08Code = seg08Src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-  ok(/bag\.threadRole\.caps\.dispatch \?/.test(seg08Code),
-    "受限会话不注册 agent_invoke / agent_archive_sessions（读能力矩阵，不只靠执行端拒绝）");
+  /* ⛔⛔ 11-25 架构定案（三次同型事故后）：渲染层**不许**再按会话类型增删身份工具。
+     它手里只有"当前显示那条会话"的状态 —— 切会话 / 新建会话那一刻必然是旧值，于是新会话
+     被贴上旧身份（普通会话缺 agent_invoke / 专家会话多出 agent_invoke）。
+     身份裁剪的唯一实现搬到了 `electron/tool-surface.ts`（由 codex-ipc 的 start / resume 调用），
+     这里做**负向**断言：谁把 caps 判定写回渲染层，这条就红。 */
+  ok(!/bag\.threadRole\.caps\.dispatch \?/.test(seg08Code) && !/bag\.threadRole\.caps\.bossGroup \?/.test(seg08Code),
+    "⛔ 渲染层不按会话类型增删身份工具（否则切会话 / 新建会话必串身份 —— 见 tool-surface.ts 头注）");
   /* ⛔⛔ 11-12 用户实测「进度到第二环」全是假的：BOSS 群编排工具原先**无条件**展开，
      工作伙伴群主理人拿到 group_create/group_assign 后自己造了个演示群自导自演。
-     只查「文件里有没有 caps.dispatch ?」会恒真（agent_invoke 那一处就能顶绿）⇒ 必须精确
-     锚到 BOSS_GROUP_TOOLS 那一行，并负向禁止无条件展开（剥注释，防注释把它顶假红）。 */
-  ok(/\.\.\.\(bag\.threadRole\.caps\.bossGroup \? \(BOSS_GROUP_TOOLS as unknown as any\[\]\) : \[\]\)/.test(seg08Code)
-    && !/\.\.\.\(BOSS_GROUP_TOOLS as unknown as any\[\]\)/.test(seg08Code),
-    "⛔ 只有 caps.bossGroup 的会话才挂 BOSS 群编排工具（不许自己新建群派活，只认当前群的 team_member_invoke）");
+     11-25 起改由主进程按 caps.bossGroup 收口（`electron/tool-surface.ts` 的群编排九件套），
+     渲染层**故意**无条件展开 —— 这里钉「渲染层不门控 + 表里真的有这九个名字」，
+     防止有人把门控写回渲染层（那会重新引入"切会话串身份"）。 */
+  ok(/\.\.\.\(BOSS_GROUP_TOOLS as unknown as any\[\]\)/.test(seg08Code)
+    && !/bag\.threadRole\.caps\.bossGroup \?/.test(seg08Code)
+    && /group_browser_setup: "bossGroup"/.test(readFileSync(join(ROOT, "electron", "tool-surface.ts"), "utf8")),
+    "⛔ 群编排工具的裁剪只在主进程身份表（渲染层无条件展开，⛔ 别把 caps 门控写回去）");
   ok(!/bag\.threadRole\.restricted \?/.test(seg08Code),
     "⛔ 工具面不许再按旧布尔 restricted 开合（必须走 caps.*，否则加一类会话就会串一条）");
   /* ⛔ 11-07：零调度权限这句话收进了 `src/lib/dispatch-voice.mjs`（人话版），三处壳改成引用它。
@@ -784,11 +791,14 @@ try {
   /* 11-14：REA 装好后专家/子智能体的复用会话也要升级工具面（desiredTools 里多了 rea__gateway），
      条件由 `leadOfTeam` 扩成 `leadOfTeam || reaSpec`。⛔ 断言不能只认旧字面量就报红，
      但要补一条真判据钉住「同步必须排在 resume 之前」—— 条件放宽、强度不降。 */
-  ok(/if \(leadOfTeam(?:\s*\|\| reaSpec)?\) \{\s*try \{ await syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegationSrc)
+  ok(/if \(leadOfTeam(?:\s*\|\| reaSpec)?\) \{\s*try \{ await syncToolSurfaceAsync\(codexHome, reusable\.threadId, identityTools/.test(delegationSrc)
     && delegationSrc.indexOf("syncToolSurfaceAsync") < delegationSrc.indexOf('server.request("thread/resume"'),
     "⛔ 复用会话在 thread/resume **之前**同步工具面（老会话升级唯一路，见附录 Z；REA 装好后专家会话同样要升级）");
-  ok(/dynamicTools: (desiredTools|filterToolSurface\(desiredTools)/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
-    "新建与复用共用同一份工具面，且都登记主理人身份（team_member_invoke 的硬闸认它）");
+  /* 11-25：两份写面（新建 / 复用）必须用**同一个** identityTools（过完身份表的那份），
+     ⛔ 不许一处用 desiredTools、一处用 identityTools —— 那等于两套工具面。 */
+  ok(/dynamicTools: filterToolSurface\(identityTools,/.test(delegationSrc)
+    && /identityTools as unknown\[\]/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
+    "新建与复用共用同一份工具面（identityTools），且都登记主理人身份（team_member_invoke 的硬闸认它）");
   ok(/kind: leadOfTeam \? "team" : target\.kind/.test(delegationSrc),
     "主理人本尊的会话级指令按 team 写（⛔ 别让「自己干别转派」压过主理人 SOP）");
 
