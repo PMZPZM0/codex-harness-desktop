@@ -596,10 +596,16 @@ const catalog = [
       "自由催办已移除：提问/回答不再被强催第二轮（改由 @/回复/未读 决定谁说话）");
     /* ⛔⛔ 11-12 审查修的两处（都只影响"看得对不对"，但会让用户判"又坏了"）：
        ① queued 用裸 memberId、running 用合成 id ⇒ 同一个人两行；
-       ② settled 发在"还有人在跑"之前 ⇒ 明明还在跑却显示已收口。 */
+       ② settled 发在"还有人在跑"之前 ⇒ 明明还在跑却显示已收口。
+       ⛔⛔ 11-26 用户实测（望归专家团）：三行都「已交回」了卡片还写「进行中」、计时一直涨。
+       根因是 `if (!gid) return` 挡在 emitAsync("settled") 前面 —— 外面会话没有群，
+       收口事件永远发不出去。⇒ 判据加两条：作用域必须能回落 threadId，
+       且 settled 必须在"没有群就退出"**之前**。 */
     ok(/emitAsync\("queued", \{[\s\S]{0,160}teamAuthorIdOf\(teamId, String\(task\?\.memberId/.test(fallback)
-      && /const stillRunning = teamRunStore\.activeRunList[\s\S]{0,140}if \(stillRunning\) return;\s*emitAsync\("settled"/.test(fallback),
+      && /const runningUnderLead = teamRunStore\.activeRunList[\s\S]{0,200}if \(runningUnderLead\) return;[\s\S]{0,200}emitAsync\("settled"[\s\S]{0,120}if \(!gid\) return;/.test(fallback),
       "异步反馈口径一致：queued 与 running 同一合成 id；整团没人跑了才 announce settled");
+    ok(/const scope = gid \? \{ groupId: gid \} : \(threadId \? \{ threadId \} : null\)/.test(fallback),
+      "⛔ 异步事件的作用域与 team-invoke 同口径：群聊 groupId / 外面会话 threadId（否则外面会话永远收不到 batch 与 settled）");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
@@ -621,6 +627,15 @@ const catalog = [
       && /<AsyncRunPanel threadId=\{thread\?\.id\}/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"))
       && /66-async-run-feedback/.test(read("src/styles.css")),
       "异步执行反馈是独立板块（自己订阅事件 / 零 IPC），群聊与外面会话共用同一块");
+    /* ⛔⛔ 11-26 用户：「完成后卡片不会更新状态吗，还显示进行中，然后也不会自动消失」。
+       两件事各钉一条：① 收口时刻有兜底（主进程没发 settled 也能从"全部行已交回"推出来）；
+       ② 收口后自动消失（⛔ 不许只剩手动关闭）。 */
+    const panelSrc = read("src/features/async-run-feedback/AsyncRunPanel.tsx");
+    ok(/const settledAt = batch\?\.settledAt \?\? \(allFinished/.test(panelSrc),
+      "⛔ 收口时刻两级来源：settled 事件优先，全行已交回兜底（旧版只发群聊 ⇒ 外面会话卡「进行中」）");
+    ok(/SETTLE_LINGER_MS/.test(panelSrc) && /setDismissedAt\(Date\.now\(\)\), SETTLE_LINGER_MS/.test(panelSrc)
+      && /if \(!settled\) setDismissedAt\(0\)/.test(panelSrc),
+      "⛔ 收口后自动消失（留一会儿给用户看结果），且新一批开始时会重新出现");
   }
   ok(/runTalkTurn\(group\.id/.test(dispatch) && !/runDelegatedTask\(/.test(dispatch)
     && /attachGroupTalkEvents\(server\)/.test(dispatch),

@@ -9,9 +9,13 @@
  * ⛔ 只展示事实（来自 group-async-run 事件），⛔ 不自己起轮询 / 不猜状态 / 不补假进度。
  * ⛔ 展开态是本地 state；关掉群弹窗再打开会按最新事件重建。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { useAsyncRunState, type AsyncRunPhase, type AsyncRunRow } from "./useAsyncRunState";
+
+/** 收口后停留多久再自动消失（用户：「完成后过一会自动消失」）。
+ *  ⛔ 不是立刻消失：用户还要看一眼「谁交回了、各花了多久」。⛔ 也别太长，会挡住输入区。 */
+const SETTLE_LINGER_MS = 8000;
 
 const PHASE_LABEL: Record<AsyncRunPhase, string> = {
   queued: "排队中",
@@ -33,6 +37,24 @@ export function AsyncRunPanel({ groupId, threadId }: { groupId?: string; threadI
   const batch = useAsyncRunState({ groupId, threadId });
   const [expanded, setExpanded] = useState(true);
   const [dismissedAt, setDismissedAt] = useState(0);
+  const rows = batch?.rows ?? [];
+  /* ⛔⛔ 11-26：收口时刻**两级来源**。主进程的 `settled` 事件是权威，但它曾经只在群聊发
+     （外面会话没有群 ⇒ 永远收不到，卡片卡在「进行中」、计时一直涨）。所以再加一条兜底：
+     所有行都已是 done/failed ⇒ 这一批事实上就结束了，取最后一个 finishedAt 当收口时刻。
+     ⛔ 这不是"猜状态"：行的相位本来就是主进程发来的事实。 */
+  const allFinished = rows.length > 0 && rows.every((row) => row.phase === "done" || row.phase === "failed");
+  const settledAt = batch?.settledAt ?? (allFinished ? Math.max(...rows.map((row) => row.finishedAt ?? row.queuedAt)) : 0);
+  const settled = settledAt > 0;
+
+  /* 又有成员开跑 / 新一批开始 ⇒ 解除"已关闭"，卡片重新出现（⛔ 否则一张卡关掉后永不回来）。 */
+  useEffect(() => { if (!settled) setDismissedAt(0); }, [settled]);
+  /* 收口后留一会儿自动消失（群聊与外面会话同一个板块，两处行为一致）。 */
+  useEffect(() => {
+    if (!settled) return;
+    const timer = window.setTimeout(() => setDismissedAt(Date.now()), SETTLE_LINGER_MS);
+    return () => window.clearTimeout(timer);
+  }, [settled, settledAt]);
+
   /* ⛔ 外面会话没有 batch 事件（派活走渲染层同步应答）⇒ 首批 running 事件就是一批，
      total 跟着 rows 长，这张卡照样能显示"谁在跑 / 谁交回了"。 */
   if (!batch || !batch.rows.length) return null;
@@ -41,7 +63,6 @@ export function AsyncRunPanel({ groupId, threadId }: { groupId?: string; threadI
   const now = Date.now();
   const finished = batch.rows.filter((row) => row.phase === "done" || row.phase === "failed").length;
   const running = batch.rows.filter((row) => row.phase === "running").length;
-  const settled = Boolean(batch.settledAt);
   const percent = Math.min(100, Math.round((finished / Math.max(1, batch.total)) * 100));
 
   return (
@@ -59,7 +80,7 @@ export function AsyncRunPanel({ groupId, threadId }: { groupId?: string; threadI
         <span className="async-run-panel__count">
           {finished}/{batch.total} 已交回{running ? ` · ${running} 人在跑` : ""}
         </span>
-        <span className="async-run-panel__elapsed">{elapsedOf({ ...batch.rows[0], queuedAt: batch.startedAt, startedAt: batch.startedAt, finishedAt: batch.settledAt }, now)}</span>
+        <span className="async-run-panel__elapsed">{elapsedOf({ ...batch.rows[0], queuedAt: batch.startedAt, startedAt: batch.startedAt, finishedAt: settled ? settledAt : undefined }, now)}</span>
         {settled && (
           <button type="button" className="async-run-panel__close" title="关掉这张卡" onClick={() => setDismissedAt(Date.now())}>
             <X size={13} />

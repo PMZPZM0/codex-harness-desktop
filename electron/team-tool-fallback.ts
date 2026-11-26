@@ -240,11 +240,16 @@ export async function handleTeamToolCall(deps: {
        板块自己订阅 `group-async-run` 事件（零 IPC、独立板块）。⛔ 只广播事实，不在这里
        维护任何状态 —— 关掉群弹窗再打开时板块按事件重建即可。 */
     const gid = groupOfTeam(teamId);
+    /* ⛔⛔ 11-26 用户实测（望归专家团）：三件都「已交回」了，卡片还写着「进行中」、计时一直涨、
+       永远不消失。根因就在下面这行 —— 原来**没有群就 return**，`settled` 永远发不出去；
+       而板块的收口时刻只认这条事件。⇒ 作用域改成与 `team-invoke.announceLive` 同一条口径：
+       群聊发 groupId，外面会话（从侧栏打开的专家团）发 threadId。 */
     const emitAsync = (phase: string, extra: Record<string, unknown> = {}) => {
-      if (!gid) return;
+      const scope = gid ? { groupId: gid } : (threadId ? { threadId } : null);
+      if (!scope) return;
       try {
         broadcastHarnessEvent({
-          type: "group-async-run", phase, groupId: gid, teamId, at: Date.now(), ...extra,
+          type: "group-async-run", phase, ...scope, teamId, at: Date.now(), ...extra,
         } as never);
       } catch { /* 广播失败不影响派活 */ }
     };
@@ -295,8 +300,6 @@ export async function handleTeamToolCall(deps: {
       });
       const done = settled.filter((entry) => entry.status === "fulfilled").length;
       const failed = settled.length - done;
-      const gid = groupOfTeam(teamId);
-      if (!gid) return;
       /* ⛔⛔ 11-12 审查修：`settled` 原来发在"还有人在跑"判断**之前** ⇒ 板块标题立刻变
          「已收口」，而成员还在跑（用户看到"收口了但人还在写"）。⇒ 只有整团真的没人跑了才收口。 */
       /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，这主代理能知道他跑完了？」
@@ -304,10 +307,14 @@ export async function handleTeamToolCall(deps: {
          A 群这批明明跑完了，却因为 B 群在跑同一个团而 `return` —— 群里看不到回交，
          主理人也真的不会被叫醒。⇒ 改用 `leadThreadId`（一个群的主理人是同一条会话），
          精确到"这个主理人还有没有别的批次在跑"，不再跨群串。 */
-      const stillRunning = teamRunStore.activeRunList()
+      const runningUnderLead = teamRunStore.activeRunList()
         .some((run) => String(run.leadThreadId ?? "") === String(threadId));
-      if (stillRunning) return;
+      if (runningUnderLead) return;
+      /* ⛔⛔ 11-26：**收口事件必须在"没有群就退出"之前发** —— 外面会话（侧栏打开的专家团）
+         没有群，原来在这里就被 return 掉了，卡片于是永远「进行中」。回喂群主理人是群专属的，
+         所以 `if (!gid) return` 挪到它前面去。 */
       emitAsync("settled", { done, failed });
+      if (!gid) return;
       /* ⛔⛔ 11-12 「主代理一直刷屏」的第二个源头：**每批完成都回喂一次**，主理人每批都说一段
          （「进度 2/4」「进度 3/4」…4 个成员就刷 4 条）。⇒ 同一团队**还有人在跑就不回喂**，
          等最后一批交回时一次汇总（那时它说一条结论就够）。 */
