@@ -227,5 +227,11 @@ const diffLib = await import("../../src/lib/diff-view.mjs");
     "起始页窄栏/全屏自适应（卡片有上限、入口 auto-fit、文字换行不裁剪）");
 }
 
+/* ⛔⛔ 11-26 用户令：「默认这个（新标签页）界面就行，不需要默认打开是那个监控界面」。
+   面板是**常驻挂载**的（AppView 无条件渲染，只靠 data-state 开合）⇒ 文件卡/命令面板点名都在挂载之后，
+   首挂载可以无条件回落新标签页。⛔ 别改成"保留 rightTab"——那会让每次启动直接开上次那一页。 */
+ok(/if \(rightTab && rightTab !== "newtab"\) setRightTab\("newtab"\)/.test(reviewPanel),
+  "⛔ 右栏默认页 = 新标签页（⛔ 不默认打开上次那一页 / 监控）");
+
 console.log(`\n【turn-review】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

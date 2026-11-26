@@ -200,13 +200,13 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const bootedRef = useRef(false);
   useEffect(() => {
-    /* 首次挂载：右栏回到空白页（rightTab 可能还留着上次的 monitor/review）。
-       ⛔⛔ 但**外部刚点名要的那一页不能吞**（11-26 审查抓到）：文件卡 / 命令面板 / 快捷键
-       会在挂载前后调 setRightTab("tree")，原实现一律改成 newtab ⇒ 用户点了文件卡却看到空白页。
-       ⇒ 首挂载时若 rightTab 已经是某个功能页，就把它收进标签条并保留。 */
+    /* 首次挂载：右栏一律回到**新标签页**（rightTab 是上次残留的 monitor/review/tree 之类）。
+       ⛔ 判据依据：这个面板是**常驻挂载**的（AppView 里无条件渲染，只靠 data-state 开合），
+       所以「文件卡 / 命令面板 / 审阅桥点名某页」都发生在挂载**之后** ⇒ 走下面的第二个分支补标签，
+       这里不需要"猜"谁刚被点名。11-26 用户令：「默认这个（新标签页）界面就行，不要默认打开监控」。
+       ⛔ 别为了"保住刚点名的页"把这里改成保留 rightTab —— 那会让每次启动都直接开上次那一页。 */
     if (!bootedRef.current) {
       bootedRef.current = true;
-      if (PANEL_TABS.some((tab) => tab.key === rightTab)) { setOpenedTabs([rightTab]); return; }
       if (rightTab && rightTab !== "newtab") setRightTab("newtab");
       return;
     }
