@@ -112,6 +112,9 @@ export interface DramaBoardApi {
   addNode: (kind: string, payload?: Record<string, any>, position?: { x: number; y: number }) => DramaRFNode;
   updatePayload: (id: string, patch: Record<string, any>) => void;
   updateManyPayloads: (entries: Array<{ id: string; patch: Record<string, any> }>) => void;
+  /** 改节点尺寸（11-26 用户：卡片太小要能拉大）。⛔ React Flow 的 dimensions 只改 measured，
+   *  不写 style ⇒ 必须显式落 style，否则松手一回弹、重开画布又变回原尺寸。 */
+  setNodeSize: (id: string, width: number, height: number) => void;
   /** 调层级（11-26）：数组顺序即叠放顺序，后面的盖住前面的。
    *  ⛔ 不改 zIndex 属性 —— 那个值不会随快照保存，重开画布就丢。 */
   moveLayer: (id: string, dir: "top" | "up" | "down" | "bottom") => void;
@@ -417,6 +420,19 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     scheduleSave();
   }, [scheduleSave]);
 
+  /* 11-26 用户：「卡片没有缩放和拉大功能，太小了」⇒ 选中后四角可拖，尺寸写回 style 并进历史。 */
+  const setNodeSize = useCallback((id: string, width: number, height: number) => {
+    const w = Math.max(160, Math.round(width));
+    const h = Math.max(120, Math.round(height));
+    setNodes((current) => {
+      const next = current.map((n) => (n.id === id ? { ...n, style: { ...n.style, width: w, height: h } } : n));
+      nodesRef.current = next;
+      return next;
+    });
+    scheduleHistory(serializeNow());
+    scheduleSave();
+  }, [scheduleHistory, scheduleSave, serializeNow]);
+
   const removeNodes = useCallback((ids: string[]) => {
     const set = new Set(ids);
     if (!set.size) return;
@@ -639,6 +655,7 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     updatePayload,
     updateManyPayloads,
     moveLayer,
+    setNodeSize,
     removeNodes,
     removeEdges,
     onReconnect,

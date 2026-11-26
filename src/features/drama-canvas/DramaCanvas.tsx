@@ -25,6 +25,7 @@ import {
   getSmoothStepPath,
   type EdgeProps,
   type EdgeTypes,
+  type NodeProps,
   type NodeTypes,
   type ReactFlowInstance,
 } from "@xyflow/react";
@@ -107,7 +108,6 @@ function DramaEdgeLine({ id, source, target, sourceX, sourceY, targetX, targetY,
 
 const EDGE_TYPES: EdgeTypes = { "drama-edge": DramaEdgeLine };
 
-const NODE_TYPES: NodeTypes = { drama: DramaNodeCard };
 
 const MIN_ZOOM = 0.12;
 const MAX_ZOOM = 1.8;
@@ -180,6 +180,14 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
      ⛔ 用 ref 取最新 board：board 每次渲染都是新对象，直接进依赖会让这个 effect 每帧重跑。 */
   const boardRef = useRef(board);
   boardRef.current = board;
+  /* ⛔ 11-26：节点要能拖大 ⇒ 用闭包把 onResize 注进去（NODE_TYPES 是模块常量，塞不了回调）。
+     依赖写空数组 + 走 boardRef，避免每次渲染都造一份 nodeTypes（React Flow 会因此重挂载节点）。 */
+  const nodeTypes = useMemo<NodeTypes>(() => ({
+    drama: (props) => {
+      const node = props as NodeProps<DramaRFNode>;
+      return <DramaNodeCard {...node} onResize={(width, height) => boardRef.current.setNodeSize(node.id, width, height)} />;
+    },
+  }), []);
   useEffect(() => {
     const consume = () => {
       const request = takeCanvasImage();
@@ -934,7 +942,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <ReactFlow
                 nodes={board.nodes}
                 edges={board.edges}
-                nodeTypes={NODE_TYPES}
+                nodeTypes={nodeTypes}
                 edgeTypes={EDGE_TYPES}
                 onNodesChange={board.onNodesChange}
                 onEdgesChange={board.onEdgesChange}
@@ -954,7 +962,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 multiSelectionKeyCode={["Meta", "Control"]}
                 selectionKeyCode="Shift"
                 panActivationKeyCode="Space"
-                nodesConnectable
+                nodesConnectable={variant !== "inline"}
                 connectionRadius={28}
                 onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null }); }}
                 onNodeContextMenu={(e, node) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }}
@@ -988,7 +996,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
               </div>
             ) : null}
           </div>
-          {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} /> : null}
+          {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} showLinks={variant !== "inline"} /> : null}
           {/* 生成结果（相册）：与检查器同一栏，互斥显示（同时开会把画布挤没） */}
           {viewer ? <DramaMediaViewer target={viewer} onClose={() => setViewer(null)} /> : null}
           {resultsOpen ? (

@@ -10,7 +10,7 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { memo, type ReactNode } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import {
   Bot,
   Clapperboard,
@@ -231,7 +231,10 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
   );
 }
 
-function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
+/** ⛔ 11-26 用户：「卡片没有缩放和拉大功能，太小了」+「怎么还有一个连线功能」。
+ *  · onResize：由画布注入（NodeTypes 闭包），选中时四角可拖，尺寸落 style；
+ *  · isConnectable：画布内嵌形态传 false ⇒ 连接点整颗不渲染（⛔ 只靠 CSS 隐藏仍会拖出线）。 */
+function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: NodeProps<DramaRFNode> & { onResize?: (width: number, height: number) => void }) {
   const actions = useDramaActions();
   const kind = String(data?.kind || "note");
   const payload = (data?.payload || {}) as Record<string, any>;
@@ -272,13 +275,14 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     const keys = Object.keys(payload).filter((k) => payload[k] !== "" && payload[k] != null).slice(0, 5);
     return (
       <article className={`drama-canvas-card is-unknown ${selected ? "is-selected" : ""}`}>
+        {selected && onResize ? <NodeResizer minWidth={160} minHeight={120} onResizeEnd={(_, size) => onResize(size.width, size.height)} /> : null}
         <Head kind="note" id={id} title={payload.title || payload.name || id} subtitle={`这个版本不认识「${kind}」`} />
         <div className="drama-canvas-card-body">
           <p className="drama-canvas-hint">内容已原样保留，不会丢。换成建它的那个版本就能编辑。</p>
           <dl className="drama-canvas-kv">{keys.map((k) => <div key={k}><dt>{k}</dt><dd>{String(payload[k]).slice(0, 40)}</dd></div>)}</dl>
         </div>
-        <Handle type="target" position={Position.Left} className="drama-canvas-handle" />
-        <Handle type="source" position={Position.Right} className="drama-canvas-handle" />
+        {isConnectable ? <Handle type="target" position={Position.Left} className="drama-canvas-handle" /> : null}
+        {isConnectable ? <Handle type="source" position={Position.Right} className="drama-canvas-handle" /> : null}
       </article>
     );
   }
@@ -514,8 +518,8 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     <article className={`drama-canvas-card is-${kind} ${role ? `is-role-${role.key}` : ""} ${selected ? "is-selected" : ""} ${working ? "is-working" : ""}`} data-kind={kind}>
       <Head kind={kind} id={id} title={dramaNodeLabel(kind, payload)} subtitle={subtitleOf()} role={role} step={step} />
       <div className="drama-canvas-card-body">{body}</div>
-      <Handle type="target" position={Position.Left} className="drama-canvas-handle" />
-      <Handle type="source" position={Position.Right} className="drama-canvas-handle" />
+      {isConnectable ? <Handle type="target" position={Position.Left} className="drama-canvas-handle" /> : null}
+      {isConnectable ? <Handle type="source" position={Position.Right} className="drama-canvas-handle" /> : null}
       {kind === "shot" && payload.first_frame ? (
         <button className="drama-canvas-card-peek nodrag" title="在右侧预览" onClick={(e) => { e.stopPropagation(); actions.openInspector(id); }}><Eye size={12} /></button>
       ) : null}

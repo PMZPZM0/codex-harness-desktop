@@ -60,6 +60,8 @@
 }
 
 .drama-canvas-shell {
+  /* ⛔ 检查器内嵌时是绝对定位抽屉，需要 shell 当定位祖先 */
+  position: relative;
   width: 100%;
   height: 100%;
   max-width: 1320px;
@@ -1803,4 +1805,40 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line-soft));
   background: var(--accent-soft);
+}
+
+/* ---------------------------------------------------------------- 内嵌形态的小屏适配
+   11-26 用户（截图）：「这啥玩意啊，美化一下」—— 右栏只有 ~300px，340px 的检查器把画布盖掉一半，
+   字段与说明挤成一团。⇒ 内嵌形态把检查器改成**整栏抽屉**：占满宽度、自己滚动、头部吸顶，
+   输入框放到 12px / 8px 圆角 / 更松的行距。⛔ 浮层形态一点不改（那边宽度够）。 */
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  z-index: 6;
+  border-left: 0;
+  box-shadow: -10px 0 26px rgba(0, 0, 0, 0.10);
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 14px;
+  background: var(--panel);
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-body { padding: 12px 14px 22px; gap: 11px; }
+.drama-canvas-backdrop.is-inline .drama-canvas-field { gap: 5px; font-size: 11.5px; }
+.drama-canvas-backdrop.is-inline .drama-canvas-field input,
+.drama-canvas-backdrop.is-inline .drama-canvas-field textarea,
+.drama-canvas-backdrop.is-inline .drama-canvas-field select { padding: 7px 9px; font-size: 12px; border-radius: 8px; }
+.drama-canvas-backdrop.is-inline .drama-canvas-field-hint { font-size: 10.5px; line-height: 1.55; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-actions { gap: 6px; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-actions > .drama-canvas-btn { flex: 1 1 auto; justify-content: center; }
+/* 拖角句柄：默认那颗小方块在浅色主题下几乎看不见，给个实心点 + 描边 */
+.drama-canvas-card .react-flow__resize-control.handle {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  border: 1.5px solid var(--accent);
+  background: var(--panel);
 }

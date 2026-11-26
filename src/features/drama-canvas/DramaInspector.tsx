@@ -163,7 +163,8 @@ export function fieldsFor(kind: string, payload: Record<string, any>): FieldSpec
 const WRITEBACK_KINDS = ["script", "character", "location", "storyboard", "scene", "shot"];
 
 /** 画布右侧检查器：展示并编辑当前选中节点的属性。 */
-export function DramaInspector({ onClose }: { onClose: () => void }) {
+/** @param showLinks 是否显示「连线」块（11-26：右栏内嵌画布不给连线功能，传 false 整块不渲染）。 */
+export function DramaInspector({ onClose, showLinks = true }: { onClose: () => void; showLinks?: boolean }) {
   const actions = useDramaActions();
   const id = actions.board.anchor || actions.board.selectedIds[0] || "";
   const node = actions.board.nodes.find((n) => n.id === id);
@@ -302,7 +303,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
           ) : null}
         </div>
 
-        <section className="drama-canvas-links">
+        {showLinks ? <section className="drama-canvas-links">
           <h4><Link2 size={12} />连线（{outEdges.length + inEdges.length}）</h4>
           {!outEdges.length && !inEdges.length ? <p className="drama-canvas-hint">还没有连线。从卡片右侧的圆点拖到另一张卡，就能表达「这份输入喂给下一步」。</p> : null}
           {outEdges.map((e) => (
@@ -321,7 +322,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
               <button className="drama-canvas-btn is-ghost" title="删掉这根连线（想留线只改方向的话，拖线两端的圆点即可）" onClick={() => actions.board.removeEdges([e.id])}><Trash2 size={12} /></button>
             </div>
           ))}
-        </section>
+        </section> : null}
 
         {actions.story.problems.length ? (
           <section className="drama-canvas-problems">
