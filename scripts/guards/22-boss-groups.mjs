@@ -1206,5 +1206,23 @@ if (state) {
     "改名广播钩子接到成员身份刷新（挂在核心域，上级笔名变了模型不能还记旧名）");
 }
 
+/* ⛔⛔ 11-26 用户（望舒·中枢）：「没有跟其他会话那样可以展开折叠看调度会话」「右边头像也没有成员运行反馈」。
+   根因：中枢的成员会话是 boss runner **自己 thread/start** 建的，绕过 delegation ⇒ 委托登记表里没有
+   归属（originThreadId），而侧栏「调度会话」折叠块与右侧头像轨**都只认那张表**。
+   ⇒ 三条钉住：派活登记、收尾回写（runId 与 started 同源，否则头像灭不掉）、子行不被 hidden 过滤。 */
+{
+  const runnerSrc = read("electron/boss-groups/runner.ts");
+  ok(/await registerBossMemberThread\(group, member, threadId\)/.test(runnerSrc)
+    && /originThreadId: String\(group\.bossThreadId/.test(runnerSrc),
+    "中枢派活登记成员会话的归属（⛔ 不登记 ⇒ 侧栏无子会话可展开、右侧轨无反馈）");
+  ok(/settleBossMemberRun\(threadId, "done", text\)/.test(runnerSrc)
+    && /settleBossMemberRun\(threadId, "failed"\)/.test(runnerSrc)
+    && /delegateRegistry\.infoOf\(threadId\)/.test(runnerSrc),
+    "成员回合收尾回写状态与产出，且 finished 的 runId 与 started 同源（⛔ 换 Date.now() ⇒ 头像永远灭不掉）");
+  const sideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  ok(/const children = threadId \? \(sourcedChildrenOf\[threadId\] \?\? \[\]\) : \[\];/.test(sideSrc),
+    "侧栏子会话不再按 hidden 名单过滤（那张表只负责「不当顶层行列出来」）");
+}
+
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

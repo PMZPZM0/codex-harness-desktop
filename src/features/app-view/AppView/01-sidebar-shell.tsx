@@ -791,7 +791,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     /* ⛔ 11-12：工作伙伴/中枢的成员会话不进主侧栏（项目 / 任务 / 分类 三个视图共用这一处 ⇒ 一起藏）。 */
     const entries = visibleEntries(rawEntries);
     const { clusters, singles } = clusterSplit(entries);
-    const childRowsOf = (children: Array<{ threadId: string }>) => children.filter((c) => !hiddenSidebarThreadIds.has(String(c.threadId))).map((child) => {
+    /* ⛔⛔ 11-26 用户（望舒·中枢）：「没有跟其他会话那样可以展开折叠看调度会话选项」。
+       根因：子会话这里原来也按 `hiddenSidebarThreadIds` 过滤，而**中枢的成员会话全在
+       `bossThreads.memberIds` 里** ⇒ 过滤后子会话数恒为 0 ⇒ 连折叠箭头都不渲染。
+       那张表的本意是「不把成员会话当**顶层**行列出来」（`visibleEntries` 已负责），
+       ⛔ 不是「连父行下面也不许看」。⇒ 子行不再过这一层，顶层照旧过滤。 */
+    const childRowsOf = (children: Array<{ threadId: string }>) => children.map((child) => {
       const childThread = listThreads.find((t) => t.id === child.threadId);
       // ⛔ 子会话用聚类渲染：它本身可能就是某个**专家团的主会话**（成员已被顶层剔除，
       //    走 renderThreadRow 会把那一批成员会话整块漏掉）。
@@ -800,7 +805,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     /** 11-06 用户令（截图）：「子会话展开折叠放到会话选项里面，居中小长条」——
         单会话行的折叠键搬进行内（extras.footer），收起时不再多占一整行；展开体仍在行下面。 */
     const dispatchInfoOf = (threadId: string) => {
-      const children = (threadId ? (sourcedChildrenOf[threadId] ?? []) : []).filter((c) => !hiddenSidebarThreadIds.has(String(c.threadId)));
+      const children = threadId ? (sourcedChildrenOf[threadId] ?? []) : [];
       if (!children.length) return null;
       const dispatchKey = `dispatch:${threadId}`;
       const collapsed = !expandedDispatchBlocks.has(dispatchKey);

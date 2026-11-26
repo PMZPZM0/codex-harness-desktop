@@ -30,7 +30,8 @@ import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
-import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { delegateRegistry, engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { broadcastHarnessEvent } from "../features/window-bus";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
 import { addMember, addTask, assignTask, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
@@ -352,13 +353,17 @@ function onEngineTurnCompleted(threadId: string, turnId: string, turn: any) {
   const status = String(turn?.status ?? "");
   if (status && status !== "completed") {
     const detail = turn?.error?.message ?? turn?.error ?? "";
+    void settleBossMemberRun(threadId, "failed");
     void failTask(taskId, `成员回合${status === "failed" ? "失败" : `未正常结束（${status}）`}${detail ? `：${String(detail).slice(0, 200)}` : ""}`)
       .catch(() => undefined)
       .finally(finish);
     return;
   }
   void outputTextOf(threadId, turnId, turn)
-    .then((text) => settleSubmission(taskId, text || "（成员没有返回文本产出）"))
+    .then((text) => {
+      void settleBossMemberRun(threadId, "done", text);
+      return settleSubmission(taskId, text || "（成员没有返回文本产出）");
+    })
     .catch(() => undefined)
     .finally(finish);
 }
@@ -636,6 +641,38 @@ export async function refreshMemberScopesForSupervisor(supervisorThreadId: strin
 }
 
 /** 成员的常驻会话：同一 (群, 成员) 永远同一线程 —— 成员因此记得自己之前做过什么。 */
+/* ⛔⛔ 11-26 用户（望舒·中枢）：「没有跟其他会话那样可以展开折叠看调度会话」「右边头像也没有成员的
+   运行反馈」。根因：中枢的成员会话是**这里自己 thread/start** 建的，绕过了 delegation ⇒
+   委托登记表里没有归属（`originThreadId`），而侧栏「调度会话」折叠块与右侧头像轨**都只认那张表**
+   ⇒ 中枢永远没有子会话可展开、也没有运行反馈。⇒ 派活时补登记（与 delegation 同形）。 */
+async function registerBossMemberThread(group: BossGroup, member: GroupMember, threadId: string): Promise<void> {
+  try {
+    const record = await delegateRegistry.register({
+      threadId,
+      originThreadId: String(group.bossThreadId ?? ""),
+      kind: "expert",
+      name: String(member.name ?? ""),
+      depth: 1,
+      targetKey: `boss-member:${member.id}`,
+    });
+    broadcastHarnessEvent({ type: "delegate-run", phase: "started", threadId, record, runId: String(record?.startedAt ?? ""), at: Date.now() } as never);
+    broadcastHarnessEvent({ type: "delegates-changed" } as never);
+  } catch { /* 登记失败不影响派活 */ }
+}
+
+/** 中枢成员的这一轮跑完了：把状态/产出写回登记表并广播（右侧头像轨据此熄灭、弹窗出结果）。 */
+async function settleBossMemberRun(threadId: string, status: "done" | "failed", output = ""): Promise<void> {
+  try {
+    /* ⛔ runId 必须与 started 那次**同一个**（= 记录的 startedAt）：渲染层按 runId 熄灭头像，
+       换成 Date.now() 就会出现"跑完了头像还亮着"——正是这次要修的那类残留。 */
+    const info = await delegateRegistry.infoOf(threadId).catch(() => null);
+    const runId = String((info as { startedAt?: number } | null)?.startedAt ?? "");
+    if (output) await delegateRegistry.setOutput(threadId, output);
+    await delegateRegistry.markStatus(threadId, status);
+    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status, output, runId, at: Date.now() } as never);
+  } catch { /* 反馈失败不影响结算 */ }
+}
+
 async function ensureMemberThread(group: BossGroup, member: GroupMember): Promise<string> {
   if (member.threadId) {
     /* ⛔⛔ 10-31 用户令「旧会话也要自动更新」：成员常驻线程按创建那一刻的模型/供应商绑定，
@@ -898,6 +935,7 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
       return { ok: true, taskId: task.id, memberId: member.id };
     }
     const threadId = await ensureMemberThread(group, member);
+    await registerBossMemberThread(group, member, threadId);
     /* ⛔ 11-01：中枢派活的首任务要以**上级身份**展示（用户：「为啥他调度会话，还是以我的身份发出去的」）
        ⇒ 把中枢会话的名字写进壳里，渲染端据此显示「<中枢名> 派发任务」而不是用户气泡。
        快照里查得到就用快照（改名会跟着变），查不到退回群名（绝不是"主会话"这种空话）。 */
