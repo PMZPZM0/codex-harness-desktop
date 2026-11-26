@@ -461,6 +461,27 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     }
     return clip.length;
   }, [board]);
+  /* ⛔ 11-26 用户令（画布「图片编辑」）：「图片上有功能就行」。
+     能**真做**的只有本地像素处理（sharp）——清晰增强 / 放大；⛔ 去背景、消除、AI 扩图需要
+     图像模型通道，仓里没有，别做假按钮。产物写回节点，原图仍在历史里（撤销可回）。 */
+  const enhanceImage = useCallback(async (nodeId: string, mode: "sharpen" | "upscale") => {
+    const target = board.nodes.find((n) => n.id === nodeId);
+    const payload = (target?.data as { payload?: Record<string, unknown> } | undefined)?.payload ?? {};
+    const pick = (key: string) => String(payload[key] ?? "");
+    const field = pick("first_frame") ? "first_frame" : pick("ref") ? "ref" : pick("path") ? "path" : "";
+    const src = field ? pick(field) : "";
+    if (!src) { pushNotice("这个节点没有可编辑的图片文件", "err"); return; }
+    const ops = mode === "sharpen"
+      ? [{ op: "normalize" }, { op: "contrast", value: 0.06 }, { op: "sharpen", sigma: 1.1 }]
+      : [{ op: "scale", factor: 2 }];
+    const result = await window.codex.imageEdit({ path: src, ops }).catch(() => null) as
+      { ok?: boolean; output?: string; paths?: string[] } | null;
+    const out = Array.isArray(result?.paths) ? String(result.paths[0] ?? "") : "";
+    if (!out) { pushNotice(result?.output || "图片处理失败（看右下角图像工坊）", "err"); return; }
+    board.updatePayload(nodeId, { [field]: out });
+    pushNotice(mode === "sharpen" ? "已增强清晰度（可撤销）" : "已放大 2 倍（可撤销）", "ok", () => board.undo());
+  }, [board, pushNotice]);
+
   const onKeyDown = useCallback((evt: React.KeyboardEvent) => {
     const target = evt.target as HTMLElement | null;
     if (target && target.closest?.("input,textarea,select,[contenteditable=true]")) return;
@@ -601,6 +622,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       clipCount > 0 ? { key: "paste", label: "粘贴", run: () => { const n = pasteNodes(); if (n) pushNotice(`已粘贴 ${n} 个节点`, "", () => board.undo()); } } : null,
       node ? { key: "duplicate", label: "复制节点", run: () => { const p = node.position; const copy = { ...payload }; ["id", "board", "board_scene", "board_character"].forEach((k) => delete (copy as any)[k]); board.addNode(String(node.data?.kind || "note"), copy, { x: p.x + 42, y: p.y + 42 }); } } : null,
       media && node ? { key: "inspector", label: "打开属性面板", run: () => { board.select([nodeId], nodeId); setInspectorOpen(true); } } : null,
+      /* ⛔ 只有「有图片文件」的节点才给这两项（视频/音频节点不该出现）。 */
+      media && node ? { key: "sharpen", label: "清晰增强", run: () => void enhanceImage(nodeId, "sharpen") } : null,
+      media && node ? { key: "upscale", label: "放大 2 倍", run: () => void enhanceImage(nodeId, "upscale") } : null,
       node ? { key: "layout", label: "整理画布", run: () => board.autoLayout() } : null,
       /* 11-26：叠放顺序（数组顺序即层级）。⛔ 不写 zIndex —— 那个值不进快照，重开就丢。 */
       node ? { key: "front", label: "置于顶层", run: () => board.moveLayer(nodeId, "top") } : null,
@@ -611,7 +635,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       !node ? { key: "layout", label: "自动排版", run: () => board.autoLayout() } : null,
       !node ? { key: "fit", label: "适配全部节点", run: () => fitAll() } : null,
     ].filter(Boolean) as Array<{ key: string; label: string; danger?: boolean; run: () => void }>;
-  }, [actions, board, clipCount, copyNodes, fitAll, menu, pasteNodes, pushNotice, story]);
+  }, [actions, board, clipCount, copyNodes, enhanceImage, fitAll, menu, pasteNodes, pushNotice, story]);
 
   return (
     <div className={`drama-canvas-backdrop${variant === "inline" ? " is-inline" : ""}`} role="dialog" aria-modal={variant === "overlay" ? true : undefined} aria-label="AI 画布工作流">
@@ -810,6 +834,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
           </div>
         ) : null}
 
+        {/* ⛔ 11-26 用户令（内嵌形态）：「上面还有这么按键……全部去掉，纯画布跟图片右键功能就行了」。
+            左侧竖条工具栏（添加节点 / 框选 / 平移 / 缩放 / 适配 / 清空）内嵌时不渲染；浮层形态不变。 */}
+        {variant === "overlay" ? (
         <div className="drama-canvas-toolbar">
           <div className="drama-canvas-addmenu">
             <button className="drama-canvas-tool" aria-expanded={addMenuOpen} title="添加节点" onClick={() => setAddMenuOpen((v) => !v)}><Plus size={14} /><span>添加节点</span></button>
@@ -872,6 +899,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             }}><Trash2 size={14} />清空</button>
           </div>
         </div>
+        ) : null}
 
         <div className={`drama-canvas-layout ${inspectorOpen ? "" : "is-inspector-hidden"}`}>
           <div
@@ -915,15 +943,16 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                   style: { stroke: "var(--accent)", strokeWidth: 2.25, strokeLinecap: "round" },
                   markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "var(--accent)" },
                 }}
-                proOptions={{ hideAttribution: false }}
+                /* ⛔ 内嵌形态连右下角 "React Flow" 水印也不留（用户：纯画布） */
+                proOptions={{ hideAttribution: variant === "inline" }}
               >
                 <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--line)" />
               </ReactFlow>
-            <div className="drama-canvas-vp-hint" aria-hidden>滚轮缩放 · 空白拖动平移 · Shift 框选 · 空格拖拽平移</div>
+            {variant === "overlay" ? <div className="drama-canvas-vp-hint" aria-hidden>滚轮缩放 · 空白拖动平移 · Shift 框选 · 空格拖拽平移</div> : null}
             {/* 空画布引导（09-28 用户反馈「新建了然后呢，有什么用，完全看不懂」）：
                 原来空画布就是一片白，没人说明这块板干什么、两个起手按钮区别在哪。
                 ⛔ 只在真的空时显示（有节点就不该挡视野），纯提示不拦点击（pointer-events:none）。 */}
-            {board.nodes.length === 0 ? (
+            {variant === "overlay" && board.nodes.length === 0 ? (
               <div className="drama-canvas-blank-guide" aria-hidden>
                 <Clapperboard size={26} />
                 <b>这块画布还是空的</b>

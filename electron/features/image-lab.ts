@@ -80,6 +80,9 @@ export type ImageOp =
   | { op: "posterize"; n: number }
   | { op: "pixelate"; size?: number }
   | { op: "normalize" }
+  /* ⛔ 11-26 用户令（画布「图片编辑」）：「变清晰」要真效果 —— 仓里没有 AI 超分，
+     但 sharp 的锐化能把糊掉的小图拉回来，⛔ 不要拿 scale 冒充"变清晰"。 */
+  | { op: "sharpen"; sigma?: number; m1?: number; m2?: number }
   | { op: "opacity"; value: number }
   | { op: "color"; apply: string; params?: number[] }
   | { op: "composite"; path: string; x?: number; y?: number; opacity?: number }
@@ -188,6 +191,14 @@ async function applyOps(image: any, ops: ImageOp[], lib: { jimp: any; fonts: any
         break;
       case "normalize":
         image.normalize();
+        break;
+      case "sharpen":
+        /* sigma 默认 1.0（≈轻度锐化）；m1/m2 留给调用方调边缘阈值，不给就走 sharp 默认。 */
+        image.sharpen({
+          sigma: Math.max(0.3, Number(op.sigma) || 1),
+          ...(op.m1 !== undefined ? { m1: Number(op.m1) } : {}),
+          ...(op.m2 !== undefined ? { m2: Number(op.m2) } : {}),
+        });
         break;
       case "opacity":
         image.opacity(Math.max(0, Math.min(1, Number(op.value) || 0)));
@@ -456,7 +467,10 @@ export const imageLabFeature = defineFeature<null>({
         for (const result of results) shownInLab.set(labKeyOf(result.path), Date.now());
         const lines = results.map((r) => `${r.path}（${r.width}×${r.height}，${r.format}，${Math.round(r.bytes / 1024)}KB）`).join("\n");
         const shown = "\n（结果现在正显示在右下角「图像工坊」里，用户能看见 —— 不要再调 image_view 重复展示。）";
-        return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}${shown}` };
+        /* ⛔ 11-26：`paths` 是给**画布**用的（点「清晰增强 / 放大」后要把节点指到产物）。
+           原来只回一段人话，渲染层只能靠正则从文案里抠路径 —— 那是脆的。
+           ⛔ 加字段不改协议形状（同一个通道、同一个对象），老调用方读 output 不受影响。 */
+        return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}${shown}`, paths: results.map((r) => r.path) } as LabToolResult;
       } catch (error) {
         const message = String((error as Error)?.message ?? error);
         pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "error", images: [], note: message });

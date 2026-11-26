@@ -1037,6 +1037,7 @@
 }
 /* 「图片」页（11-26 用户令）：只读查看 —— 顶部一条工具、下面是预览体；
    ⛔ 与「画布」页互不影响：查看一张图不该改画布的任何状态。 */
+.panel-image-viewer .workspace-file-preview-head { display: none; }
 .panel-image-viewer {
   display: flex;
   flex-direction: column;
@@ -1051,7 +1052,11 @@
   border-bottom: 1px solid var(--line);
   flex: 0 0 auto;
 }
+.panel-image-bar { flex-wrap: nowrap; }
 .panel-image-pick {
+  /* ⛔ 11-26 用户截图：窄栏里「换一张图片」被挤成竖排 —— 按钮不许换行，宽度由内容定，文件名负责让位。 */
+  white-space: nowrap;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1067,6 +1072,7 @@
 .panel-image-pick:hover { background: var(--panel-2); }
 .panel-image-name {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
