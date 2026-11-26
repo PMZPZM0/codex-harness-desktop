@@ -430,6 +430,37 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   }), [board, story, onAskAgent, onOpenPluginSettings, pushNotice]);
 
   /* 键盘：与参考实现同一套（Space 平移交给 React Flow 自己的 panActivationKeyCode） */
+  /* ⛔ 11-26 用户令（对照参考截图）：「图片上有功能就行」—— 复制 / 粘贴 / 剪切是画布编辑的基本件，
+     ⛔ 不进系统剪贴板（那是文本/图片的通道）：节点是一份带 payload 的结构，存一份内存剪贴板最稳。 */
+  const nodeClipRef = useRef<Array<{ kind: string; payload: Record<string, any>; at: { x: number; y: number } }>>([]);
+  /** 剪贴板里还有几份（右键菜单据此决定「粘贴」是否出现；ref 本身不触发重渲染） */
+  const [clipCount, setClipCount] = useState(0);
+  const copyNodes = useCallback((ids: string[]) => {
+    const picked = board.nodes.filter((n) => ids.includes(n.id));
+    if (!picked.length) return 0;
+    nodeClipRef.current = picked.map((n) => {
+      /* ⛔ 不写 `as any`：这个文件有 any 基线（守卫【架构】），用显式窄类型一样能取到。 */
+      const data = (n.data ?? {}) as { kind?: string; payload?: Record<string, unknown> };
+      return {
+        kind: String(data.kind || "note"),
+        payload: { ...((data.payload ?? {}) as Record<string, unknown>) },
+        at: { ...n.position },
+      };
+    });
+    setClipCount(picked.length);
+    return picked.length;
+  }, [board.nodes]);
+  const pasteNodes = useCallback(() => {
+    const clip = nodeClipRef.current;
+    if (!clip.length) return 0;
+    for (const item of clip) {
+      /* ⛔ 去掉身份字段：id / 画布归属 / 分镜绑定带过来会撞主键（与「复制节点」同一口径）。 */
+      const copy: Record<string, unknown> = { ...item.payload };
+      for (const key of ["id", "board", "board_scene", "board_character"]) delete copy[key];
+      board.addNode(item.kind, copy, { x: item.at.x + 42, y: item.at.y + 42 });
+    }
+    return clip.length;
+  }, [board]);
   const onKeyDown = useCallback((evt: React.KeyboardEvent) => {
     const target = evt.target as HTMLElement | null;
     if (target && target.closest?.("input,textarea,select,[contenteditable=true]")) return;
@@ -446,6 +477,22 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       evt.preventDefault();
       board.select(board.nodes.map((n) => n.id));
       pushNotice(board.nodes.length ? `已全选 ${board.nodes.length} 个节点` : "画布里还没有节点");
+      return;
+    }
+    /* ⛔ 11-26：复制 / 粘贴 / 剪切（与右键菜单同一套动作，⛔ 不各写一份逻辑）。 */
+    if (command && (key === "c" || key === "x")) {
+      const n = copyNodes(board.selectedIds);
+      if (!n) return;
+      evt.preventDefault();
+      if (key === "x") { board.removeNodes(board.selectedIds); pushNotice(`已剪切 ${n} 个节点`, "", () => board.undo()); }
+      else pushNotice(`已复制 ${n} 个节点`, "");
+      return;
+    }
+    if (command && key === "v") {
+      const n = pasteNodes();
+      if (!n) return;
+      evt.preventDefault();
+      pushNotice(`已粘贴 ${n} 个节点`, "", () => board.undo());
       return;
     }
     if (evt.key === "Escape") {
@@ -549,6 +596,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     return [
       node ? { key: "agent", label: "交给 Agent", run: () => actions.askAgent(nodeId) } : null,
       node ? { key: "writeback", label: "写回分镜表", run: () => void story.writeBack(nodeId) } : null,
+      node ? { key: "copy", label: "复制", run: () => { const n = copyNodes(board.selectedIds.length ? board.selectedIds : [nodeId]); if (n) pushNotice(`已复制 ${n} 个节点`, ""); } } : null,
+      node ? { key: "cut", label: "剪切", run: () => { const ids = board.selectedIds.length ? board.selectedIds : [nodeId]; const n = copyNodes(ids); if (!n) return; board.removeNodes(ids); pushNotice(`已剪切 ${n} 个节点`, "", () => board.undo()); } } : null,
+      clipCount > 0 ? { key: "paste", label: "粘贴", run: () => { const n = pasteNodes(); if (n) pushNotice(`已粘贴 ${n} 个节点`, "", () => board.undo()); } } : null,
       node ? { key: "duplicate", label: "复制节点", run: () => { const p = node.position; const copy = { ...payload }; ["id", "board", "board_scene", "board_character"].forEach((k) => delete (copy as any)[k]); board.addNode(String(node.data?.kind || "note"), copy, { x: p.x + 42, y: p.y + 42 }); } } : null,
       media && node ? { key: "inspector", label: "打开属性面板", run: () => { board.select([nodeId], nodeId); setInspectorOpen(true); } } : null,
       node ? { key: "layout", label: "整理画布", run: () => board.autoLayout() } : null,
@@ -561,7 +611,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       !node ? { key: "layout", label: "自动排版", run: () => board.autoLayout() } : null,
       !node ? { key: "fit", label: "适配全部节点", run: () => fitAll() } : null,
     ].filter(Boolean) as Array<{ key: string; label: string; danger?: boolean; run: () => void }>;
-  }, [actions, board, fitAll, menu, pushNotice, story]);
+  }, [actions, board, clipCount, copyNodes, fitAll, menu, pasteNodes, pushNotice, story]);
 
   return (
     <div className={`drama-canvas-backdrop${variant === "inline" ? " is-inline" : ""}`} role="dialog" aria-modal={variant === "overlay" ? true : undefined} aria-label="AI 画布工作流">
