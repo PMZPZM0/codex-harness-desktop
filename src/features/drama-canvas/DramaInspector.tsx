@@ -94,6 +94,10 @@ const FIELDS: Record<string, FieldSpec[]> = {
   ],
   image: [
     { key: "title", label: "标题" },
+    /* ⛔⛔ 11-26 用户（截图）：「都是负面提示词，我怎么输入提示词呢」——
+       这张卡的字段表原来只有「负面提示词」，**没有正面提示词**：卡面空态写着
+       「在这里写你要什么」，进面板却无处可写。参考图位同样要能写提示词（它也能出图）。 */
+    { key: "prompt", label: "提示词", type: "textarea", placeholder: "写你要什么，例：一只橘猫坐在窗台上，暖色午后光", hint: "写「要什么」；不想出现的东西写到下面的负面提示词里" },
     { key: "size", label: "尺寸 / 画幅", type: "select", options: [{ value: "", label: "默认（由生图接口决定）" }, ...IMAGE_SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label }))], hint: "按用途选比例：电商主图 1:1、详情 3:4、抖音 9:16、B站 16:9。个别接口不认该尺寸会报错 —— 选回「默认」即可" },
     { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚「不想要什么」，比在正面词里绕半天有效；不是每个网关都支持，无效时改回正面描述" },
     { key: "role", label: "用途" },

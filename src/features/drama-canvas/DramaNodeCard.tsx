@@ -154,6 +154,26 @@ function AudioPreview({ path }: { path: string }) {
 /* ⛔ 通道映射表已提到 DramaChannelButton.tsx（导出 GEN_CHANNELS）—— 卡面与检查器共用一份。
    原来检查器不查这张表 ⇒ 选中笔记卡也能点「生成图片」，与卡面行为相反（09-28 code review 抓到）。 */
 
+/** 卡面上的**可编辑提示词**（11-26 用户：「第一张图没法输入」）。
+ *  原来这里是一段只读 div：写着「在这里写你要什么」，点了没反应，也没有输入框。
+ *  ⇒ 换成 textarea，直接写 payload.prompt（面板里同一个字段，改哪边都一样）。
+ *  ⛔ `nodrag nowheel` 必须有：否则拖选文字会把整张卡拖走、滚轮会缩放画布。
+ *  ⛔ 受控组件 + 官方 stopPropagation：React Flow 的节点拖动从 pointerdown 起手。 */
+function PromptInput({ nodeId, value, placeholder }: { nodeId: string; value: string; placeholder: string }) {
+  const actions = useDramaActions();
+  return (
+    <textarea
+      className="drama-canvas-card-prompt nodrag nowheel"
+      value={value}
+      placeholder={placeholder}
+      spellCheck={false}
+      onPointerDown={(e) => e.stopPropagation()}
+      onChange={(e) => actions.board.updatePayload(nodeId, { prompt: e.target.value })}
+      onBlur={() => void actions.story.writeBack(nodeId)}
+    />
+  );
+}
+
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
   const actions = useDramaActions();
   /* ⛔ 不再因为"没有生成通道"就整体不渲染：笔记 / 剧本卡没有通道，但「AI 润色」必须还在。 */
@@ -435,7 +455,8 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
             ? <MediaPreview path={outPath} alt={String(payload.title || meta.label)} kind="image" title={String(payload.title || meta.label)} nodeId={id} fields={["path", "url"]} channel="image" />
             : <div className="drama-canvas-empty"><Sparkles size={16} /><span>{payload.hint === "output" ? "产物位：点上游那张卡的「生图」" : `还没有${meta.label} —— 写好提示词点下面的「生图」`}</span></div>}
           <div className="drama-canvas-card-line">{meta.label} · {meta.ratio}{meta.key === "detail" && tiles.length ? ` · ${tiles.length} 图块` : ""}</div>
-          <div className="drama-canvas-card-text is-prompt">{String(payload.prompt || meta.skeleton)}</div>
+          {/* ⛔ 11-26：卡面直接可写（原来只读，用户点它没反应）。placeholder 用这张图类型的骨架。 */}
+          <PromptInput nodeId={id} value={String(payload.prompt || "")} placeholder={String(meta.skeleton || "写你要什么，例：一只橘猫坐在窗台上，暖色午后光")} />
           {payload.subject ? (
             <div className="drama-canvas-card-ref" title="整套图共用的主体描述（锁定同一件商品）">
               <span className="drama-canvas-card-ref-tag">锁定主体</span>
@@ -468,13 +489,23 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
           {kind === "image" && imageRefs.length ? <DramaRefGrid refs={imageRefs} onRemove={(refItem) => void actions.story.removeRef(id, refItem)} /> : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
           {/* ⛔ 空态文案要让人**照做**（09-29 用户要新手向）：说清"在这写什么 + 写完点哪 + 图去哪"。 */}
-          <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || (path
-            ? "这张已经出图了：想换一版点下面的「重出」；想微调就先改提示词再出。"
-            : payload.hint === "output"
+          {/* ⛔ 11-26 用户（截图）：「第一张图没法输入」—— 这里原来是一段**只读** div，
+              写着「在这里写你要什么」，可它既不是输入框、点了也没反应（卡面只能拖）。
+              ⇒ 非「商品参考图位 / 产物位」的图片卡，卡面就是**可写**的提示词。
+              两种特殊位仍保留说明文字：参考图位要的是上传，产物位要的是点上游的生成。 */}
+          {payload.hint === "ref" || payload.hint === "output" ? (
+            <div className="drama-canvas-card-text">{String(payload.text || (payload.hint === "output"
               ? "产物位：点左边「写提示词」卡上的「生图」，图会出在这里。（也可以在这张卡直接写提示词生成）"
-              : payload.hint === "ref"
-                ? "商品参考图：点下面的「上传参考图」把商品照片放进来；再到右边的生图卡点「锁定主体」，它就变成整套图共用的主体描述（六类图不再各拍各的）。"
-                : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。"))}</div>
+              : "商品参考图：点下面的「上传参考图」把商品照片放进来；再到右边的生图卡点「锁定主体」，它就变成整套图共用的主体描述（六类图不再各拍各的）。"))}</div>
+          ) : (
+            <PromptInput
+              nodeId={id}
+              value={String(payload.prompt || payload.text || "")}
+              placeholder={path
+                ? "这张已经出图了：想换一版就改这段提示词，再点下面的「重出」"
+                : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。"}
+            />
+          )}
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
         </>
       );

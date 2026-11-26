@@ -591,9 +591,10 @@ export async function run() {
     );
     /* ⑤ 参数必须**看得见**：检查器字段表里有画幅 / 尺寸 / 负面提示词（藏在代码里等于没有） */
     const inspSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8"));
-    (/\{ key: "aspect", label: "画幅"/.test(inspSrc) && /\{ key: "size", label: "尺寸 \/ 画幅"/.test(inspSrc) && /\{ key: "negative", label: "负面提示词"/.test(inspSrc) ? ok : fail)(
-      "【206】检查器暴露画幅 / 尺寸 / 负面提示词（用户能看见才叫能用）"
-    );
+    (/\{ key: "aspect", label: "画幅"/.test(inspSrc) && /\{ key: "size", label: "尺寸 \/ 画幅"/.test(inspSrc) && /\{ key: "negative", label: "负面提示词"/.test(inspSrc) ? ok : fail)("【206】检查器暴露画幅 / 尺寸 / 负面提示词（用户能看见才叫能用）");
+    /* ⑥ 11-26 用户（截图）：「都是负面提示词，我怎么输入提示词」—— 图片位缺**正面**提示词字段，
+          卡面又只是一段只读 div ⇒ 两处都补：字段表有 prompt、卡面是可编辑控件（PromptInput）。 */
+    (/\{ key: "prompt", label: "提示词"/.test(inspSrc) && /function PromptInput/.test(card) && /<PromptInput/.test(card) ? ok : fail)("【206】图片位能写正面提示词，且卡面提示词可编辑（不再只有负面提示词）");
     (inspSrc.includes("IMAGE_SIZE_PRESETS") ? ok : fail)("【206】生图尺寸有平台预设（自媒体按平台选，不用手填像素）");
     /* ⛔ 09-29 用户实测：上一版只给 image 卡加了，用户选**角色卡**就看不到（角色/场景同样走生图）。
        判据：size / negative 字段必须覆盖**全部三种生图卡**（image / character / location）。 */

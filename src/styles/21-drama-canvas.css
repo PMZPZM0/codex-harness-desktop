@@ -340,6 +340,28 @@
 }
 .drama-canvas-card-text { font-size: 12.5px; color: var(--muted); line-height: 1.55; overflow: hidden; }
 .drama-canvas-card-text.is-prompt { color: var(--text); }
+/* 卡面上的**可编辑提示词**（11-26 用户：「第一张图没法输入」）。
+   ⛔ 平时看起来要像正文（透明底、无边框），鼠标移上去才给一点底、聚焦才描边 ——
+      否则每张卡都套一个输入框，画布会变成一片表单。 */
+.drama-canvas-card-prompt {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+  cursor: text;
+}
+.drama-canvas-card-prompt::placeholder { color: var(--faint); }
+.drama-canvas-card-prompt:hover { background: var(--panel-2); border-color: var(--line-soft); }
+.drama-canvas-card-prompt:focus { background: var(--bg); border-color: var(--accent); }
 .drama-canvas-card-line {
   padding: 4px 7px;
   border-left: 2px solid var(--line);
@@ -1868,8 +1890,13 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
    ⇒ 内嵌形态一律 `flex: 0 0 auto`（不压缩，装不下就整体滚动）。 */
 .drama-canvas-backdrop.is-inline .drama-canvas-inspector-body > * { flex: 0 0 auto; }
 .drama-canvas-backdrop.is-inline .drama-canvas-inspector-body { padding: 12px 12px 24px; gap: 12px; overscroll-behavior: contain; }
+/* ⛔ 11-26 用户（截图）把「尺寸 / 画幅」下的这段说明当成了「负面提示词」的说明 ——
+   因为说明紧贴着下一个字段的标签。加一条左侧细线：视觉上明确"这段挂在上面那个控件下面"，
+   而不是像一段独立的正文。 */
 .drama-canvas-backdrop.is-inline .drama-canvas-field-hint {
   margin-top: 2px;
+  padding-left: 7px;
+  border-left: 2px solid var(--line);
   font-size: 11px;
   line-height: 1.6;
   color: var(--faint);
