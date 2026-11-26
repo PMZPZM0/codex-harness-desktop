@@ -358,15 +358,23 @@ bag.stats = stats as typeof bag.stats;
   const activeFlags: string[] = bag.thread?.status?.activeFlags ?? [];
 bag.activeFlags = activeFlags as typeof bag.activeFlags;
 
-  const waitingForApproval = bag.activeFlags.includes("waitingOnApproval") || bag.pending.some((request) => request.method.toLowerCase().includes("approval"));
-bag.waitingForApproval = waitingForApproval as typeof bag.waitingForApproval;
-
-  const waitingForInput = bag.activeFlags.includes("waitingOnUserInput");
-bag.waitingForInput = waitingForInput as typeof bag.waitingForInput;
-
-  // 当前会话只读取自己的运行状态；其他后台任务继续在侧栏独立显示，不影响本会话按钮。
+  /* 当前会话只读取自己的运行状态；其他后台任务继续在侧栏独立显示，不影响本会话按钮。 */
   const activeThreadRunning = Boolean(bag.thread && (bag.runningThreadIds.has(bag.thread.id) || bag.thread.turns.some((turn) => isTurnRunning(turn))));
 bag.activeThreadRunning = activeThreadRunning as typeof bag.activeThreadRunning;
+
+  /* ⛔⛔ 11-26 用户截图（望舒·中枢）：回合早就结束了（消息上写着「耗时 17 秒」），
+     而输入框上方的状态条还挂着「等待你的确认」，用户以为要点什么东西。
+     `waitingOnApproval` 是**引擎的状态位**，回合结束后不保证被刷新掉；那一刻既没有活跃回合、
+     也没有待处理的审批请求（渲染层 pending 为空）⇒ 这句话纯属残留。
+     ⇒ 规则：**引擎状态位只在回合还活着时才作数**；渲染层真收到审批请求（pending）一律显示。
+     ⛔ 别把回合判据去掉（去掉就把这类残留又放回来了）。 */
+  const waitingForApproval = bag.pending.some((request) => request.method.toLowerCase().includes("approval"))
+    || (activeFlags.includes("waitingOnApproval") && activeThreadRunning);
+bag.waitingForApproval = waitingForApproval as typeof bag.waitingForApproval;
+
+  /* 同理：`waitingOnUserInput` 也是回合内的状态，回合没了不该继续显示「等待你的输入」。 */
+  const waitingForInput = activeFlags.includes("waitingOnUserInput") && activeThreadRunning;
+bag.waitingForInput = waitingForInput as typeof bag.waitingForInput;
 
   // 输入被清空 → 重置"长输入已触发"标记（所以下一条长需求还能提醒一次）
   useEffect(() => { if (!bag.prompt.trim()) bag.enhanceLongFiredRef.current = false; }, [bag.prompt]);

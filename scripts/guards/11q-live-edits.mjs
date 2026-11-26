@@ -766,5 +766,16 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "本轮媒体缩略图走同一套重试（不再自己写第二份 onError）");
 }
 
+/* ⛔⛔ 11-26 用户截图（望舒·中枢）：回合早就结束（消息上写着「耗时 17 秒」），输入框上方还挂着
+   「等待你的确认」，用户以为要点什么。`waitingOnApproval` 是引擎状态位，回合结束后不保证被刷新。
+   ⇒ 状态位只在**回合还活着**时作数；渲染层真收到审批请求（pending）才无条件显示。
+   ⛔ 判据钉两半：pending 分支必须无条件、状态位分支必须带 activeThreadRunning。 */
+{
+  const seg9 = read("src/features/app-state/parts/part09/01-seg.tsx");
+  ok(/const waitingForApproval = bag\.pending\.some\(\(request\) => request\.method\.toLowerCase\(\)\.includes\("approval"\)\)\s*\n\s*\|\| \(activeFlags\.includes\("waitingOnApproval"\) && activeThreadRunning\)/.test(seg9)
+    && /const waitingForInput = activeFlags\.includes\("waitingOnUserInput"\) && activeThreadRunning/.test(seg9),
+    "「等待你的确认 / 等待你的输入」只在回合活着时显示（⛔ 状态位残留会让用户以为要点东西）");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
