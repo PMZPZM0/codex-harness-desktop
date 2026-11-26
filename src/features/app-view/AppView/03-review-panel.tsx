@@ -356,14 +356,21 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             {/* 新标签页（11-26 用户令）：⛔ 列的是**右栏自己的页**（监控/变更/审阅/浏览器/文件/画布/终端），
                 ⛔ 不是照抄参考截图里那四条 —— 那四条是别的应用的入口，照搬过来等于凭空多长一坨。 */}
             <div className={`panel-page ${rightTab === "newtab" || !openedTabs.length ? "" : "hidden"}`}>
+              {/* ⛔ 11-26 用户：「按键居中来，做好看一点，靠左不好看」。
+                  ⇒ 整块居中 + 两列入口卡（图标带淡色底），⛔ 不是把左对齐的行拉宽 ——
+                  原来那种「一行一条细线」在宽栏里左边一坨、右边空一片，最难看。 */}
               <div className="panel-newtab">
-                <p className="panel-newtab-head">在右侧打开一页</p>
-                {PANEL_TABS.map((entry) => (
-                  <button key={entry.key} className="panel-newtab-row" title={entry.title} onClick={() => openPanelPage(entry.key)}>
-                    <entry.Icon size={15} className={`panel-newtab-ic ${entry.ic}`} />
-                    <span>{entry.name}</span>
-                  </button>
-                ))}
+                <div className="panel-newtab-inner">
+                  <p className="panel-newtab-head">在右侧打开一页</p>
+                  <div className="panel-newtab-grid">
+                    {PANEL_TABS.map((entry) => (
+                      <button key={entry.key} className="panel-newtab-card" title={entry.title} onClick={() => openPanelPage(entry.key)}>
+                        <span className={`panel-newtab-ic ${entry.ic}`}><entry.Icon size={15} /></span>
+                        <span className="panel-newtab-name">{entry.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
             <div className={`panel-page ${rightTab === "review" ? "" : "hidden"}`}>

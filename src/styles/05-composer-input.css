@@ -987,40 +987,79 @@
 }
 .panel-tab-add:hover { background: var(--panel-2); color: var(--text); }
 
-/* 新标签页正文：一片留白 + 居中入口列表（行间细线，无卡片边框） */
+/* 新标签页正文：整块**居中** + 两列入口卡（11-26 用户：「靠左不好看，定制一个好看的」）。
+   ⛔ 原来是「一行一条细线」的左对齐列表：窄栏还行，右栏拉宽后左边一坨、右边空一大片。
+   ⇒ 改成定宽居中的入口网格：图标带淡色底（色相仍走 .ic-*），卡片有边、悬停浮起 1px。 */
 .panel-newtab {
+  flex: 1;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
   min-height: 0;
-  padding: 0 12px 12vh;
+  padding: 20px 14px;
+}
+.panel-newtab-inner {
+  width: 100%;
+  max-width: 340px;
 }
 .panel-newtab-head {
-  margin: 0 0 6px;
-  padding: 0 6px;
+  margin: 0 0 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 11.5px;
   letter-spacing: 0.02em;
+  text-align: center;
 }
-.panel-newtab-row {
+.panel-newtab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+.panel-newtab-card {
   display: flex;
   align-items: center;
   gap: 9px;
-  width: 100%;
-  padding: 10px 6px;
-  border: 0;
-  border-bottom: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: transparent;
+  min-width: 0;
+  height: 46px;
+  padding: 0 11px;
+  /* ⛔ 底色用 --panel-2（比页面底色高一层）:浅色主题下卡片是「淡灰贴纸」而不是白底描边，
+     暗色主题下比 --panel 亮一档 ⇒ 两种主题都看得出这是可点的块。 */
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--panel-2);
   color: var(--text);
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
-.panel-newtab-row:last-child { border-bottom: 0; }
-.panel-newtab-row:hover { background: var(--panel-2); }
-.panel-newtab-ic { flex: none; color: var(--muted); }
-.panel-newtab-row:hover .panel-newtab-ic { color: var(--text); }
+.panel-newtab-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  background: var(--panel);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+}
+.panel-newtab-card:active { transform: translateY(0); box-shadow: none; }
+.panel-newtab-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.panel-newtab-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ic, var(--muted)) 14%, transparent);
+  color: var(--ic, var(--muted));
+}
+.panel-newtab-card:hover .panel-newtab-ic {
+  background: color-mix(in srgb, var(--ic, var(--muted)) 22%, transparent);
+}
+.panel-newtab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .panel-page {
   flex: 1;
   min-height: 0;

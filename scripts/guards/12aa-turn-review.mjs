@@ -232,6 +232,11 @@ const diffLib = await import("../../src/lib/diff-view.mjs");
    首挂载可以无条件回落新标签页。⛔ 别改成"保留 rightTab"——那会让每次启动直接开上次那一页。 */
 ok(/if \(rightTab && rightTab !== "newtab"\) setRightTab\("newtab"\)/.test(reviewPanel),
   "⛔ 右栏默认页 = 新标签页（⛔ 不默认打开上次那一页 / 监控）");
+/* 11-26 用户：「按键居中来，做好看一点，靠左不好看」⇒ 入口是**居中网格卡片**，
+   ⛔ 别退回「左对齐一行一条细线」——宽栏下左边一坨、右边空一大片。 */
+ok(/panel-newtab-inner/.test(reviewPanel) && /panel-newtab-grid/.test(reviewPanel) && /panel-newtab-card/.test(reviewPanel)
+  && /\.panel-newtab\s*\{[\s\S]{0,160}?justify-content:\s*center/.test(read("src/styles/05-composer-input.css")),
+  "新标签页入口居中（网格卡片，不是左对齐列表）");
 
 console.log(`\n【turn-review】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
