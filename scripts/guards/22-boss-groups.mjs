@@ -1222,6 +1222,14 @@ if (state) {
   const sideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   ok(/const children = threadId \? \(sourcedChildrenOf\[threadId\] \?\? \[\]\) : \[\];/.test(sideSrc),
     "侧栏子会话不再按 hidden 名单过滤（那张表只负责「不当顶层行列出来」）");
+  /* ⛔⛔ 11-26 用户第二次截图（望舒下面有子会话、抱朴下面没有）：**存量**成员会话从来没登记过，
+     光补新链路只会"一半有、一半没有"。⇒ 启动时按中枢台账一次性补齐，且必须幂等 + 立刻收口。 */
+  const backfillSrc = read("electron/boss-groups/delegate-backfill.ts");
+  ok(/export async function backfillBossMemberDelegates/.test(backfillSrc)
+    && /const existing = await delegateRegistry\.infoOf\(threadId\)/.test(backfillSrc)
+    && /markStatus\(threadId, "done"\)/.test(backfillSrc)
+    && /backfillBossMemberDelegates\(\)/.test(read("electron/features/boot.ts")),
+    "存量中枢成员会话启动补登记：幂等（已有记录跳过）+ 立刻收口 done（⛔ 否则头像一直亮）+ 已接线到 boot");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

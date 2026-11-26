@@ -85,6 +85,8 @@ export function pickReusableDelegate(
 export class DelegateRegistry {
   private map: Record<string, DelegateRecord> = {};
   private loaded = false;
+  /** 正在进行的读盘（⛔ 并发调用共用同一份，见 load() 的注释：否则后落地的读会覆盖先写入的记录） */
+  private loadPromise: Promise<void> | null = null;
   private saveTimer: NodeJS.Timeout | null = null;
   /** 运行中的委派线程 → threadId（流式文本累积用；跑完即清） */
   private activeThreads = new Set<string>();
@@ -95,11 +97,22 @@ export class DelegateRegistry {
 
   private async load() {
     if (this.loaded) return;
-    this.loaded = true;
-    try {
-      const raw: unknown = JSON.parse(await fs.readFile(this.file, "utf8"));
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) this.map = raw as Record<string, DelegateRecord>;
-    } catch { /* 首次运行没有文件：从空表起步 */ }
+    /* ⛔⛔ 11-26 实测（内存补了 9 条、文件只剩 3 条）：原来 `loaded = true` 写在 `await` **之前**，
+       并发调用会立刻看到「已加载」而返回空表先写起来，随后这次读盘落地时又 `this.map = raw`
+       **整份覆盖**刚刚登记进去的记录 ⇒ 启动阶段的补登记凭空消失（下次启动又缺）。
+       ⇒ 用进行中的 Promise 去重；且只在内存表仍为空时才采纳文件内容（绝不覆盖已写入内存的）。 */
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        try {
+          const raw: unknown = JSON.parse(await fs.readFile(this.file, "utf8"));
+          if (raw && typeof raw === "object" && !Array.isArray(raw) && !Object.keys(this.map).length) {
+            this.map = raw as Record<string, DelegateRecord>;
+          }
+        } catch { /* 首次运行没有文件：从空表起步 */ }
+        this.loaded = true;
+      })();
+    }
+    return this.loadPromise;
   }
 
   /** 写盘做 120ms 合并：一次调度会连写数次状态（开始/进行/结束），不必逐次落盘 */
@@ -109,7 +122,16 @@ export class DelegateRegistry {
   }
 
   async flush() {
-    try { await fs.writeFile(this.file, JSON.stringify(this.map, null, 2), "utf8"); } catch { /* 写失败不影响内存态 */ }
+    /* ⛔⛔ 11-26 实测：内存补了 9 条、文件仍是 3 条 —— 落盘失败被**静默吞掉**（Windows 上
+       上一次写的句柄还没释放时会 EPERM/EBUSY），而调用方以为写成功了。
+       ⇒ 重试两次（间隔 80ms）；仍失败则**出声**，别再让"看起来成功了"掩盖数据丢失。 */
+    const payload = JSON.stringify(this.map, null, 2);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { await fs.writeFile(this.file, payload, "utf8"); return; } catch (error) {
+        if (attempt === 2) console.warn("[delegate-registry] 登记表落盘失败（内存态仍有效）：", String((error as Error)?.message ?? error).slice(0, 160));
+        else await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+    }
   }
 
   async register(input: Omit<DelegateRecord, "status" | "startedAt" | "endedAt"> & { startedAt?: number }): Promise<DelegateRecord> {

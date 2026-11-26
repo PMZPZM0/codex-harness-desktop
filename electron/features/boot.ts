@@ -832,6 +832,8 @@ export async function bootApp() {
     /* ⛔ 11-26：先补专家团主理人（teams 台账 lead），再补群聊主理人 —— 群主的表面更宽，后写赢。 */
     await (await import("./teams-ipc")).upgradeTeamLeadSurfaces();
     await (await import("./harness-team-ipc")).upgradeGroupLeadSurfaces();
+    /* ⛔ 11-26：存量中枢成员会话补委托登记（侧栏「子会话 N」与右侧运行反馈都读那张表）。 */
+    await (await import("../boss-groups/delegate-backfill")).backfillBossMemberDelegates();
   } catch { /* 预升级失败不阻断启动 */ }
   /* ⛔ 11-12 用户：「系统消息要来干嘛」—— 启动对账往群里补的系统提示已整体移除。
      接力靠「链空必回交主理人」（runDispatchRounds 里的根因修复），不再补系统消息。 */
