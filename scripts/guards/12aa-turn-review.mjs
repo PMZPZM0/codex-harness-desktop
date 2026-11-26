@@ -238,5 +238,19 @@ ok(/panel-newtab-inner/.test(reviewPanel) && /panel-newtab-grid/.test(reviewPane
   && /\.panel-newtab\s*\{[\s\S]{0,160}?justify-content:\s*center/.test(read("src/styles/05-composer-input.css")),
   "新标签页入口居中（网格卡片，不是左对齐列表）");
 
+/* 11-26 用户：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」。
+   ⛔ 必须是**两段一组**（panel-tab-zoom 里两颗），且与拖拽改宽同一口径（240~560 + 同一个 localStorage key）。 */
+ok(/panel-tab-zoom/.test(reviewPanel) && /stepPanelWidth\(64\)/.test(reviewPanel) && /stepPanelWidth\(-64\)/.test(reviewPanel)
+  && /Math\.min\(560, Math\.max\(240/.test(reviewPanel) && /localStorage\.setItem\("panel-width"/.test(reviewPanel)
+  && /\.panel-tab-zoom\s*\{/.test(read("src/styles/05-composer-input.css")),
+  "右栏宽度两段按键（加宽/收窄，240~560 与拖拽同口径，放大/缩小同一组）");
+
+/* 11-26 用户令：「codex 调用画布工作流就绿灯自动展开，在这里同步展示」。
+   三处必须同时存在，缺一处用户就看不到：活动桥（IPC → 事件箱）· 自动开右栏 · 标签亮绿点。 */
+ok(/CanvasActivityBridge/.test(read("src/features/app-view/AppView.tsx"))
+  && /noteCanvasActivity/.test(read("src/features/drama-canvas/CanvasActivityBridge.tsx"))
+  && /canvasLiveAt/.test(reviewPanel) && /panel-tab-live/.test(reviewPanel),
+  "画布绿灯：模型调 workflow_read/writeback ⇒ 自动展开右栏画布页 + 标签亮绿点（实时同步）");
+
 console.log(`\n【turn-review】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

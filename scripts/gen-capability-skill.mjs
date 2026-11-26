@@ -44,7 +44,7 @@ const DOMAIN_DESCRIPTIONS = {
   "work-logs": "各项目的**工作日志与项目记忆**管理（<项目>/.codex-harness/memory/**：长期记忆 MEMORY.md / 坑与纪律 LESSONS.md+lessons/ / 每日工作日志 logs/YYYY-MM-DD.md / archive / project）——设置 → 数据管理 → 工作日志。可看正文、按项目与类型分组、批量删除。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事；删除是销毁性的（工作日志删了不会重建）",
   "video": "内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json",
   "poll": "轮询板块的配置与中止（间隔 / 超时上限 / 失败重试次数，存 userData/poll-settings.json；poll:abort = 用户在界面上按「中止」时停掉主进程的等待循环）。⛔ 这是**轮询行为**的配置，不是任务本身 —— 提交/查询任务走 video 域那套工具",
-  "drama-canvas": "AI 短剧无限画布：把工作流拆成卡片摆在无限画布上（生图/短剧/白模/3D 建模/电商出图各类模板），连线表示「这份输入喂给下一步」。**画布可被模型读写**：board-sync 由画布自动镜像快照，模型用真工具 workflow_read 读内容、workflow_writeback 把产物写回节点（卡片实时显示）——「按画布搭的流程跑」是可行请求",
+  "drama-canvas": "AI 画布工作流（右栏「画布」标签页）：把工作流拆成卡片摆在无限画布上（生图/短剧/白模/3D 建模/电商出图各类模板），连线表示「这份输入喂给下一步」，也是模型判断执行顺序的依据。**画布可被模型读写**：画布每次改动都把快照镜像到 userData/drama-canvas/boards.json；模型用真工具 workflow_read 读节点/连线/提示词/产物现状，用 workflow_writeback 把产物路径写回节点（卡片实时显示、落盘不丢）——「按画布搭的流程跑」是可行请求。⛔ 调用这两个工具时宿主**自动展开右栏到画布页并给该标签亮绿灯**，用户看得见模型在读哪张板；模型只读 + 回填产物，改卡片结构仍由用户在画布上动手",
   "phone": "手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）",
   "codex": "渲染层与引擎（@openai/codex app-server）之间的请求桥：转发请求 / 响应 / 切活跃会话",
   "threads": "会话列表与元数据（归档、重命名、血缘、会话摘要等）",
@@ -204,7 +204,8 @@ lines.push("  · 子智能体：`agent_invoke`（派一个干净上下文的自�
 lines.push("  · 专家：`expert_save`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ `expert_list`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖");
 lines.push("  · 专家：`expert_save`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ `expert_list`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖");
 lines.push("  · 自造工具：`connector_register`（把一个本地 stdio MCP server 脚本注册成持久连接器 —— 重启应用后新会话的 tools/list 带上它的工具）。**没有现成工具时先读 `self-tools` 技能**：路线① 工作区脚本立即用（一次性）；路线② 自建 MCP server + connector_register（持久）；路线③ 改宿主源码要重新构建（交给用户）");
-lines.push("  · 画布工作流：`workflow_read`（读画布上搭的工作流：节点/连线/提示词/产物现状）/ `workflow_writeback`（把执行结果写回节点，画布实时显示）。用户说「按画布那套跑 / 画布里搭好的流程执行一下」时：先 workflow_read 看清节点与连线，再用 image_generate / video_generate / voice_generate 按链路逐节点执行，每步产物用 workflow_writeback 写回对应节点");
+lines.push("  · 画布工作流：`workflow_read`（读右栏「画布」页上搭的工作流：节点/连线/提示词/产物现状）/ `workflow_writeback`（把执行结果写回节点，卡片实时显示）。用户说「按画布那套跑 / 画布里搭好的流程执行一下」时：先 workflow_read 看清节点与**连线**（连线就是「这份输入喂给下一步」，执行顺序按它走），再用 image_generate / video_generate / voice_generate 按链路逐节点执行，每一步产物立刻 workflow_writeback 写回对应节点。⛔ 这两个工具一调，宿主会自动把右栏展开到画布页并亮绿灯 —— 用户正看着这张板，所以别偷偷摸摸跑、也别自己去改卡片结构（那是用户的工作台）");
+lines.push("  · 右侧边栏（用户眼皮底下那块面板；标签条可开多页，尾部「+」开新标签页）：监控 / 变更 / 审阅 / 浏览器 / 文件 / 图片 / 画布 / 终端。模型不能去点它，但**要知道它有什么**才能说清「去右栏哪一页看」：写 HTML 时浏览器页会自动重载、产出图与文档去文件页、调 `slide_show` 会把幻灯片推到右栏、调 workflow_read / workflow_writeback 会把画布页自动展开并亮绿灯。标签条右侧那两颗「加宽 / 收窄」是给用户手调的，模型不用管");
 lines.push("  ⇒ 当用户要「建定时任务 / 加待办 / 存 RPA 配方 / 改设置」这类**界面动作**时，**说明该去哪个界面点**（例如 设置 → 定时任务），**不要**声称自己调用了某个 `域:动作` 通道、也不要凭空发明工具名（如 `task_add`）—— 没有的工具就是没有。");
 lines.push("- 引擎**直接可用**的自动化能力另有专技能：`desktop-automation`（键鼠/窗口/OCR，nuphus MCP）、`browser-skill`（浏览器，ego-browser）、`ssh`（远程执行）。MCP 连接器是动态的，以 tools/list 实际返回为准。");
 lines.push("");

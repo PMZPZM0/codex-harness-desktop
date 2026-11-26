@@ -173,6 +173,7 @@ import { FileContextMenuHost } from "../shared/FileContextMenuHost";
 import { subscribeCanvasImage } from "../../lib/canvas-open.mjs";
 import { RemoteAskBridge } from "./RemoteAskBridge";
 import { DramaCanvas } from "../drama-canvas";
+import { CanvasActivityBridge } from "../drama-canvas/CanvasActivityBridge";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
@@ -621,6 +622,15 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <RightFileBridge app={app} />}
       <FileContextMenuHost openCanvas={() => { app.setRightTab("canvas"); app.setRightOpen(true); }} />
+      {/* 11-26 用户令：「codex 调用画布工作流就绿灯自动展开，在这里同步展示」。
+          ⛔ 宽度只在过窄时放宽（308px 下画布卡片挤成一列），用户之后可用标签条上的缩放按钮改。 */}
+      {!popoutThreadId && (
+        <CanvasActivityBridge openCanvas={() => {
+          app.setRightOpen(true);
+          app.setRightTab("canvas");
+          if (app.panelWidth < 420) app.setPanelWidth(420);
+        }} />
+      )}
       {!popoutThreadId && <RemoteAskBridge agentAsk={agentAsk} setAgentAsk={setAgentAsk} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {
         app.setRightOpen(true);

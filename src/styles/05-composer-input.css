@@ -987,6 +987,52 @@
 }
 .panel-tab-add:hover { background: var(--panel-2); color: var(--text); }
 
+/* 右栏宽度两段按键（11-26 用户令）：「在新建标签页左边加一个放大缩小侧边栏两段按键图标」。
+   ⛔ 两段**同一个底**、中间一条分隔线 —— 它们说的是同一件事（面板宽度）的两个方向，
+   做两颗独立圆钮会跟旁边的「+」并列成三颗，分不清哪两个是一组。 */
+.panel-tab-zoom {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 26px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.panel-tab-zoom button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.panel-tab-zoom button + button { border-left: 1px solid var(--line-soft); }
+.panel-tab-zoom button:hover { background: var(--panel); color: var(--text); }
+.panel-tab-zoom button:active { color: var(--accent); }
+
+/* 画布绿灯（11-26 用户令）：「codex 调用画布工作流就绿灯」。
+   绿点 + 标签描边一起亮：只描边在暗色下几乎看不出，只点一个小点又容易被忽略。 */
+.panel-tab.is-live { border-color: color-mix(in srgb, var(--green) 46%, var(--line)); }
+.panel-tab-live {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 22%, transparent);
+  animation: panel-tab-live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes panel-tab-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
 /* 新标签页正文：整块**居中** + 两列入口卡（11-26 用户：「靠左不好看，定制一个好看的」）。
    ⛔ 原来是「一行一条细线」的左对齐列表：窄栏还行，右栏拉宽后左边一坨、右边空一大片。
    ⇒ 改成定宽居中的入口网格：图标带淡色底（色相仍走 .ic-*），卡片有边、悬停浮起 1px。 */

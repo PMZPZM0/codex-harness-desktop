@@ -1075,6 +1075,18 @@ export async function run() {
     (/deleteKeyCode=\{null\}/.test(canvasSrc220) ? ok : fail)(
       "【220】负向：**不**打开 Delete 键的全局删除（那会连卡片一起被键盘删掉，用户没要求且易误删）"
     );
+    /* 11-26 用户令：「把画布里面的卡片连线功能恢复吧」——上一轮为了「纯画布」把内嵌形态的连线整批关了
+       （nodesConnectable=false + Handle 不渲染），可连线就是「这份输入喂给下一步」的唯一表达，
+       workflow_read 也靠它排执行顺序 ⇒ 不许再按形态关。 */
+    (/\n\s+nodesConnectable\n/.test(canvasSrc220) && !/nodesConnectable=\{variant !== "inline"\}/.test(canvasSrc220) ? ok : fail)(
+      "【220】内嵌（右栏）画布也能连线：nodesConnectable 无条件开，⛔ 不许再按形态关掉"
+    );
+    /* 11-26 实测：回填监听原来写成 `window.addEventListener("message")` + `data.channel==="harness:event"`，
+       但**没有任何地方往 window.postMessage 转发 harness 事件**（preload 走 ipcRenderer）
+       ⇒ 模型写回的产物永远到不了卡片。判据：必须走 onHarnessEvent 真通道。 */
+    (/window\.codex\.onHarnessEvent/.test(canvasSrc220) && !/addEventListener\("message"/.test(canvasSrc220) ? ok : fail)(
+      "【220】模型回填走 onHarnessEvent 真通道（⛔ window.message 那条没人转发，等于监听空气）"
+    );
     (/defaultOutputDir|outputs/.test(mainSrc220) && /drama-canvas:output-dir/.test(registrySrc220) && /drama-canvas:output-dir-set/.test(registrySrc220) ? ok : fail)(
       "【220】产物目录：默认 <userData>/outputs + 两个通道（读 / 选·改·恢复默认）已登记域表"
     );

@@ -59,6 +59,7 @@ import { DramaActionsProvider, useDramaActions, type DramaActions, type ViewerTa
 import { DramaInspector } from "./DramaInspector";
 import { readBoard } from "./drama-storage";
 import { subscribeCanvasImage, takeCanvasImage } from "../../lib/canvas-open.mjs";
+import { setCanvasMounted, takePendingWritebacks } from "../../lib/canvas-activity.mjs";
 import { DramaMediaViewer } from "./DramaMediaViewer";
 import { DramaResultsPanel } from "./DramaResultsPanel";
 import { DramaProjectsPanel } from "./DramaProjectsPanel";
@@ -382,21 +383,36 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   }, [board.board, board.nodes, board.edges, flowLabel, flow.empty]);
 
   /* ── 模型回填（09-29「打通」第三步）：workflow_writeback 工具更新镜像并广播，
-     这里收到后写进真实画布（updatePayload 会落 localStorage，卡片即时显示）。 */
+     这里收到后写进真实画布（updatePayload 会落 localStorage，卡片即时显示）。
+     ⛔⛔ 11-26 修：原来监听的是 `window.message` + `data.channel === "harness:event"` ——
+     **没有任何地方往 window.postMessage 转发 harness 事件**（preload 走 ipcRenderer），
+     所以这条监听从来没触发过：模型写回的产物不会出现在卡片上。改走真正的通道
+     `window.codex.onHarnessEvent`（与 part05 / RemoteScreenNotice 同源）。
+     ⛔ 用 boardRef 而不是把 board 塞进依赖：board 每次节点变化都是新对象，
+     订阅会被反复拆除重建，中途到达的事件就漏了。 */
   useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      const data: any = event.data;
-      if (data?.channel === "harness:event" && data?.event?.type === "drama-canvas-writeback") {
-        const { nodeId, updates } = data.event;
-        if (nodeId && updates && typeof updates === "object") {
-          board.updatePayload(nodeId, updates);
-          pushNotice("模型已把结果写回画布节点（" + nodeId + "）", "ok");
-        }
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [board]);
+    const off = window.codex.onHarnessEvent?.((event: unknown) => {
+      const e = (event ?? {}) as { type?: string; nodeId?: string; updates?: Record<string, string | number> };
+      if (e.type !== "drama-canvas-writeback") return;
+      const { nodeId, updates } = e;
+      if (!nodeId || !updates || typeof updates !== "object") return;
+      boardRef.current.updatePayload(nodeId, updates);
+      pushNotice("模型已把结果写回画布节点（" + nodeId + "）", "ok");
+    });
+    return () => { off?.(); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps -- pushNotice 由 useDramaActions 提供，语义上恒定 */
+  }, []);
+
+  /* ── 挂载前错过的回填（11-26）：画布按需挂载，模型这一笔可能发生在它还没渲染时
+     （主进程已写镜像，但 localStorage 没被更新）⇒ 挂载时把排队的那几笔补上。 */
+  useEffect(() => {
+    setCanvasMounted(true);
+    const missed = takePendingWritebacks();
+    for (const item of missed) boardRef.current.updatePayload(item.nodeId, item.updates);
+    if (missed.length) pushNotice(`已补上 ${missed.length} 处模型回填（发生在画布打开之前）`, "ok");
+    return () => setCanvasMounted(false);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps -- 只在挂载/卸载跑一次：补的是「挂载前」的队列 */
+  }, []);
 
   /* 工作流进度（09-28）：当前板「图 / 视频 / 配音」已完成数 + 素材·拍摄类卡中还没有产物的
      「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。
@@ -965,7 +981,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 multiSelectionKeyCode={["Meta", "Control"]}
                 selectionKeyCode="Shift"
                 panActivationKeyCode="Space"
-                nodesConnectable={variant !== "inline"}
+                /* ⛔ 11-26 用户令「把画布里面的卡片连线功能恢复吧」：之前内嵌形态把连线整套关掉
+                   （nodesConnectable=false + Handle 不渲染），但连线就是「这份输入喂给下一步」的唯一表达，
+                   workflow_read 也靠它排执行顺序 ⇒ 两种形态一律可连线。 */
+                nodesConnectable
                 connectionRadius={28}
                 onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); /* 记住右键的**画布坐标**：新建的卡片落在指针处，不是默认网格位 */ const at = rfRef.current?.screenToFlowPosition({ x: evt.clientX, y: evt.clientY }) ?? { x: 120, y: 120 }; setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null, at }); }}
                 onNodeContextMenu={(e, node) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }}
@@ -992,7 +1011,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 ⛔ 只在真的空时显示（有节点就不该挡视野），纯提示不拦点击（pointer-events:none）。 */}
             {variant === "overlay" && board.nodes.length === 0 ? <DramaBlankGuide /> : null}
           </div>
-          {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} showLinks={variant !== "inline"} /> : null}
+          {/* 连线恢复了，属性面板里的「连线」块也要一起回来（能连却看不到连了谁＝半套功能）。 */}
+          {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} /> : null}
           {/* 生成结果（相册）：与检查器同一栏，互斥显示（同时开会把画布挤没） */}
           {viewer ? <DramaMediaViewer target={viewer} onClose={() => setViewer(null)} /> : null}
           {resultsOpen ? (

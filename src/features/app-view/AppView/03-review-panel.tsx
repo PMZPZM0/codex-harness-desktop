@@ -116,6 +116,8 @@ import {
   LogOut,
   ChevronRight,
   ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
   ExternalLink,
   Pin,
   Wallet,
@@ -147,6 +149,7 @@ import { WorkspaceFilePreview } from "./03-workspace-files";
 import { getRightFile, subscribeRightFile } from "../../../lib/right-file.mjs";
 import { isImagePath } from "../../../lib/is-image-path";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
+import { canvasLightMs, subscribeCanvasActivity } from "../../../lib/canvas-activity.mjs";
 import { CommandExecutionCard, TerminalPanel } from "../../terminal";
 import { StorageSection, ReviewPanel } from "../../storage-settings";
 import { DramaCanvas } from "../../drama-canvas";
@@ -229,6 +232,29 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   };
 
   const stripRef = useRef<HTMLDivElement | null>(null);
+
+  /* 画布绿灯（11-26 用户令）：「codex 调用画布工作流就绿灯自动展开」——
+     模型调 workflow_read / workflow_writeback 时，画布标签亮一颗绿点，
+     让用户一眼知道「Codex 正在按这条工作流跑」以及「看到的卡片是真的在同步」。
+     ⛔ 只亮一段时间（canvasLightMs，与事件箱同一口径），不是常驻状态。 */
+  const [canvasLiveAt, setCanvasLiveAt] = useState(0);
+  useEffect(() => {
+    let timer = 0;
+    const off = subscribeCanvasActivity(() => {
+      setCanvasLiveAt(Date.now());
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setCanvasLiveAt(0), canvasLightMs());
+    });
+    return () => { off(); window.clearTimeout(timer); };
+  }, []);
+
+  /** 右栏宽度两段按键（11-26 用户令：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」）。
+   *  ⛔ 与拖拽改宽同一条口径（240~560）+ 同一个 localStorage key，别造第二套宽度真相源。 */
+  const stepPanelWidth = (delta: number) => {
+    const next = Math.min(560, Math.max(240, Math.round((app.panelWidth || 308) + delta)));
+    app.setPanelWidth(next);
+    try { localStorage.setItem("panel-width", String(next)); } catch { /* 隐私模式：宽度仍生效，只是不记 */ }
+  };
 
   /** 从新标签页（或别处）打开一个功能页 */
   const openPanelPage = (key: string) => {
@@ -331,7 +357,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                       role="tab"
                       aria-selected={rightTab === tab.key}
                       tabIndex={0}
-                      className={`panel-tab ${rightTab === tab.key ? "active" : ""}`}
+                      className={`panel-tab ${rightTab === tab.key ? "active" : ""} ${tab.key === "canvas" && canvasLiveAt ? "is-live" : ""}`}
                       title={tab.title}
                       onClick={() => setRightTab(tab.key)}
                       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setRightTab(tab.key); } }}
@@ -339,6 +365,10 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                     >
                       <tab.Icon size={12} className={tab.ic} />
                       <span>{tab.name}</span>
+                      {/* 绿灯（11-26）：Codex 正在调画布工作流 —— 读取与回填都会点亮，几秒后自己灭。 */}
+                      {tab.key === "canvas" && canvasLiveAt ? (
+                        <span className="panel-tab-live" title="Codex 正在按画布工作流执行，卡片会实时同步" />
+                      ) : null}
                       <button className="tab-close" title={`关闭「${tab.name}」标签（不影响数据）`} onClick={(event) => { event.stopPropagation(); shutPanelTab(tab.key); }}>
                         <X size={10} />
                       </button>
@@ -350,6 +380,13 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                     <LayoutGrid size={12} className="ic-cyan" /><span>新标签页</span>
                   </div>
                 ) : null}
+              </div>
+              {/* 11-26 用户令：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」。
+                  ⛔ 做成**两段一组**的小胶囊（同一个底、中间一条分隔），不是两颗各自成型的按钮 ——
+                  用户要的是「右栏宽度」这一件事的两个方向，成组才不会跟「+」混成三颗圆钮。 */}
+              <div className="panel-tab-zoom" role="group" aria-label="调整右侧面板宽度">
+                <button type="button" title="加宽右侧面板" aria-label="加宽右侧面板" onClick={() => stepPanelWidth(64)}><ChevronsLeft size={13} /></button>
+                <button type="button" title="收窄右侧面板" aria-label="收窄右侧面板" onClick={() => stepPanelWidth(-64)}><ChevronsRight size={13} /></button>
               </div>
               <button className="panel-tab-add" title="新标签页" onClick={() => setRightTab("newtab")}><Plus size={14} /></button>
             </div>

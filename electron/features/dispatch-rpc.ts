@@ -583,6 +583,12 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   if (name === "workflow_read") {
     const all = await readWorkflowBoards();
     const names = Object.keys(all);
+    /* 11-26 用户令：「codex 调用画布工作流就绿灯自动展开，在这里同步展示」——
+       读画布也算一次活动：让右栏自己开出来并亮绿灯，用户才知道模型正在看哪张板。
+       ⛔ 只广播、不代渲染层做导航（开面板/切页是渲染层的事）。 */
+    broadcastHarnessEvent({
+      type: "drama-canvas-activity", action: "read", name: names.join("、"), at: Date.now(),
+    } as never);
     if (!names.length) return { ok: true, output: "（画布还没有镜像快照 —— 用户打开过画布并编辑后才有；请让用户打开一次 AI 画布工作流）" };
     const parts: string[] = [];
     for (const canvasName of names) {

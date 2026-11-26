@@ -751,15 +751,30 @@ function dispatchMcpTools(): unknown[] {
        画布快照由渲染层防抖镜像到 userData/drama-canvas/boards.json（drama-canvas:board-sync）。
        workflow_read 读它 ⇒ 模型知道画布上有什么、要跑什么；模型用 image_generate 等现有工具
        按链路执行；workflow_writeback 把产物路径写回节点并广播，渲染层收到后 updatePayload
-       （卡片即时显示并落 localStorage）。 */
+       （卡片即时显示并落 localStorage）。
+       11-26：这两个工具一被调用，主进程广播 drama-canvas-activity ⇒ 渲染层自动展开右栏「画布」页、
+       给该标签亮绿灯；画布本体改成真通道（window.codex.onHarnessEvent）消费回填 ⇒ 卡片实时同步。
+       ⇒ 描述里必须写清「用户就在右栏看着」，模型才会把过程讲成用户能对上号的话。 */
     {
       name: "workflow_read",
-      description: "读取 AI 画布上工作流的内容（每个画布的工作流类型、节点清单、连线、各节点的提示词/尺寸/产物现状）。用户说「按画布那套跑 / 画布里搭好的流程执行一下」时先用它看清要跑什么，再用 image_generate / video_generate / voice_generate 按连线顺序逐节点执行。",
+      description:
+        "读取 AI 画布（右栏「画布」标签页）上用户搭好的工作流：每张画布的流程类型、节点清单、连线、"
+        + "各节点的提示词 / 尺寸 / 产物现状。**调用它会把右栏自动展开到画布页并亮绿灯**，用户看得见你在读哪张板。\n"
+        + "什么时候用：用户说「按画布那套跑 / 画布里搭好的流程执行一下 / 看看我画布上还差什么」。\n"
+        + "怎么用：先读一次拿节点 id 与**连线**（连线 = 「这份输入喂给下一步」，执行顺序按连线拓扑走，"
+        + "不是按你顺手挑的顺序）；再用 image_generate / video_generate / voice_generate 逐节点跑；"
+        + "每步产物用 workflow_writeback 写回对应节点。改画布本身（挪卡/加卡/改提示词）**不是**你的事 —— "
+        + "画布是用户的工作台，你只读 + 回填产物；真要改结构就说明让用户在画布上动手。",
       inputSchema: { type: "object", properties: {} },
     },
     {
       name: "workflow_writeback",
-      description: "把执行结果写回画布节点（用户重启前画布打开着就能实时看到；重启应用也不丢——镜像与画布存储同源）。updates 里给节点 payload 字段：path=产物图片/视频路径、text=文本结论等。",
+      description:
+        "把执行结果写回画布节点（用户就在右栏画布页看着，卡片会实时显示；同时落镜像，重启也不丢）。\n"
+        + "什么时候用：每个节点跑完立刻写回——别攒到最后一次写，用户要看到「跑到哪了」。\n"
+        + "写什么：updates 里给节点 payload 字段，path=产物图片/视频/音频的**完整本地路径**、text=文本结论、"
+        + "prompt=你实际用来生成的提示词（用户要能复现）。⛔ 值只能是字符串或数字，别塞对象/数组。\n"
+        + "⛔ 写回只加产物与结论，**不要**改节点的 kind / 位置 / 连线，也不要覆盖用户写的提示词。",
       inputSchema: {
         type: "object",
         properties: {
