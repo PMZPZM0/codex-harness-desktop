@@ -27,9 +27,7 @@ export async function run() {
     const sharedSrc = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
     const hasMap = /export const GEN_CHANNELS: Record<string, DramaChannel\[\]> = \{/.test(sharedSrc);
     const cardUses = /import \{[^}]*GEN_CHANNELS[^}]*\} from "\.\/DramaChannelButton"/.test(card);
-    (hasMap && cardUses ? ok : fail)(
-      "【192】卡面用共享的「节点类型 → 可用生成通道」映射表（09-28 提到 DramaChannelButton.tsx，卡面与检查器同一份）"
-    );
+    (hasMap && cardUses ? ok : fail)("【192】卡面用共享的「节点类型 → 可用生成通道」映射表（09-28 提到 DramaChannelButton.tsx，卡面与检查器同一份）");
   })();
   /* 09-29：动作分发搬到共享模块 DramaChannelButton ⇒ 锚跟着搬（意图不变：映射表外的类型没有生成键）。 */
   (/GEN_CHANNELS\[kind\] \|\| \[\]/.test(chSrc) && /dramaCardActions\(kind, payload\)/.test(card) ? ok : fail)(
@@ -595,7 +593,10 @@ export async function run() {
     /* ⑥ 11-26 用户（截图）：「都是负面提示词，我怎么输入提示词」—— 图片位缺**正面**提示词字段，
           卡面又只是一段只读 div ⇒ 两处都补：字段表有 prompt、卡面是可编辑控件（PromptInput）。 */
     (/\{ key: "prompt", label: "提示词"/.test(inspSrc) && /function PromptInput/.test(card) && /<PromptInput/.test(card) ? ok : fail)("【206】图片位能写正面提示词，且卡面提示词可编辑（不再只有负面提示词）");
-    (inspSrc.includes("IMAGE_SIZE_PRESETS") ? ok : fail)("【206】生图尺寸有平台预设（自媒体按平台选，不用手填像素）");
+    (inspSrc.includes("IMAGE_SIZE_PRESETS") && /"2048x2048"/.test(inspSrc) && /"1440x1920"/.test(inspSrc) && /"3840x2160"/.test(inspSrc) ? ok : fail)("【206】生图尺寸是网关那 9 个连接（2048 方图 / 1440 系列 / 2K·4K 横版），不是旧的边缘尺寸");
+    /* ⑦ 11-26 按网关文档：生图请求体必须带 quality / background / output_format（原来一项都没传），
+          并且有**图生图**通道（源图 → /images/edits，multipart）。 */
+    (/quality: input\.quality \|\| "max"/.test(imgSrc) && /background: input\.background \|\| "opaque"/.test(imgSrc) && /output_format: input\.outputFormat \|\| "png"/.test(imgSrc) && /images\/edits/.test(imgSrc) ? ok : fail)("【206】生图带 quality/background/output_format，图生图走 /images/edits（源图 multipart）");
     /* ⛔ 09-29 用户实测：上一版只给 image 卡加了，用户选**角色卡**就看不到（角色/场景同样走生图）。
        判据：size / negative 字段必须覆盖**全部三种生图卡**（image / character / location）。 */
     ((inspSrc.match(/\{ key: "size", label: "尺寸 \/ 画幅"/g) || []).length >= 3 ? ok : fail)(

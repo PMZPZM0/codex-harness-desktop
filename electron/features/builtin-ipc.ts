@@ -73,26 +73,55 @@ async function persistGeneratedImage(url: string, dirOverride?: string): Promise
   }
 }
 
+/** 生图/图生图的可选生成参数（11-26 按网关文档补齐）。
+ *  ⛔ quality / background / output_format 这三项原来**完全没传** —— 网关默认值不一定是
+ *     `max / opaque / png`，同一段提示词出来的清晰度与格式会跟文档对不上。 */
+export type ImageGenExtras = {
+  size?: string;
+  negative?: string;
+  quality?: string;       // max | high | medium | low | auto
+  background?: string;    // opaque | transparent | auto
+  outputFormat?: string;  // png | jpeg | webp
+  outputDir?: string;
+};
+
 /** 调上游生图接口（兼容 base 已带 `/images/generations` 与只有 `/v1` 两种写法），返回图片字节。 */
-export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) {
+export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string } & ImageGenExtras) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
   const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
+  /* ⛔ size / negative_prompt 只在**显式给了**才带上：不同网关接受的字段名与取值差异很大。
+     11-26 起 quality / background / output_format 默认带上（用户按文档要求），但**老网关可能
+     400 unknown field** ⇒ 命中相关报错时去掉这三项再试一次（这才是"不把本来能用的网关弄挂"）。 */
+  const bodyOf = (extras: boolean) => JSON.stringify({
+    model: input.model, prompt: input.prompt, n: 1,
+    ...(input.size ? { size: input.size } : {}),
+    ...(input.negative ? { negative_prompt: input.negative } : {}),
+    ...(extras ? {
+      quality: input.quality || "max",
+      background: input.background || "opaque",
+      output_format: input.outputFormat || "png",
+    } : {}),
+  });
+  const post = (extras: boolean) => outboundFetch(endpoint, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
+    body: bodyOf(extras),
+    signal: AbortSignal.timeout(300_000),
+  });
   let response: Response;
   try {
-    response = await outboundFetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-      // ⛔ size / negative_prompt 只在**显式给了**才带上：不同网关接受的字段名与取值差异很大，
-      //    默认不带 = 保持旧行为，不会因为多传一个字段就把本来能用的网关弄挂。
-      body: JSON.stringify({
-        model: input.model, prompt: input.prompt, n: 1,
-        ...(input.size ? { size: input.size } : {}),
-        ...(input.negative ? { negative_prompt: input.negative } : {}),
-      }),
-      signal: AbortSignal.timeout(300_000),
-    });
+    response = await post(true);
+    if (response.status === 400) {
+      const detail = await response.text().catch(() => "");
+      if (/quality|background|output_format|output format|unknown|unexpected|extra/i.test(detail)) {
+        response = await post(false);
+      } else {
+        throw new Error("生图失败 HTTP 400" + (detail ? "：" + detail.slice(0, 160) : ""));
+      }
+    }
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("生图失败 HTTP 400")) throw error;
     throw describeNetworkError(error, "生图请求");
   }
   if (!response.ok) {
@@ -114,8 +143,58 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
   return { path, url: /^https?:/i.test(url) ? url : "" };
 }
 
+/** 图生图（网关 `/images/edits`，multipart）：给一张源图 + 一句「改成什么样」，返回改完的图。
+ *  11-26 按网关文档补的通道。原来「改图」只有本地 jimp 的确定性运算符（裁剪/调色/水印…），
+ *  语义级修改（换背景 / 换风格 / 加元素）根本做不到 —— 那是这条通道的活。
+ *  ⛔ 字段名与生图对齐（quality / background / output_format），文档要求 opaque + png + b64_json；
+ *     老网关不认这几项时同样会 400，交给调用方降级（这里不重复实现重试）。 */
+export async function editImageWith(input: {
+  baseUrl: string; apiKey: string; model: string; prompt: string; imagePath: string;
+} & Omit<ImageGenExtras, "negative">) {
+  const base = input.baseUrl.trim().replace(/\/$/, "");
+  const endpoint = /\/images\/edits$/.test(base) ? base : base + "/images/edits";
+  const bytes = await fs.readFile(input.imagePath).catch(() => null);
+  if (!bytes) throw new Error("图生图的源图读不到：" + input.imagePath);
+  const ext = path.extname(input.imagePath).toLowerCase();
+  const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
+  const form = new FormData();
+  form.append("model", input.model);
+  form.append("prompt", input.prompt);
+  form.append("n", "1");
+  if (input.size) form.append("size", input.size);
+  form.append("quality", input.quality || "max");
+  form.append("background", input.background || "opaque");
+  form.append("output_format", input.outputFormat || "png");
+  form.append("response_format", "b64_json");
+  /* ⛔ 不手动设 Content-Type：multipart 的 boundary 必须由 fetch 自己生成。 */
+  form.append("image", new Blob([new Uint8Array(bytes)], { type: mime }), path.basename(input.imagePath));
+  let response: Response;
+  try {
+    response = await outboundFetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + input.apiKey },
+      body: form,
+      signal: AbortSignal.timeout(300_000),
+    });
+  } catch (error) {
+    throw describeNetworkError(error, "图生图请求");
+  }
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    let hint = "";
+    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
+    throw new Error("图生图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
+  }
+  const data = await response.json();
+  const item = data?.data?.[0];
+  const url = item?.url || (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
+  if (typeof url !== "string" || !url.trim()) throw new Error("图生图服务未返回图片地址或图片数据");
+  const saved = await persistGeneratedImage(url, input.outputDir);
+  return { path: saved, url: /^https?:/i.test(url) ? url : "" };
+}
+
 /** 带重试的生图（09-29）：网络抖动 / 5xx / 429 自动再试一次；4xx 参数错不重试（重试也没用）。 */
-export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }, attempts = 2): Promise<{ path: string; url: string }> {
+export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string } & ImageGenExtras, attempts = 2): Promise<{ path: string; url: string }> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {

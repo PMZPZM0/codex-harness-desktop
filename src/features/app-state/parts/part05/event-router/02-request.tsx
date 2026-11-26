@@ -1069,6 +1069,11 @@ ${st.hint}`);
                   model: args.model ? String(args.model) : undefined,
                   size: args.size ? String(args.size) : undefined,
                   negative: args.negative ? String(args.negative) : undefined,
+                  /* 11-26：图生图（给了源图就走网关 edits）+ 文档要求的三项生成参数。 */
+                  source: args.source ? String(args.source) : undefined,
+                  quality: args.quality ? String(args.quality) : undefined,
+                  background: args.background ? String(args.background) : undefined,
+                  outputFormat: args.outputFormat ? String(args.outputFormat) : undefined,
                   workspace: args.workspace ? String(args.workspace) : undefined,
                   name: args.name ? String(args.name) : undefined,
                   threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),

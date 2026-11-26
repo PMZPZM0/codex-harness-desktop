@@ -23,7 +23,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { threadCwd } from "../runtime-refs";
 import { readBuiltinPlugins } from "../main";
-import { generateImageResilient } from "./builtin-ipc";
+import { editImageWith, generateImageResilient } from "./builtin-ipc";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { sendToWindow } from "./window-bus";
@@ -386,6 +386,9 @@ export const imageLabFeature = defineFeature<null>({
           能力通道不共用）。 */
     ipcHost.handle("image-lab:generate", async (_event, input: {
       prompt?: string; count?: number; model?: string; size?: string; negative?: string;
+      /** 11-26 新增：给了源图就是**图生图**（网关 /images/edits），不给就是文生图。 */
+      source?: string;
+      quality?: string; background?: string; outputFormat?: string;
       workspace?: string; name?: string; threadId?: string;
     } = {}): Promise<LabToolResult> => {
       const prompt = String(input?.prompt ?? "").trim();
@@ -397,14 +400,21 @@ export const imageLabFeature = defineFeature<null>({
       if (!model) return labFail("生图模型没配（设置 → 插件 → 内置插件 的模型字段）");
       const count = Math.min(4, Math.max(1, Math.floor(Number(input.count) || 1)));
       const cwd = String(input.workspace || threadCwd.get(String(input.threadId ?? "")) || "").trim();
+      const source = String(input.source ?? "").trim();
       const labTaskId = newLabTaskId();
-      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "generate", title: "图像工坊 · 生成中", status: "running", images: [], note: prompt.slice(0, 100) });
+      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "generate", title: source ? "图像工坊 · 图生图" : "图像工坊 · 生成中", status: "running", images: [], note: prompt.slice(0, 100) });
+      const common = {
+        baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt,
+        size: input.size ? String(input.size) : undefined,
+        quality: input.quality ? String(input.quality) : undefined,
+        background: input.background ? String(input.background) : undefined,
+        outputFormat: input.outputFormat ? String(input.outputFormat) : undefined,
+      };
       const results = await Promise.allSettled(
-        Array.from({ length: count }, () => generateImageResilient({
-          baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt,
-          size: input.size ? String(input.size) : undefined,
-          negative: input.negative ? String(input.negative) : undefined,
-        })),
+        Array.from({ length: count }, () => (source
+          /* 图生图：语义级修改（换背景 / 换风格 / 加元素）走网关 edits —— 本地 jimp 做不到。 */
+          ? editImageWith({ ...common, imagePath: source })
+          : generateImageResilient({ ...common, negative: input.negative ? String(input.negative) : undefined }))),
       );
       const saved: string[] = [];
       const errors: string[] = [];

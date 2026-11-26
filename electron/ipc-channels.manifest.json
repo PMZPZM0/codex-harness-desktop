@@ -2957,7 +2957,7 @@
       "name": "imageGenerate",
       "channel": "image-lab:generate",
       "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { prompt: string; count?: number; model?: string; size?: string; negative?: string; workspace?: string; name?: string; threadId?: string }",
+      "paramsDecl": "input: { prompt: string; count?: number; model?: string; size?: string; negative?: string; source?: string; quality?: string; background?: string; outputFormat?: string; workspace?: string; name?: string; threadId?: string }",
       "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,

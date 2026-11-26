@@ -976,7 +976,7 @@ interface Window {
     /* 修图执行端（10-09 从 agents:dispatch-call 拆出）：**零凭证**，纯本地 jimp（20 种 ops）。先亮源图 → 换产物 → 自动收起。⛔ 输出不覆盖原图（产出 <名字>-edit.<ext>），天然可回退 */
     imageEdit(input: { path?: string; paths?: string[]; ops: unknown[]; output?: string; format?: string; quality?: number }): Promise<{ ok: boolean; output: string; error?: string }>;
     /* 生图执行端（10-09 从 agents:dispatch-call 拆出）：**唯一需要生图插件凭证的**通道（读 builtin-plugins.json 的 image 段 → 打外部网关）。调用时弹「图像工坊」浮层，完成自动收起。⛔ 与 image-lab:edit 分属两条通道 —— 用户明确要求「生成和编辑的 IPC 彻底分开」 */
-    imageGenerate(input: { prompt: string; count?: number; model?: string; size?: string; negative?: string; workspace?: string; name?: string; threadId?: string }): Promise<{ ok: boolean; output: string; error?: string }>;
+    imageGenerate(input: { prompt: string; count?: number; model?: string; size?: string; negative?: string; source?: string; quality?: string; background?: string; outputFormat?: string; workspace?: string; name?: string; threadId?: string }): Promise<{ ok: boolean; output: string; error?: string }>;
     /* 读图片元信息（尺寸/格式/透明通道/字节数）。只读，不弹浮层。零凭证 */
     imageInfo(input: { path?: string; paths?: string[] }): Promise<{ ok: boolean; output: string; error?: string }>;
     /* 图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与修图通道共用同一道闸 */
