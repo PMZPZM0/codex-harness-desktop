@@ -1745,9 +1745,10 @@ html[data-theme-mode="dark"] .import-record-card.thread-reference .import-record
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
+  /* ⛔ 11-26：里面现在是**主理人头像**（AgentAvatar，自带圆角与图集切片）——
+     原来那层 accent 底色 + 圆角只是给通用 Bot 图标当底，留着会在头像外圈多一圈方块。 */
+  border-radius: 0;
+  background: none;
 }
 .parent-task-name { color: var(--text); font-weight: 600; }
 .parent-task-hint { color: var(--faint); font-size: 11px; }

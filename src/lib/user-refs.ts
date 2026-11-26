@@ -144,7 +144,15 @@ export function parseUserRefs(text: string): ParsedUserRefs {
          === 本次任务（第 N 次尝试）=== … === END ===   （群成员派活） */
     const needMatch = tail.match(/===\s*用户需求\s*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
     const taskMatch = needMatch ? null : tail.match(/===\s*本次任务[^=\n]*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
-    const body = (needMatch ?? taskMatch ?? [])[1] ?? "";
+    /* ⛔⛔ 11-26 用户截图（专家团成员会话）：主理人派的活渲染成了「我」发的右侧气泡，
+       而且 `=== 派活单（下达人：…）===` / `发件人：supervisor · 望归` / `上级：望归` 三段原样露在气泡里。
+       根因：11-15 把成员首任务的抬头从 `=== 用户需求 ===` 改成了 `=== 派活单（…）===`，
+       而这里只认前两种 ⇒ body 取不到 ⇒ 发件人解析不到 ⇒ dispatched=false ⇒ 退回用户气泡。
+       ⇒ 认第三种抬头（谁的抬头由主进程写，这里只按"宿主拼的壳"三种已知形态匹配）。 */
+    const orderMatch = (needMatch || taskMatch)
+      ? null
+      : tail.match(/===\s*派活单[^=\n]*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
+    const body = (needMatch ?? taskMatch ?? orderMatch ?? [])[1] ?? "";
     /* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」——
        宿主派发的壳统一在需求体第一行写 `发件人：<kind> · <name>`（见 message-origin.mjs），
        ⛔ 不再靠标签白名单 + 正文正则猜。老会话没有协议行时 parseSenderFromText 会从

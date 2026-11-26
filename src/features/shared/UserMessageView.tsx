@@ -17,7 +17,8 @@ import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
-import { User, Film, Music2, Box, Bot } from "lucide-react";
+import { User, Film, Music2, Box } from "lucide-react";
+import { AgentAvatar } from "../../components/AgentAvatar";
 import { UserRefsRow } from "./InlineCards";
 import { FileRefCard } from "../../components/FileRefCard";
 import { ImportedRecordCard } from "./ImportRecords";
@@ -212,7 +213,13 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
     return (
       <div className="parent-task-stack" data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
         <div className="parent-task-head">
-          <span className="parent-task-avatar"><Bot size={13} /></span>
+        <span className="parent-task-avatar">
+          {/* ⛔⛔ 11-26 用户令：「专家团的主代理跟成员对话，改成工作伙伴群里那种……主代理消息在左边
+              和主代理头像」。原来这里是个通用 Bot 图标（看不出是谁发的）；换成与群聊同源的
+              `AgentAvatar`（同图集、同 seed 规则，`lead` 加金圈）⇒ 主理人在成员会话里
+              和在工作伙伴群里长一样。seed 用上级会话 id：改名不掉脸。 */}
+          <AgentAvatar kind="team" seed={refs.sender?.id || parentName} size={20} lead />
+        </span>
           {/* ⛔ 10-31 用户令：「子会话上级就默认是某某主管」——上级名字由 delegation 写进首任务
               （`上级主管：青崖主管（…）`），这里优先显示；**并优先用笔名快照**：父会话改名后
               广播一到达这里就换成新名字（不然只有新派的任务才更新，老任务还挂旧名）。

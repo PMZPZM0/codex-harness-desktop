@@ -104,9 +104,15 @@ const OLD_TASK_LABEL = /^\s*(?:发起方交给你的任务|主理人分配的子
  *    （11-03 审查收紧过同一条边界，别退回任意行匹配）。
  */
 export function parseSenderFromText(text) {
-  const first = String(text ?? "").split(/\r?\n/, 1)[0] ?? "";
-  const protocol = first.match(PROTOCOL_LINE);
-  if (protocol) return normalizeSender({ kind: protocol[1], name: (protocol[2] ?? "").trim() });
+  /* ⛔⛔ 11-26：原来只认**第一行**。专家团成员的首任务把「=== 派活单 ===」放在第一行、
+     协议行顺延到第二行 ⇒ 解析不到就回落成"用户消息"，主理人的派活被渲染成用户自己的气泡。
+     ⇒ 只在前 3 行里找协议行（仍不看正文深处：用户随手写的「发件人：」不能被当宿主元信息）。 */
+  const head = String(text ?? "").split(/\r?\n/, 3);
+  for (const line of head) {
+    const protocol = line.match(PROTOCOL_LINE);
+    if (protocol) return normalizeSender({ kind: protocol[1], name: (protocol[2] ?? "").trim() });
+  }
+  const first = head[0] ?? "";
   const supervisor = first.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*$/);
   if (supervisor) return normalizeSender({ kind: "supervisor", name: supervisor[1].trim() });
   if (/^\s*定时任务交给你的任务\s*[：:]/.test(first)) return normalizeSender({ kind: "automation" });
@@ -124,6 +130,9 @@ export function parseSenderFromText(text) {
 /** 需求体里剥掉协议行 / 上级行 / 任务标签，留下真正的任务正文（气泡显示用）。 */
 export function stripSenderMeta(text) {
   return String(text ?? "")
+    /* ⛔ 11-26：`=== 派活单（下达人：…）===` 抬头也要剥（它在某些路径会落进 body），
+       ⛔ 否则成员会话的气泡里会露出「下达人：X，不是用户本人」这种内部信封。 */
+    .replace(/^\s*===\s*派活单[^=\n]*===\s*(?:\r?\n|$)/, "")
     .replace(/^\s*发件人\s*[：:][^\n]*(?:\r?\n|$)/, "")
     .replace(/^\s*上级(?:主管)?\s*[：:][^\n]*(?:\r?\n|$)/, "")
     .replace(OLD_TASK_LABEL, "")

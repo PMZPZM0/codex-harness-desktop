@@ -14,6 +14,7 @@
  *   ④ 团成员产出直投群流：事件分支 + 合成作者 id + 提示词不许转述。
  */
 import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargetsInText, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
@@ -393,6 +394,37 @@ const catalog = [
       ok(!inv.includes("=== 用户需求 ===") && inv.includes("派活单（下达人：") && raw.includes("不是用户本人"),
         "成员信封写清下达人（管理员/上级，⛔ 不是用户本人）—— 不再冒充「用户需求」");
       ok(raw.includes("不要写成「用户要求我」"), "成员产出里禁止把上级的话说成「用户要求我」");
+      /* ⛔⛔ 11-26 用户截图（专家团成员会话）：主理人的派活渲染成了「我」发的右侧气泡，
+         里面还露着 `=== 派活单（下达人…）===` / `发件人：supervisor · 望归` / `上级：望归`。
+         根因在**消费侧**：`user-refs` 只认 `用户需求` / `本次任务` 两种抬头，`派活单` 不认识
+         ⇒ body 取不到 → 发件人解析不到 → dispatched=false → 退回用户气泡。
+         ⇒ 真跑一遍解析（不是查字符串）：抬头认得出、发件人=supervisor、正文不含内部信封。 */
+      {
+        const BODY = [
+          'import { parseUserRefs } from "./src/lib/user-refs.ts";',
+          'const text = ["[SYSTEM TASK · 成员会话]","=== 派活单（下达人：望归；身份：团队主理人，不是用户本人） ===","发件人：supervisor · 望归","上级：望归","上级交给你的任务：把这句话复跑一遍","=== END ===","","[专家团「D测试」成员 烟雨（…）]","角色提示词"].join("\\n");',
+          'const r = parseUserRefs(text);',
+          'const req = String(r.teamTask?.requirement ?? "");',
+          'console.log("DATA " + JSON.stringify({ kind: r.sender?.kind, sup: Boolean(r.sender?.isSuperior), dispatched: Boolean(r.teamTask?.dispatched), supName: String(r.teamTask?.supervisor ?? ""), req, leak: /派活单|发件人：|上级：/.test(req) }));',
+        ].join("\n");
+        let raw = "", data = null;
+        try {
+          raw = execFileSync(process.execPath, [
+            "--experimental-strip-types",
+            "--import", pathToFileURL(join(ROOT, "scripts", "guards", "_ts-register.mjs")).href,
+            "--input-type=module", "-e", BODY,
+          ], { cwd: ROOT, encoding: "utf8", timeout: 120000, stdio: ["ignore", "pipe", "pipe"] });
+        } catch (error) {
+          raw = `${error?.stdout ?? ""}${error?.stderr ?? ""}`;
+        }
+        const line = raw.split("\n").find((l) => l.trim().startsWith("DATA "));
+        if (line) { try { data = JSON.parse(line.trim().slice(5)); } catch { data = null; } }
+        ok(Boolean(data), "成员派活单解析真跑出结果（⛔ 没解析到 = 脚本没跑起来，别当通过）");
+        ok(data?.kind === "supervisor" && data?.sup === true && data?.dispatched === true,
+          "成员会话的派活单被认成**上级**发的（⛔ 否则渲染成用户自己的右侧气泡）");
+        ok(data?.supName === "望归" && data?.leak === false && String(data?.req ?? "").startsWith("把这句话复跑一遍"),
+          "气泡正文只留任务本身（不含派活单抬头 / 发件人 / 上级三段内部信封）");
+      }
     }
     /* ⛔ 11-15 用户截图：「我艾特成员，他在这里干嘛」—— 只 @ 一位成员时必须**直达他本人**，
        管理员不许替他回话；只有同时 @ 多人（或 @ 整团）才交给管理员按顺序点名。
