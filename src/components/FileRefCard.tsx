@@ -7,9 +7,11 @@
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Copy, FolderOpen, Maximize2, MoreHorizontal, Pencil } from "lucide-react";
+import { Check, ChevronDown, Copy, FolderOpen, LayoutGrid, Maximize2, MoreHorizontal, Pencil } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "./FileTypeIcon";
 import { openRightFile } from "../lib/right-file.mjs";
+import { requestCanvasImage } from "../lib/canvas-open.mjs";
+import { isImagePath } from "../lib/is-image-path";
 import { openFileTextEditor } from "../lib/ui-channels";
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS } from "../hooks/useFilePreview";
 import { useEscapeLayer } from "../hooks/useEscapeLayer";
@@ -142,6 +144,12 @@ export function FileRefCard({
               <button type="button" role="menuitem" onClick={() => { setMenu(null); onOpenEditor?.(path); }}>
                 <Maximize2 size={12} /><span>灯箱预览</span>
               </button>
+              {/* ⛔ 11-26：图片可以直接落到画布上（第三份菜单，与前两份同一动作）；开栏由 AppView 订阅统一处理。 */}
+              {isImagePath(path) && (
+                <button type="button" role="menuitem" onClick={() => { setMenu(null); requestCanvasImage(path, name); }}>
+                  <LayoutGrid size={12} /><span>在画布中打开</span>
+                </button>
+              )}
               {editable && (
                 <button type="button" role="menuitem" onClick={() => { setMenu(null); openFileTextEditor(path, name); }}>
                   <Pencil size={12} /><span>编辑</span>

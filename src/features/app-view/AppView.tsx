@@ -170,6 +170,7 @@ import { PetFocusBridge } from "../pet";
 import { CloudAccountSyncBridge } from "../settings-cloud";
 import { RightFileBridge } from "./AppView/RightFileBridge";
 import { FileContextMenuHost } from "../shared/FileContextMenuHost";
+import { subscribeCanvasImage } from "../../lib/canvas-open.mjs";
 import { RemoteAskBridge } from "./RemoteAskBridge";
 import { DramaCanvas } from "../drama-canvas";
 import { SettingsDialog } from "../../components/SettingsDialog";
@@ -503,6 +504,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     [officeGroupMembers.snapshot.members],
   );
 
+  /* ⛔⛔ 11-26：任何地方请求「把图片放到画布」都顺手把右栏开到画布页 ——
+     菜单有好几份（全局那份有 openCanvas 回调，附件卡那份在 shared 里拿不到 app），
+     与其每份各接一次开栏，不如在这里订阅一次：谁发请求谁就自动带着开栏。 */
+  useEffect(() => subscribeCanvasImage(() => { app.setRightTab("canvas"); app.setRightOpen(true); }), [app]);
   /* 11-18：自媒体工作台的「成稿出口」把提示词推过来 ⇒ 填进输入框（⛔ 不自动发送）。
      订阅只挂一次；setPrompt 来自 bag（与设计库/组件库的 onHandoff 同一条路）。 */
   const [incoming, setIncoming] = useState<{ text: string; threadId?: string } | null>(null);

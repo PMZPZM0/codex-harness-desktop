@@ -12,6 +12,7 @@ import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { craftOpeners, openPathInCraft, useInstalledCraftIds } from "./craft-open";
+import { requestCanvasImage } from "../../lib/canvas-open.mjs";
 
 /** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
 function isEditableTextFile(path: string): boolean {
@@ -51,6 +52,10 @@ export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuStat
       icon: <Box size={13} />,
       run: () => void openPathInCraft(opener.id, menu.path, opener.name),
     })),
+    /* ⛔ 11-26 用户两次反馈「图片右键没有在画布中打开」：附件卡用的是**这一份**菜单
+       （全局那份 FileContextMenuHost 早就有了）⇒ 两份都要有同一项。
+       ⛔ 开栏不在这里做：AppView 订阅了同一事件，任何请求都会把右栏开到画布页。 */
+    ...(isImagePath(menu.path) ? [{ label: "在画布中打开", icon: <Box size={13} />, run: () => requestCanvasImage(menu.path, menu.name) }] : []),
     { label: "在文件夹中显示", icon: <FolderOpen size={13} />, run: () => void window.codex.shellReveal(menu.path) },
     {
       label: "复制文件路径",
