@@ -68,10 +68,9 @@ export async function run() {
     "【192】结果面板聚合卡片 payload 的 image/video（不扫盘 —— 扫盘判不准「谁生成的」）"
   );
 
-  /* ④ 空画布引导（用户「新建了然后呢，有什么用」） */
-  (/drama-canvas-blank-guide/.test(canvas) && /board\.nodes\.length === 0 \?/.test(canvas) ? ok : fail)(
-    "【192】空画布有引导（说明画布/分镜表用途与两个起手按钮的区别）"
-  );
+  /* ④ 空画布引导（用户「新建了然后呢，有什么用」）：11-26 引导层拆到 DramaCanvasOverlays.tsx ⇒ 文案在 overlays、触发条件在 canvas，两处都要查 */
+  const canvasOverlays = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvasOverlays.tsx"), "utf8");
+  (/drama-canvas-blank-guide/.test(canvasOverlays) && /<DramaBlankGuide \/>/.test(canvas) && /board\.nodes\.length === 0 \?/.test(canvas) ? ok : fail)("【192】空画布有引导（说明画布/分镜表用途与两个起手按钮的区别）");
   (/pointer-events: none/.test(readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8").split(".drama-canvas-blank-guide {")[1]?.slice(0, 700) ?? "") ? ok : fail)(
     "【192】引导层 pointer-events:none（不挡住画布的拖拽/框选）"
   );

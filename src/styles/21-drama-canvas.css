@@ -309,21 +309,25 @@
 .drama-canvas-card-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .drama-canvas-card-title b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drama-canvas-card-title small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ⛔ 11-26 用户：「卡片右上角的两个图标小的看不见都」。
+   原来是 20×20 透明底 + --faint 图标 ⇒ 画布缩到 70% 时几乎完全消失（截图看不出来）。
+   现在 26×26 + 淡底 + 细边 + --muted 图标：常态就有形，缩放态下也点得中。 */
 .drama-canvas-card-tool {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--faint);
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--muted);
   cursor: pointer;
   flex: none;
 }
-.drama-canvas-card-tool:hover { background: var(--panel-2); color: var(--text); }
-.drama-canvas-card-tool.is-danger:hover { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+.drama-canvas-card-tool:hover { background: var(--panel); color: var(--text); border-color: var(--line); }
+.drama-canvas-card-tool.is-danger { color: var(--muted); }
+.drama-canvas-card-tool.is-danger:hover { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, var(--line-soft)); }
 
 .drama-canvas-card-body {
   flex: 1;
@@ -1807,10 +1811,18 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   background: var(--accent-soft);
 }
 
-/* ---------------------------------------------------------------- 内嵌形态的小屏适配
-   11-26 用户（截图）：「这啥玩意啊，美化一下」—— 右栏只有 ~300px，340px 的检查器把画布盖掉一半，
-   字段与说明挤成一团。⇒ 内嵌形态把检查器改成**整栏抽屉**：占满宽度、自己滚动、头部吸顶，
-   输入框放到 12px / 8px 圆角 / 更松的行距。⛔ 浮层形态一点不改（那边宽度够）。 */
+/* ---------------------------------------------------------------- 内嵌形态（右栏）专属一套
+   11-26 用户两次点名：「这啥玩意啊，美化一下」「太丑了，侧边栏定制一套不行吗」。
+   根因：浮层那套是给 ~1400px 宽的大画布写的 —— 340px 面板、chip 排一行、说明 10px，
+   整块塞进 ~300px 的右栏以后：chip 贴边、说明糊成一片、按钮互相挤。⇒ **不再压缩浮层，
+   给内嵌单独一套**（下面全部 .drama-canvas-backdrop.is-inline 限定，浮层一个字不动）。
+
+   这套的口径：
+   · 面板 = 整栏抽屉（inert 到画布之上），头部吸顶，正文可滚；
+   · 头部两段式：标题一行、chip 换行；关闭键 26×26；
+   · 角色说明做成淡底提示块（原来是一行灰字，和字段说明混在一起分不清）；
+   · 字段 = 标签(11.5/600) → 输入框(12.5, 高 30) → 说明(11/1.6 淡)；
+   · 动作按钮整行一颗（窄栏里三个挤一行必然难认）。 */
 .drama-canvas-backdrop.is-inline .drama-canvas-inspector {
   position: absolute;
   inset: 0;
@@ -1822,18 +1834,139 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
 .drama-canvas-backdrop.is-inline .drama-canvas-inspector-head {
   position: sticky;
   top: 0;
-  z-index: 1;
-  padding: 10px 14px;
+  z-index: 2;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 12px 10px;
   background: var(--panel);
+  border-bottom: 1px solid var(--line);
 }
-.drama-canvas-backdrop.is-inline .drama-canvas-inspector-body { padding: 12px 14px 22px; gap: 11px; }
-.drama-canvas-backdrop.is-inline .drama-canvas-field { gap: 5px; font-size: 11.5px; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-head > div { flex: 1; min-width: 0; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-head b { font-size: 13.5px; line-height: 1.3; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-head small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 5px;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-flow-chip { margin-right: 0; font-size: 10.5px; line-height: 17px; }
+.drama-canvas-backdrop.is-inline .drama-canvas-icon-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-icon-btn:hover { background: var(--panel); color: var(--text); border-color: var(--line); }
+
+/* ⛔⛔ 11-26 实测第二处（截图里「按用途选比例…」压在「负面提示词」上面）：
+   检查器正文是 flex 列容器，字段作为 flex item 默认 `flex-shrink:1` ⇒ 内容比可视高度高时
+   **每个字段被压扁**，而 hint 溢出但 overflow 可见 ⇒ 相邻字段视觉重叠（像糊在一起）。
+   ⇒ 内嵌形态一律 `flex: 0 0 auto`（不压缩，装不下就整体滚动）。 */
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-body > * { flex: 0 0 auto; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-body { padding: 12px 12px 24px; gap: 12px; overscroll-behavior: contain; }
+.drama-canvas-backdrop.is-inline .drama-canvas-field-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+/* 角色说明：淡底提示块（与字段说明明确分层，不再是一行灰字） */
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-body > .drama-canvas-hint:first-of-type {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+/* ⛔⛔ 11-26 实测（截图）：内嵌面板里字段被排成**一行**——标签在左、控件在右、说明被挤成
+   62px 宽的一竖条（"按用途选比例…" 竖着排 190px 高），整块像被压扁的表单。
+   基础规则（.drama-canvas-field { flex-direction: column }）在同文件 §检查器 里写着，
+   但内嵌形态下实际渲染是横向 —— 说明该处还有一处上层覆盖没找到（不猜、不赌）。
+   ⇒ 这里用**更高特异性 + 显式钉死**：方向、拉伸、子元素占满，三样都写；
+     以后就算上游再改，这套窄栏版式也不会跟着塌。 */
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector .drama-canvas-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector .drama-canvas-field > span,
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector .drama-canvas-field > small {
+  display: block;
+  width: 100%;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector .drama-canvas-field > span { color: var(--text); font-weight: 600; }
+.drama-canvas-backdrop.is-inline .drama-canvas-field { gap: 4px; font-size: 11.5px; }
 .drama-canvas-backdrop.is-inline .drama-canvas-field input,
 .drama-canvas-backdrop.is-inline .drama-canvas-field textarea,
-.drama-canvas-backdrop.is-inline .drama-canvas-field select { padding: 7px 9px; font-size: 12px; border-radius: 8px; }
-.drama-canvas-backdrop.is-inline .drama-canvas-field-hint { font-size: 10.5px; line-height: 1.55; }
+.drama-canvas-backdrop.is-inline .drama-canvas-field select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-field textarea { min-height: 64px; resize: vertical; }
+/* 动作按钮：窄栏里整行一颗（三颗挤一行时「上传参考图（可多选）」会被压到看不清） */
 .drama-canvas-backdrop.is-inline .drama-canvas-inspector-actions { gap: 6px; }
-.drama-canvas-backdrop.is-inline .drama-canvas-inspector-actions > .drama-canvas-btn { flex: 1 1 auto; justify-content: center; }
+.drama-canvas-backdrop.is-inline .drama-canvas-inspector-actions > .drama-canvas-btn {
+  flex: 1 1 100%;
+  min-width: 0;
+  height: 30px;
+  justify-content: center;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+/* 缩放胶囊（内嵌形态专用，右下角常驻）：− / 当前比例（点=适配）/ +
+   ⛔ 用户：「放大缩小也看不见」—— 缩放原来只在左侧竖条工具栏里，而内嵌把那整条收掉了。 */
+.drama-canvas-zoomdock {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+}
+.drama-canvas-zoomdock > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.drama-canvas-zoomdock > button:hover { background: var(--panel-2); color: var(--text); }
+/* ⛔ 用「父 > 类名」压过上面的 `> button` 宽度，不写 !important（本仓禁用 !important 式修法）。 */
+.drama-canvas-zoomdock > button.drama-canvas-zoomdock-pct {
+  width: auto;
+  min-width: 46px;
+  padding: 0 6px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
 /* 拖角句柄：默认那颗小方块在浅色主题下几乎看不见，给个实心点 + 描边 */
 .drama-canvas-card .react-flow__resize-control.handle {
   width: 9px;

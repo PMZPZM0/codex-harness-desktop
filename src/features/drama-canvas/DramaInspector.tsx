@@ -60,7 +60,7 @@ const FIELDS: Record<string, FieldSpec[]> = {
     { key: "look", label: "外貌描写", type: "textarea", hint: "写死一段，后面每镜照抄 —— 每镜现编会让脸一镜一个样" },
     { key: "description", label: "性格与目标", type: "textarea" },
     { key: "size", label: "尺寸 / 画幅", type: "select", options: IMAGE_SIZE_PRESETS.map((p) => p.value), hint: "按平台/用途选；网关不认这个尺寸会报错 —— 清空即走默认" },
-    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚不想要什么；不是每个网关都支持，无效时改回正面描述" },    { key: "ref", label: "定妆照路径", hint: "这是每一镜生首帧要参照的那张图" },
+    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚「不想要什么」，比在正面词里绕半天有效；不是每个网关都支持，无效时改回正面描述" },    { key: "ref", label: "定妆照路径", hint: "这是每一镜生首帧要参照的那张图" },
   ],
   location: [
     { key: "name", label: "场景名" },
@@ -95,7 +95,7 @@ const FIELDS: Record<string, FieldSpec[]> = {
   image: [
     { key: "title", label: "标题" },
     { key: "size", label: "尺寸 / 画幅", type: "select", options: [{ value: "", label: "默认（由生图接口决定）" }, ...IMAGE_SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label }))], hint: "按用途选比例：电商主图 1:1、详情 3:4、抖音 9:16、B站 16:9。个别接口不认该尺寸会报错 —— 选回「默认」即可" },
-    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚**不想要什么**，比在正面词里绕半天有效；不是每个网关都支持，无效时改回正面描述" },
+    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚「不想要什么」，比在正面词里绕半天有效；不是每个网关都支持，无效时改回正面描述" },
     { key: "role", label: "用途" },
     { key: "path", label: "文件路径" },
     { key: "text", label: "说明", type: "textarea" },

@@ -63,6 +63,7 @@ import { DramaMediaViewer } from "./DramaMediaViewer";
 import { DramaResultsPanel } from "./DramaResultsPanel";
 import { DramaProjectsPanel } from "./DramaProjectsPanel";
 import { DramaNodeCard } from "./DramaNodeCard";
+import { DramaBlankGuide, DramaZoomDock } from "./DramaCanvasOverlays";
 import { DramaTimeline } from "./DramaTimeline";
 import { useDramaBoard, type DramaRFEdge, type DramaRFNode } from "./use-drama-board";
 import { useDramaStory } from "./use-drama-story";
@@ -979,22 +980,15 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--line)" />
               </ReactFlow>
             {variant === "overlay" ? <div className="drama-canvas-vp-hint" aria-hidden>滚轮缩放 · 空白拖动平移 · Shift 框选 · 空格拖拽平移</div> : null}
+            {/* ⛔ 11-26 用户：「放大缩小也看不见」—— 内嵌形态收掉了整条工具栏，比例与缩放按钮也跟着没了。
+                ⇒ 右下角常驻一颗缩放胶囊（− / 比例 / +），见 DramaCanvasOverlays。 */}
+            {variant === "inline" ? (
+              <DramaZoomDock zoomText={zoomText} onZoomOut={() => zoomBy(1 / 1.15)} onZoomIn={() => zoomBy(1.15)} onFit={fitAll} />
+            ) : null}
             {/* 空画布引导（09-28 用户反馈「新建了然后呢，有什么用，完全看不懂」）：
                 原来空画布就是一片白，没人说明这块板干什么、两个起手按钮区别在哪。
                 ⛔ 只在真的空时显示（有节点就不该挡视野），纯提示不拦点击（pointer-events:none）。 */}
-            {variant === "overlay" && board.nodes.length === 0 ? (
-              <div className="drama-canvas-blank-guide" aria-hidden>
-                <Clapperboard size={26} />
-                <b>这块画布还是空的</b>
-                <ul>
-                  <li><strong>新建短剧工作流</strong> —— 剧本 → 角色/场景 → 分镜表 → 出片，整条链路一次摆好</li>
-                  <li><strong>新建生图工作流</strong> —— 写提示词 → 出图 → 备注，专门出图</li>
-                  <li><strong>新建电商出图工作流</strong> —— 商品参考图 → 白底母版 → 主图 / SKU / 详情 / 场景 / 买家秀 → 素材包清单</li>
-                  <li><strong>画布</strong> = 一个方案一张板（左上角可切换/新建）；<strong>分镜表</strong> = 镜头的唯一真源，交给 Agent 生成时读的就是它</li>
-                </ul>
-                <small>从上面两个按钮挑一个开始；也可以在左侧「+ 添加节点」自己摆卡。</small>
-              </div>
-            ) : null}
+            {variant === "overlay" && board.nodes.length === 0 ? <DramaBlankGuide /> : null}
           </div>
           {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} showLinks={variant !== "inline"} /> : null}
           {/* 生成结果（相册）：与检查器同一栏，互斥显示（同时开会把画布挤没） */}

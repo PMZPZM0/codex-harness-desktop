@@ -99,8 +99,11 @@ function Head({ kind, id, title, subtitle, extra, role, step }: { kind: string; 
         <small>{subtitle || def.subtitle}</small>
       </div>
       {extra}
-      <button className="drama-canvas-card-tool nodrag" title="打开设置" aria-label="打开设置" onClick={(e) => { e.stopPropagation(); actions.openInspector(id); }}><Settings size={13} /></button>
-      <button className="drama-canvas-card-tool is-danger nodrag" title="删除节点" aria-label="删除节点" onClick={(e) => { e.stopPropagation(); actions.board.removeNodes([id]); }}><X size={13} /></button>
+      {/* ⛔ 11-26 用户：「卡片右上角的两个图标小的看不见都」—— 13px / 无底色的图标在缩放到 70%
+          以后基本消失。图标抬到 15、按钮 26×26 并给淡底色（见 21-drama-canvas.css 的
+          .drama-canvas-card-tool），缩放态下仍有抓取面积。 */}
+      <button className="drama-canvas-card-tool nodrag" title="打开设置" aria-label="打开设置" onClick={(e) => { e.stopPropagation(); actions.openInspector(id); }}><Settings size={15} /></button>
+      <button className="drama-canvas-card-tool is-danger nodrag" title="删除节点" aria-label="删除节点" onClick={(e) => { e.stopPropagation(); actions.board.removeNodes([id]); }}><X size={15} /></button>
     </header>
   );
 }
