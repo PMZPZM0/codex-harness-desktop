@@ -57,6 +57,7 @@ import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-
 import { DramaActionsProvider, useDramaActions, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
 import { readBoard } from "./drama-storage";
+import { subscribeCanvasImage, takeCanvasImage } from "../../lib/canvas-open.mjs";
 import { DramaMediaViewer } from "./DramaMediaViewer";
 import { DramaResultsPanel } from "./DramaResultsPanel";
 import { DramaProjectsPanel } from "./DramaProjectsPanel";
@@ -173,6 +174,27 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
 
   const board = useDramaBoard(pushNotice);
   const story = useDramaStory(workspace, board, pushNotice);
+
+  /* ⛔⛔ 11-26 用户（截图：消息里的图片右键没有「在画布中打开」）：
+     附件 / 文件卡的右键菜单在深层，画布在右栏且按需挂载 —— 用事件箱把「把哪张图交给画布」传下来。
+     ⛔ 用 ref 取最新 board：board 每次渲染都是新对象，直接进依赖会让这个 effect 每帧重跑。 */
+  const boardRef = useRef(board);
+  boardRef.current = board;
+  useEffect(() => {
+    const consume = () => {
+      const request = takeCanvasImage();
+      if (!request) return;
+      const node = boardRef.current.addNode("image", {
+        path: request.path,
+        ...(request.name ? { title: request.name } : {}),
+      });
+      boardRef.current.select([node.id], node.id);
+      pushNotice("已放到画布上", "", () => boardRef.current.undo());
+    };
+    /* 先取一次：用户点菜单时画布可能还没挂载（本组件是「切到画布页才渲染」）。 */
+    consume();
+    return subscribeCanvasImage(consume);
+  }, [pushNotice]);
 
   const [inspectorOpen, setInspectorOpen] = useState(false);
   /* 生成结果面板（09-28 用户要求）：原来生成完的图/视频只写在卡片里，散在工作区目录，

@@ -615,7 +615,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} />
       {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <RightFileBridge app={app} />}
-      <FileContextMenuHost />
+      <FileContextMenuHost openCanvas={() => { app.setRightTab("canvas"); app.setRightOpen(true); }} />
       {!popoutThreadId && <RemoteAskBridge agentAsk={agentAsk} setAgentAsk={setAgentAsk} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {
         app.setRightOpen(true);

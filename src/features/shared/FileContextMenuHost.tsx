@@ -6,9 +6,10 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { Box, Copy, ExternalLink, FolderOpen, Image as ImageIcon, Pencil, Save } from "lucide-react";
+import { Box, Copy, ExternalLink, FolderOpen, Image as ImageIcon, LayoutGrid, Pencil, Save } from "lucide-react";
 import { closeFileContextMenu, getFileContextMenu, subscribeFileContextMenu } from "../../lib/file-context-menu.mjs";
 import { openRightFile } from "../../lib/right-file.mjs";
+import { requestCanvasImage } from "../../lib/canvas-open.mjs";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { openFileTextEditor, openImageLightbox, notifyToast } from "../../lib/ui-channels";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
@@ -22,9 +23,17 @@ const isEditable = (path: string) => {
 };
 
 /** 全局文件右键菜单宿主：订阅事件箱并渲染统一动作，挂在 AppView 一次。 */
-export function FileContextMenuHost() {
+/** ⛔ 11-26：基座（shared）不许 import 域（app-state）—— 【130】守着。
+ *  这里只收一个「打开画布页」的回调，由 AppView 注入（它本来就拿得到 app）。 */
+export function FileContextMenuHost({ openCanvas }: { openCanvas?: () => void }) {
   const menu = useSyncExternalStore(subscribeFileContextMenu, getFileContextMenu, getFileContextMenu);
   const craftIds = useInstalledCraftIds();
+
+  /** 「在画布中打开」：先把请求交给事件箱（画布未挂载也先记下），再开右栏切到画布页。 */
+  const openImageInCanvas = (path: string, name: string) => {
+    requestCanvasImage(path, name);
+    try { openCanvas?.(); } catch { /* 没注入回调时只记请求，切到画布页仍会补放 */ }
+  };
 
   useEffect(() => {
     if (!menu) return;
@@ -45,6 +54,9 @@ export function FileContextMenuHost() {
     { label: "在编辑器打开", icon: <Pencil size={13} />, run: () => openFileTextEditor(menu.path, menu.name) },
     { label: "用默认应用打开", icon: <ExternalLink size={13} />, run: () => { try { void window.codex.shellOpen?.(menu.path); } catch { /* 无关联程序 */ } } },
     ...(image ? [{ label: "查看大图", icon: <ImageIcon size={13} />, run: () => openImageLightbox(menu.path, menu.name) }] : []),
+    /* ⛔ 11-26 用户（截图）：消息里的图片右键没有「在画布中打开」。
+       ⛔ 只对图片给这一项；画布没开着也先记下，切到画布页时补放上去。 */
+    ...(image ? [{ label: "在画布中打开", icon: <LayoutGrid size={13} />, run: () => openImageInCanvas(menu.path, menu.name) }] : []),
     ...craftOpeners(menu.path, craftIds, 3).map((opener) => ({
       label: `用 ${opener.name} 打开`,
       icon: <Box size={13} />,
