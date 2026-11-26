@@ -32,6 +32,7 @@ import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { delegateRegistry, engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { broadcastHarnessEvent } from "../features/window-bus";
+import { purgeDeletedThread } from "../features/thread-deletion";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
 import { addMember, addTask, assignTask, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
@@ -1399,14 +1400,23 @@ export function statusForBoss(groupId: string) {
  * ⛔⛔ **先回投中枢、再清账**：`postToBoss` 要靠 group.bossThreadId 才找得到那条会话，
  *    群一删就再也通知不到了 ⇒ 顺序不能反。回投的是 `[群事件]`，模型下一回合就知道这个群没了，
  *    不会拿着旧 groupId 继续派活/审查（那才是用户说的"两边不一致"）。
- * ⛔ 只删群账本（群 / 任务 / 事件）——**会话不删**：成员会话里的成品与轨迹仍可回看，
- *    产出文件也都在群 workspace 里（用户明确要「群真的消失，会话与产出保留」，看 delete 前那版界面文案）。
+ * ⛔⛔ 11-26 用户令（与 11-07 team 群同一口径）：「我把群都删了，群成员还在？不跟着删？」
+ *    ⇒ 删群**连带删掉本群成员的常驻会话**（group.members[].threadId）。
+ *    本模块是设置面板（自包含、拿不到 app bag）发起的删除，所以主进程自己走完整收尾：
+ *    turn/interrupt → thread/delete → purgeDeletedThread → delegateRegistry.forget + flush。
+ *    ⚠️ 与渲染层 deleteThreadCore / 启动自愈是同一套动作，三处必须保持一致，别再分叉。
+ *    ⛔ 中枢会话 `group.bossThreadId` **不删**：那是用户对话入口，删了就没法再建群/收事件。
+ *    ⛔ 产出文件仍在群 workspace 里，会话删除不动磁盘成品。
  * ⛔ 立即 `flush()`：删群是销毁性操作，不能等 120ms 合并写（崩在中间 = 界面已消失、账本还在）。
  */
 export async function deleteGroupForBoss(input: { groupId: string; by?: "user" | "boss"; reason?: string }): Promise<{
   ok: boolean;
   error?: string;
   deleted?: { id: string; name: string; tasks: number; events: number; running: number; notified: boolean };
+  /** 本群成员会话 id：已删成功的那些（11-26） */
+  removedThreadIds?: string[];
+  /** 删/归档都失败的会话 id：留待下次启动对账重试 */
+  failedThreads?: string[];
 }> {
   const state = await bossStore.load();
   const group = state.groups[String(input.groupId ?? "")];
@@ -1416,6 +1426,13 @@ export async function deleteGroupForBoss(input: { groupId: string; by?: "user" |
   const running = tasks.filter((task) => ["queued", "assigned", "running", "submitted", "reviewing"].includes(task.status)).length;
   const events = (state.events ?? []).filter((event) => event.groupId === group.id).length;
   const who = input.by === "boss" ? "中枢" : "用户";
+  /* 本群成员会话：常驻 threadId 是权威归属（委托登记里也是这批 id）。
+     ⛔ 排除中枢会话本身与 cli 合成 id —— 那些不是引擎会话，删了会误伤用户主对话。 */
+  const removedThreadIds = [...new Set(
+    (group.members ?? [])
+      .map((m) => String(m.threadId ?? ""))
+      .filter((id) => id && id !== group.bossThreadId && !id.startsWith("cli:")),
+  )];
 
   /* ① 先通知中枢（群还在，才找得到 boss 会话） */
   const notified = await postToBoss(
@@ -1425,7 +1442,7 @@ export async function deleteGroupForBoss(input: { groupId: string; by?: "user" |
     + `${running ? `，其中 ${running} 条未完成的活已终止` : ""}。\n`
     + `${String(input.reason ?? "").trim() ? `删除原因：${String(input.reason).trim().slice(0, 200)}\n` : ""}`
     + `此后不要再对这个 groupId 派活 / 审查 / 查状态；需要继续就重新 group_create 建群。`
-    + `成员会话与产出文件都保留，可在侧栏回看。`,
+    + `本群 ${removedThreadIds.length} 条成员会话已随群删除（11-26 用户令：删群成员会话跟着删）；产出文件仍在群 workspace 里。`,
     /* critical：这条**不能**被闲聊配额吃掉 —— 模型不知道群没了，就会拿旧 groupId 继续派活。 */
     { critical: true },
   ).catch(() => false);
@@ -1438,5 +1455,44 @@ export async function deleteGroupForBoss(input: { groupId: string; by?: "user" |
   await bossStore.flush();
   emit({ type: "boss-group", phase: "group", groupId: group.id, status: "deleted" });
 
-  return { ok: true, deleted: { id: group.id, name: group.name, tasks: tasks.length, events, running, notified } };
+  /* ③ 删本群成员的常驻会话（11-26 用户令）。
+     与 team 群删群同款：先中断在跑的轮次，再 thread/delete，删不掉降级 archive。
+     ⛔ thread/deleted 事件由 boot.ts 统一收拾委托登记 / 墓碑 / 群聊标记 / 侧栏，
+       这里只发引擎请求，不再自己写那些账（两处写会打架）。
+     ⛔ 账本已经落盘：某条会话删不掉不能让群"诈尸"复活，失败只记在返回值里。 */
+  const failedThreads: string[] = [];
+  for (const tid of removedThreadIds) {
+    try {
+      for (const [turnId, owner] of engineActiveTurnIds) {
+        if (owner !== tid) continue;
+        await server.request("turn/interrupt", { threadId: tid, turnId }).catch(() => undefined);
+        break;
+      }
+      await server.request("thread/delete", { threadId: tid });
+      /* ⛔ 与渲染层删除 / 启动自愈同一套收尾：引擎 thread/delete 只删引擎侧，
+         rollout 磁盘残留不清就会在重启后复活（11-26 实测）。 */
+      await purgeDeletedThread(tid).catch(() => undefined);
+    } catch {
+      try { await server.request("thread/archive", { threadId: tid }); }
+      catch { failedThreads.push(tid); }
+    }
+  }
+  /* 运行态与工作区映射同步摘掉：否则侧栏还能按旧映射显示一个点不开的条目。
+     ⛔ 委托登记必须主动 forget + 立即 flush，不能只等 thread/deleted 事件：
+       启动/派活并发 load 会把磁盘旧表整份覆盖回内存（11-26 实测：日志说清了 3 条、
+       文件里还是 3 条），会话就永远"删了又复活"。 */
+  for (const tid of removedThreadIds) {
+    threadCwd.delete(tid);
+    await delegateRegistry.forget([tid]).catch(() => undefined);
+    for (const [turnId, owner] of engineActiveTurnIds) if (owner === tid) engineActiveTurnIds.delete(turnId);
+  }
+  await delegateRegistry.flush().catch(() => undefined);
+  await threadRuntimeStore.flush().catch(() => undefined);
+
+  return {
+    ok: true,
+    deleted: { id: group.id, name: group.name, tasks: tasks.length, events, running, notified },
+    removedThreadIds: removedThreadIds.filter((id) => !failedThreads.includes(id)),
+    failedThreads,
+  };
 }

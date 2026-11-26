@@ -130,6 +130,12 @@ export interface DramaCanvasProps {
   /** 打开「设置 → 插件」页（画布上点「去配置生图/视频」时用）。
    *  ⛔ 不传则画布只显示「未配置」文案、不显示跳转按钮（保持画布可独立渲染）。 */
   onOpenPluginSettings?: () => void;
+  /** 渲染形态（11-26 用户令：「右侧标签里新增一个无限画布」）。
+   *  · "overlay"（默认）：整窗居中浮层 —— 从引导弹窗/命令面板打开时的老形态，行为一字不改。
+   *  · "inline"：填满父容器 —— 挂在右栏 `.panel-page` 里当标签页用。
+   *  ⛔ 只改外壳（定位/尺寸/圆角），画布本体（React Flow、动作、落盘）完全同一条代码路径，
+   *     否则两条路径会各自长 bug。 */
+  variant?: "overlay" | "inline";
 }
 
 interface Notice { id: number; text: string; tone: "ok" | "err" | ""; undo?: () => void }
@@ -150,7 +156,7 @@ function detectFlowType(nodes: Array<{ data?: any; kind?: string }>): "drama" | 
 }
 
 /** AI 画布主组件：节点/连线编辑、视口取景、面板与浮层宿主。 */
-export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings }: DramaCanvasProps) {
+export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings, variant = "overlay" }: DramaCanvasProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const rfRef = useRef<ReactFlowInstance<DramaRFNode, DramaRFEdge> | null>(null);
@@ -546,6 +552,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       node ? { key: "duplicate", label: "复制节点", run: () => { const p = node.position; const copy = { ...payload }; ["id", "board", "board_scene", "board_character"].forEach((k) => delete (copy as any)[k]); board.addNode(String(node.data?.kind || "note"), copy, { x: p.x + 42, y: p.y + 42 }); } } : null,
       media && node ? { key: "inspector", label: "打开属性面板", run: () => { board.select([nodeId], nodeId); setInspectorOpen(true); } } : null,
       node ? { key: "layout", label: "整理画布", run: () => board.autoLayout() } : null,
+      /* 11-26：叠放顺序（数组顺序即层级）。⛔ 不写 zIndex —— 那个值不进快照，重开就丢。 */
+      node ? { key: "front", label: "置于顶层", run: () => board.moveLayer(nodeId, "top") } : null,
+      node ? { key: "back", label: "置于底层", run: () => board.moveLayer(nodeId, "bottom") } : null,
       node ? { key: "delete", label: "删除节点", danger: true, run: () => { board.removeNodes([nodeId]); pushNotice("节点已删除", "", () => board.undo()); } } : null,
       !node ? { key: "add-note", label: "添加笔记", run: () => board.addNode("note") } : null,
       !node ? { key: "add-image", label: "添加参考图", run: () => board.addNode("image") } : null,
@@ -555,7 +564,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   }, [actions, board, fitAll, menu, pushNotice, story]);
 
   return (
-    <div className="drama-canvas-backdrop" role="dialog" aria-modal="true" aria-label="AI 画布工作流">
+    <div className={`drama-canvas-backdrop${variant === "inline" ? " is-inline" : ""}`} role="dialog" aria-modal={variant === "overlay" ? true : undefined} aria-label="AI 画布工作流">
       <section className="drama-canvas-shell" ref={shellRef} tabIndex={-1} onKeyDown={onKeyDown}>
         {/* ⛔ Provider 必须包住**整块**：检查器与时间线同样要读动作上下文。
             只包 ReactFlow 的话，一打开就 "useDramaActions 必须在 Provider 内使用" ——
@@ -713,7 +722,11 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
               else if (!workspace) pushNotice("已保存到本机（分镜表只在本机）—— 给会话选个工作文件夹后，Codex 会话才读得到它", "");
               else pushNotice(`已保存到本机，但工作区文件写失败：${saved.error || "未知原因"} —— 确认那个工作文件夹还在，再保存一次`, "err");
             }}><Save size={13} />保存</button>
-            <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
+            {/* ⛔ 内嵌在右栏时不显示「退出」：那一栏本身就是标签页，切标签即离开，
+                再摆一个退出按钮会让人以为点了会关掉别的东西。 */}
+            {variant === "overlay" ? (
+              <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
+            ) : null}
           </div>
         </header>
 

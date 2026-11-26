@@ -9,6 +9,41 @@
 
 /* ---------------------------------------------------------------- 浮层骨架 */
 
+/* 11-26 用户令：「右侧标签里新增一个无限画布」—— 内嵌形态。
+   ⛔ 只覆盖外壳（定位/留白/圆角/阴影），画布本体同一条代码路径。
+   ⛔ 不写 position:fixed：右栏是 flex 子项，fixed 会跳到视口盖住整窗。 */
+.drama-canvas-backdrop.is-inline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-shell {
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg);
+}
+/* 右栏窄：顶栏允许横向滚动，不换行 —— 换行会把画布正文挤掉半屏 */
+.drama-canvas-backdrop.is-inline .drama-canvas-head {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-head::-webkit-scrollbar { display: none; }
+.drama-canvas-backdrop.is-inline .drama-canvas-head-left { flex-wrap: nowrap; }
+
 .drama-canvas-backdrop {
   position: fixed;
   inset: 0;

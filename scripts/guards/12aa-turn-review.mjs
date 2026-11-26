@@ -113,17 +113,18 @@ const diffCss = read("src/styles/04-cards-tools.css");
     "打开桥只在 open 时打开右栏；select 不重新打开（滚动位置不被重置）");
   ok(appView.includes("<TurnReviewBridge") && appView.includes('app.setRightTab("turn-review")') && appView.includes("0.42"),
     "AppView 挂桥：开右栏 + 切审阅页 + 自动加宽（窗口 42%）");
-  ok(reviewPanel.includes('rightTab === "turn-review"') && reviewPanel.includes("<TurnReviewPanel") && reviewPanel.includes(">审阅<")
+  ok(reviewPanel.includes('rightTab === "turn-review"') && reviewPanel.includes("<TurnReviewPanel") && /name: "审阅"/.test(reviewPanel)
     && reviewPanel.includes('active={rightTab === "turn-review"}') && reviewPanel.includes("onOpenFile"),
     "右栏有「审阅」标签页；面板只在激活时渲染 diff（隐藏页不白算）+ 打开文件接回会话");
   {
-    /* 10-22 用户：「侧边栏终端按键可以删了，替换成审阅图标」。默认面板宽 308px，
-       五个标签排不下 ⇒ 审阅被挤出可视区（横向滚动才能点到），所以撤终端、审阅顶到第二位。 */
-    const stripBlock = reviewPanel.match(/<div className="tabstrip-tabs">([\s\S]*?)<\/div>/);
-    const strip = stripBlock ? stripBlock[1] : "";
-    const order = [">变更<", ">审阅<", ">浏览器<", ">文件<"].map((x) => strip.indexOf(x));
-    ok(Boolean(strip) && !/>终端</.test(strip) && order.every((v) => v >= 0) && order.every((v, i) => i === 0 || order[i - 1] < v),
-      "⛔ 右栏标签 = 变更/审阅/浏览器/文件（终端撤掉、审阅顶到第二位；项目树 10-22 起改叫「文件」）");
+    /* ⛔ 11-26：标签改成**表驱动**（`PANEL_TABS`），同时新增「画布」「终端」——终端这次是**回来了**：
+       标签条可横向滚动 + 每个标签可关（浏览器式），旧的「默认宽度排不下就撤终端」不再成立。
+       ⛔ 不变量仍在：变更 → 审阅 → 浏览器 → 文件 的相对顺序不许乱（用户肌肉记忆）。 */
+    const keys = [...reviewPanel.matchAll(/\{ key: "[a-z-]+", name: "([^"]+)"/g)].map((m) => m[1]);
+    const need = ["变更", "审阅", "浏览器", "文件"];
+    const idx = need.map((n) => keys.indexOf(n));
+    ok(keys.length > 0 && idx.every((v) => v >= 0) && idx.every((v, i) => i === 0 || idx[i - 1] < v),
+      "⛔ 右栏标签表含 变更 → 审阅 → 浏览器 → 文件（顺序不变；11-26 起画布/终端也在表里，可滚动可关闭）");
     ok(/rightTab === "terminal"[\s\S]{0,240}?<TerminalPanel/.test(reviewPanel),
       "终端页仍保留（Ctrl+J / 命令面板可开，只是没有常驻标签）");
     ok(!/TerminalSquare/.test(reviewPanel),

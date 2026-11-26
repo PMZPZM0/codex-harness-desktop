@@ -7,7 +7,7 @@
  *    ⛔ 删群是例外：用户明确要「界面也能删」（10-27），但**必须走同一份账本 + 联动中枢**
  *      （`boss-groups:delete` → runner.deleteGroupForBoss：先回投 [群事件] 再清群/任务/事件），
  *      绝不允许渲染层自己改文件或只删界面。
- *  ⛔ 删群**不删成员会话**：成品与轨迹保留在侧栏，产出文件也在群 workspace 里。
+ *  ⛔ 11-26 用户令：删群**连带删掉本群成员的调度会话**（与团队群同口径）；产出文件保留在 workspace。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Crown, Network, RefreshCw } from "lucide-react";
@@ -104,7 +104,7 @@ export function BossGroupsSection({ openAppConfirm, onNotice }: {
     const name = snap?.group.name ?? groups.find((g) => g.id === selected)?.name ?? "这个群";
     const confirmed = await openAppConfirm(
       `删除群「${name}」？`,
-      "任务账本与事件记录会一并清空，不可撤销。\n成员会话与产出文件保留（侧栏还能回看），指挥中枢会同步收到「群已删除」。",
+      "任务账本与事件记录会一并清空，不可撤销。\n本群成员的调度会话会一起删除（产出文件仍保留在群目录），指挥中枢会同步收到「群已删除」。",
       "删除群",
     );
     if (!confirmed) return;
@@ -118,7 +118,10 @@ export function BossGroupsSection({ openAppConfirm, onNotice }: {
         onNotice(res?.error ? `删群失败：${res.error}` : "删群失败");
         return;
       }
-      onNotice(`已删除群「${d?.name ?? name}」：清掉 ${d?.tasks ?? 0} 条任务、${d?.events ?? 0} 条事件${d?.running ? `，${d.running} 条未完成的活已终止` : ""}`);
+      /* 11-26：成员会话由主进程删群时一并删掉（返回 removedThreadIds 供提示用），
+         这里不自删 —— 本板块自包含、拿不到 app bag，且 thread/delete 事件会统一清侧栏与委托登记。 */
+      const memberThreads = (res as { removedThreadIds?: string[] })?.removedThreadIds ?? [];
+      onNotice(`已删除群「${d?.name ?? name}」：清掉 ${d?.tasks ?? 0} 条任务、${d?.events ?? 0} 条事件${d?.running ? `，${d.running} 条未完成的活已终止` : ""}${memberThreads.length ? `、${memberThreads.length} 条成员会话` : ""}`);
       /* 等淡出动画（.26s）走完再重排，避免列表瞬间跳位 */
       await new Promise((resolve) => window.setTimeout(resolve, 260));
       setSnap(null);

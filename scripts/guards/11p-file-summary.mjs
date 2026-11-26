@@ -224,8 +224,12 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "文件卡 → 右栏走事件箱 + AppView 桥（⛔ 不给整条组件链加 props）");
   ok(bridge.includes('setRightTab("tree")') && bridge.includes("setRightOpen(true)") && bridge.includes("setPanelWidth(420)"),
     "点卡片：打开右栏 + 切到文件页 + 放宽到 420px（308px 放不下预览）");
-  ok(/<WorkspaceFilePreview path=\{resolvedWorkspaceFile\}/.test(reviewPanel) && reviewPanel.includes('title="文件：浏览工作区并预览"'),
-    "右栏「文件」页 = 工作区文件树 + 预览（tab 显示「文件」，标题/提示同源）");
+  /* ⛔ 11-26：右栏改成浏览器式标签条后，标签由 `PANEL_TABS` 表驱动（title 从表里取，不再写死在
+     按钮属性上）⇒ 判据跟着数据源走：表里必须有「文件」这一条且提示同源，页面仍要渲染预览。 */
+  ok(/<WorkspaceFilePreview path=\{resolvedWorkspaceFile\}/.test(reviewPanel)
+    && /key: "tree", name: "文件"/.test(reviewPanel)
+    && /title: "文件：浏览工作区并预览"/.test(reviewPanel),
+    "右栏「文件」页 = 工作区文件树 + 预览（标签在 PANEL_TABS 表里，名字/提示同源）");
   ok(/单击在\*\*右侧栏\*\*预览，双击才开居中编辑器/.test(reviewPanel) && reviewPanel.includes("onDoubleClick"),
     "树里单击在右栏预览、双击才开居中编辑器");
   /* 10-30：读的是**回落之后的** target（卡片给的可能是死链，按会话台账回落）⇒ 断言跟着实现走，

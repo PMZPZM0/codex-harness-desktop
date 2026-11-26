@@ -74,8 +74,10 @@ ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron
 );
 
 /* ⑤ 右栏入口：监控排第一 + 页面区块真的挂了（只加按钮不加页面 = 点了空白） */
-const tabs = [...rail.matchAll(/className=\{`panel-tab[^`]*`\} title="([^"]+)"/g)].map((m) => m[1].slice(0, 2));
-(tabs[0] === "监控" ? ok : fail)(`右栏第一个 tab 是「监控」（实得 ${tabs.join(" / ") || "无"}）`);
+/* ⛔ 11-26：右栏改成浏览器式标签条后，标签由 `PANEL_TABS` 表驱动（顺序 = 数组顺序），
+   原来按按钮字面量抓标题的判据抓不到了 ⇒ 改读表，不变量不变：**监控仍是第一页**。 */
+const tabs = [...rail.matchAll(/\{ key: "[a-z-]+", name: "([^"]+)"/g)].map((m) => m[1]);
+(tabs[0] === "监控" ? ok : fail)(`右栏标签表第一项是「监控」（实得 ${tabs.join(" / ") || "无"}）`);
 (/<TaskMonitorPanel app=\{app\}[^>]*\/>/.test(rail) ? ok : fail)("右栏页面区块挂了 <TaskMonitorPanel>（⛔ 只加按钮会点了空白）");
 
 /* ⛔ 10-31：面板的「评估 / 进化」入口随建议板块一起删掉了；sendPrefilled 作为通用能力保留

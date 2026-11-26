@@ -794,6 +794,60 @@
    回落 `currentColor` = 原先从按钮继承来的颜色（muted / hover 的 --text / active 的 --text）⇒ 零回归。 */
 .view-tab svg { opacity: 0.75; color: var(--ic, currentColor); }
 .view-tab.active svg { opacity: 1; }
+/* 11-26 侧栏改成标签导航：激活项加底部高亮条（像浏览器标签的下沿），
+   ⛔ 不只靠底色区分 —— 底色在浅色主题下和 hover 态几乎一样。 */
+.view-tab { position: relative; }
+.view-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent); /* ⛔ 11-26 审查：--brand 从未定义（暗色恒落亮色 fallback，守卫【160】红） */
+}
+/* 「文件」页：列当前工作区一层条目 */
+.sidebar-files {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+}
+.sidebar-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted); /* ⛔ 11-26 审查：--text-2 不存在 */
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-file-row:hover { background: var(--panel-2); color: var(--text); }
+.sidebar-file-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-files-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 26px 12px;
+  color: var(--faint); /* ⛔ 11-26 审查：--text-3 不存在 */
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: center;
+}
 /* 10-26 用户：四个工具图标默认隐藏；鼠标放到「项目 / 任务」或图标区时从右向左滑出，
    移开即收起。绝对定位 ⇒ 出现/收起都不挤动 tab 与会话列表。 */
 /* 11-17 用户令：「改成三个点，点击右边菜单」——取代 hover 才出现的悬浮图标条（窄侧栏会压住 tab）。 */

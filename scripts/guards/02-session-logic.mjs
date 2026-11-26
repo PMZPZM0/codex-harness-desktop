@@ -1459,7 +1459,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (/viewTab === "tasks"[\s\S]{0,700}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】任务（平铺）视图同样先把被调度会话从顶层剔除（不再与「↳ 调度会话」块重复）");
       /* 11-17 用户实测（截图）：「切到任务选项，项目展开/隐藏按键要灰置不能点；任务下面的会话选项要跟上面项目那个字对齐」。 */
       (appSrc2.includes("hide-tags") && /sidebar-hide-tags/.test(appSrc2) && /.sidebar.hide-tags .thread-row-tags/.test(readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8")) ? ok : fail)("【156】一键隐藏标签：工具条开关 + 落盘 + CSS 只藏显示（会话/项目徽标）");
-      (appSrc2.includes("is-tasks") && appSrc2.includes('viewTab !== "projects" || !projectGroups.length') ? ok : fail)("【156】任务视图：列表挂 is-tasks，且「折叠全部项目」置灰不可点");
+      /* ⛔ 11-26：侧栏加了「文件」页后，禁用判据从 viewTab 改成 sidebarPane（文件页也没有项目分组）
+         ⇒ 认两种写法：旧的 `viewTab !== "projects"`、新的 `sidebarPane !== "projects"`。 */
+      (appSrc2.includes("is-tasks") && (appSrc2.includes('viewTab !== "projects" || !projectGroups.length') || appSrc2.includes('sidebarPane !== "projects" || !projectGroups.length')) ? ok : fail)("【156】任务视图：列表挂 is-tasks，且「折叠全部项目」置灰不可点");
       (() => {
         const sideCss = readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8");
         (/\.thread-list\.is-tasks \.thread-row > button:first-child\s*\{[^}]*padding-left:\s*30px/.test(sideCss) ? ok : fail)("【156】任务视图的会话文字左对齐到 tab 文字（30px，含图标与间距）");

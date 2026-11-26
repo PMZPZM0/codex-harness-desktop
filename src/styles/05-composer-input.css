@@ -897,7 +897,10 @@
   min-width: 0;
   display: flex;
   overflow-x: auto;
+  /* 11-26：标签要横向滚动，但滚动条本身不占视觉高度（浏览器标签条同样不显示） */
+  scrollbar-width: none;
 }
+.tabstrip-tabs::-webkit-scrollbar { display: none; }
 .panel-tab {
   min-width: 0;
   max-width: 170px;
@@ -913,6 +916,14 @@
   padding: 0 7px 0 9px;
   font-size: 11.5px;
   display: inline-flex;
+}
+/* 11-26：右栏只有 ~500px，六个功能标签 + 新标签页全要排进去 —— 收紧间距与字号，
+   让默认状态下一眼能看见全部标签，而不是被横向滚动推走一半。 */
+.panel-tab {
+  gap: 4px;
+  padding: 0 4px 0 7px;
+  font-size: 11px;
+  transition: background 120ms ease, color 120ms ease;
 }
 /* 10-07：色相只上**前缀图标**（`>` 直系子元素），文字与右侧关闭 × 保持中性。
    回落 `currentColor` = 原先从按钮继承的颜色 ⇒ 零回归。 */
@@ -943,6 +954,73 @@
   color: var(--text);
   background: var(--line);
 }
+/* 11-26：右栏标签做成浏览器式 —— 每个标签带 ×，「+」在条尾。
+   ⛔ × 常态很淡、hover 标签才明显：常亮会让整条标签又挤又吵（五个标签就五把叉）。 */
+.panel-tab .tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0.4;
+}
+.panel-tab:hover .tab-close,
+.panel-tab.active .tab-close { opacity: 0.85; }
+.panel-tab .tab-close:hover { opacity: 1; }
+
+.panel-tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.panel-tab-add:hover { background: var(--panel-2); color: var(--text); }
+
+/* 新标签页正文：一片留白 + 居中入口列表（行间细线，无卡片边框） */
+.panel-newtab {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 12px 12vh;
+}
+.panel-newtab-head {
+  margin: 0 0 6px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.panel-newtab-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.panel-newtab-row:last-child { border-bottom: 0; }
+.panel-newtab-row:hover { background: var(--panel-2); }
+.panel-newtab-ic { flex: none; color: var(--muted); }
+.panel-newtab-row:hover .panel-newtab-ic { color: var(--text); }
 .panel-page {
   flex: 1;
   min-height: 0;

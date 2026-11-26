@@ -137,6 +137,7 @@ import {
   Video,
   Bell,
   CheckCheck,
+  SquareTerminal,
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../components/CardShell";
 import BrowserPane from "../../../components/BrowserPane";
@@ -148,7 +149,19 @@ import { isImagePath } from "../../../lib/is-image-path";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import { CommandExecutionCard, TerminalPanel } from "../../terminal";
 import { StorageSection, ReviewPanel } from "../../storage-settings";
+import { DramaCanvas } from "../../drama-canvas";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
+
+/** 右侧面板的可开关标签（11-26 用户令：右栏改成浏览器式标签条）。数组顺序 = 标签顺序。 */
+const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: string; title: string }> = [
+  { key: "monitor", name: "监控", Icon: ActivityIcon, ic: "ic-violet", title: "监控：本会话的技能 / MCP / 插件、每轮产物，以及由本会话 Codex 产出的自我改进建议" },
+  { key: "review", name: "变更", Icon: GitBranch, ic: "ic-green", title: "变更：按范围查看 Git 改动（未暂存 / 已暂存 / 分支起点 / 上一轮）" },
+  { key: "turn-review", name: "审阅", Icon: FileText, ic: "ic-pink", title: "审阅：本轮对话改过的文件与完整对比" },
+  { key: "browser", name: "浏览器", Icon: Globe2, ic: "ic-blue", title: "浏览器：在内置浏览器打开网页" },
+  { key: "tree", name: "文件", Icon: FolderTree, ic: "ic-amber", title: "文件：浏览工作区并预览" },
+  { key: "canvas", name: "画布", Icon: LayoutGrid, ic: "ic-cyan", title: "无限画布：卡片连线的工作流（电商出图 / 生图 / 短剧 / 3D 建模）" },
+  { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
+];
 
 /** 右侧审阅面板：内置浏览器、差异视图、文件树与高亮联动。 */
 export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
@@ -168,6 +181,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
     setRightTab,
     startReview,
     thread,
+    threads,
     toggleTreeDir,
     treeChildren,
     treeExpanded,
@@ -178,6 +192,51 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   /* 10-22 文件卡 → 右栏预览：订阅事件箱里的目标路径；树里点文件也走同一个选中态。 */
   const [workspaceFile, setWorkspaceFile] = useState<string>(() => getRightFile()?.path || "");
   useEffect(() => subscribeRightFile(({ path }) => setWorkspaceFile(path)), []);
+
+  /* 11-26 用户令：「标签页默认一个都不要打开」——
+     ⇒ 右栏启动时是**空标签条 + 新标签页**，功能页要用户点了才长出来（浏览器同款）。
+     ⛔ 不用「关闭清单」而用「打开清单」：默认空更贴近真实模型，也不会出现
+        「六个标签全关掉之后没有任何入口能恢复」的死路。 */
+  const [openedTabs, setOpenedTabs] = useState<string[]>([]);
+  const bootedRef = useRef(false);
+  useEffect(() => {
+    /* 首次挂载：右栏回到空白页（rightTab 可能还留着上次的 monitor/review）。
+       ⛔⛔ 但**外部刚点名要的那一页不能吞**（11-26 审查抓到）：文件卡 / 命令面板 / 快捷键
+       会在挂载前后调 setRightTab("tree")，原实现一律改成 newtab ⇒ 用户点了文件卡却看到空白页。
+       ⇒ 首挂载时若 rightTab 已经是某个功能页，就把它收进标签条并保留。 */
+    if (!bootedRef.current) {
+      bootedRef.current = true;
+      if (PANEL_TABS.some((tab) => tab.key === rightTab)) { setOpenedTabs([rightTab]); return; }
+      if (rightTab && rightTab !== "newtab") setRightTab("newtab");
+      return;
+    }
+    /* 之后：别处（命令面板/文件卡/快捷键）把 rightTab 切到某个功能页时，自动补上它的标签，
+       否则会出现「内容变了但标签条上没有这一条」的错位 */
+    if (PANEL_TABS.some((tab) => tab.key === rightTab) && !openedTabs.includes(rightTab)) {
+      setOpenedTabs((prev) => (prev.includes(rightTab) ? prev : [...prev, rightTab]));
+    }
+  }, [rightTab]);
+
+  const stripRef = useRef<HTMLDivElement | null>(null);
+
+  /** 从新标签页（或别处）打开一个功能页 */
+  const openPanelPage = (key: string) => {
+    setOpenedTabs((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    setRightTab(key);
+  };
+
+  const shutPanelTab = (key: string) => {
+    setOpenedTabs((prev) => prev.filter((item) => item !== key));
+    if (rightTab !== key) return;
+    const rest = openedTabs.filter((item) => item !== key);
+    /* 全关光就落回新标签页 —— 右栏不能变成一片空白 */
+    setRightTab(rest.length ? rest[rest.length - 1] : "newtab");
+  };
+
+  useEffect(() => {
+    const active = stripRef.current?.querySelector<HTMLElement>(".panel-tab.active");
+    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [rightTab, openedTabs.length]);
   /* 10-26 用户：「右边加一下，上下可以…展示，下面也可以往上展示」。文件树与预览之间可拖动分栏；
      预览头部「展开/恢复」把预览拉满（文件树收起），Alt+↑ / Alt+↓ 同效。分栏高度按会话记住。 */
   const TREE_H_KEY = "workspace-files-tree-h";
@@ -248,15 +307,52 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   return (
     <aside className="context-panel" data-state={rightOpen && entered ? "open" : "closed"}>
             <div className="panel-tabstrip">
-              <div className="tabstrip-tabs">
-                {/* 10-07 用户截图后补：与侧栏「项目/分类」同一口径 —— tab 的**前缀图标**按色相上色、文字中性。 */}
-                {/* 10-22 用户：「侧边栏终端按键可以删了，替换成审阅图标」——终端标签撤掉（右栏默认 308px 时排不下五个，
-                    审阅被挤到横向滚动外），审阅顶到第二位（10-30 起「监控」排第一，审阅变第三）；终端页保留，Ctrl+J / 命令面板仍可打开。 */}
-                <button className={`panel-tab ${rightTab === "monitor" ? "active" : ""}`} title="监控：本会话的技能 / MCP / 插件、每轮产物，以及由本会话 Codex 产出的自我改进建议" onClick={() => setRightTab("monitor")}><ActivityIcon size={12} className="ic-violet" /><span>监控</span></button>
-                <button className={`panel-tab ${rightTab === "review" ? "active" : ""}`} title="变更：按范围查看 Git 改动（未暂存 / 已暂存 / 分支起点 / 上一轮）" onClick={() => setRightTab("review")}><GitBranch size={12} className="ic-green" /><span>变更</span></button>
-                <button className={`panel-tab ${rightTab === "turn-review" ? "active" : ""}`} title="审阅：本轮对话改过的文件与完整对比" onClick={() => setRightTab("turn-review")}><FileText size={12} className="ic-pink" /><span>审阅</span></button>
-                <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器：在内置浏览器打开网页" onClick={() => setRightTab("browser")}><Globe2 size={12} className="ic-blue" /><span>浏览器</span></button>
-                <button className={`panel-tab ${rightTab === "tree" ? "active" : ""}`} title="文件：浏览工作区并预览" onClick={() => setRightTab("tree")}><FolderTree size={12} className="ic-amber" /><span>文件</span></button>
+              <div className="tabstrip-tabs" role="tablist" aria-label="右侧面板" ref={stripRef}>
+                {/* 11-26 用户令：右栏做成浏览器式标签条 —— 每个标签带 ×，右侧「+」开新标签页，
+                    新标签页正文是四个入口（打开浏览器 / 查看工作空间 / 查看变更 / 打开终端）。
+                    ⛔ 关标签只从这条上摘掉，不改 rightTab 之外的任何状态、不销毁页面数据。 */}
+                {openedTabs.map((key) => {
+                  const tab = PANEL_TABS.find((item) => item.key === key);
+                  if (!tab) return null;
+                  return (
+                    <div
+                      key={tab.key}
+                      role="tab"
+                      aria-selected={rightTab === tab.key}
+                      tabIndex={0}
+                      className={`panel-tab ${rightTab === tab.key ? "active" : ""}`}
+                      title={tab.title}
+                      onClick={() => setRightTab(tab.key)}
+                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setRightTab(tab.key); } }}
+                      onAuxClick={(event) => { if (event.button === 1) shutPanelTab(tab.key); }}
+                    >
+                      <tab.Icon size={12} className={tab.ic} />
+                      <span>{tab.name}</span>
+                      <button className="tab-close" title={`关闭「${tab.name}」标签（不影响数据）`} onClick={(event) => { event.stopPropagation(); shutPanelTab(tab.key); }}>
+                        <X size={10} />
+                      </button>
+                    </div>
+                  );
+                })}
+                {rightTab === "newtab" || !openedTabs.length ? (
+                  <div className="panel-tab active" role="tab" aria-selected>
+                    <LayoutGrid size={12} className="ic-cyan" /><span>新标签页</span>
+                  </div>
+                ) : null}
+              </div>
+              <button className="panel-tab-add" title="新标签页" onClick={() => setRightTab("newtab")}><Plus size={14} /></button>
+            </div>
+            {/* 新标签页（11-26 用户令）：⛔ 列的是**右栏自己的页**（监控/变更/审阅/浏览器/文件/画布/终端），
+                ⛔ 不是照抄参考截图里那四条 —— 那四条是别的应用的入口，照搬过来等于凭空多长一坨。 */}
+            <div className={`panel-page ${rightTab === "newtab" || !openedTabs.length ? "" : "hidden"}`}>
+              <div className="panel-newtab">
+                <p className="panel-newtab-head">在右侧打开一页</p>
+                {PANEL_TABS.map((entry) => (
+                  <button key={entry.key} className="panel-newtab-row" title={entry.title} onClick={() => openPanelPage(entry.key)}>
+                    <entry.Icon size={15} className={`panel-newtab-ic ${entry.ic}`} />
+                    <span>{entry.name}</span>
+                  </button>
+                ))}
               </div>
             </div>
             <div className={`panel-page ${rightTab === "review" ? "" : "hidden"}`}>
@@ -268,6 +364,18 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             {/* 10-30 任务监控：本会话每轮的技能/MCP/插件、产物与自我改进建议（⛔ 数据按 threadId 取，换会话即换） */}
             <div className={`panel-page ${rightTab === "monitor" ? "" : "hidden"}`}>
               <TaskMonitorPanel app={app} active={rightTab === "monitor"} />
+            </div>
+            {/* 无限画布（11-26）：⛔ 只在激活时挂载 —— display:none 下 React Flow 量到 0×0，
+                fitView 会把整张画布缩成一个点，切回来只剩一团。 */}
+            <div className={`panel-page ${rightTab === "canvas" ? "" : "hidden"}`}>
+              {rightTab === "canvas" ? (
+                <DramaCanvas
+                  variant="inline"
+                  onClose={() => setRightTab("monitor")}
+                  workspace={workspace}
+                  threads={threads}
+                />
+              ) : null}
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
             <div ref={filesWrapRef} className={`workspace-files${previewExpanded ? " is-preview-expanded" : ""}`}>

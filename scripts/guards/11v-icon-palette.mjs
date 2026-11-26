@@ -191,12 +191,18 @@ for (const [label, re] of ACCOUNT) ok(re.test(sidebar), `④c 账号菜单「${l
      ② `className="ic-x"` 在**子元素**上，不在按钮的属性里 ⇒ 顺序是 title → onClick → 子元素。
    ⇒ 必须用惰性 `[\s\S]{0,200}?` 且锚「title … 紧跟一个带 ic-* 的子元素」。 */
 /* 10-22：终端 tab 撤掉（审阅顶到第二位）、项目树改名「工作区文件」⇒ 四个 tab 的锚随之更新 */
-const PANEL_TABS = [["变更", "ic-green"], ["审阅", "ic-pink"], ["浏览器", "ic-blue"], ["文件", "ic-amber"]];
+/* ⛔ 11-26：右栏改成浏览器式标签条后，标签由 `PANEL_TABS` 表驱动（name/Icon/ic 三元同源），
+   原来按「title 后面紧跟 <Icon className=…>」的锚抓不到了 ⇒ 改读表，并额外钉一条
+   「表里的色相类真的挂到图标上」（否则表写对了、渲染没接也照样无色）。 */
+const PANEL_TABS = [["监控", "ic-violet"], ["变更", "ic-green"], ["审阅", "ic-pink"], ["浏览器", "ic-blue"], ["文件", "ic-amber"], ["画布", "ic-cyan"], ["终端", "ic-accent"]];
 const panel = read("src/features/app-view/AppView/03-review-panel.tsx");
 for (const [label, tone] of PANEL_TABS) {
-  ok(new RegExp(`title="${label}[\\s\\S]{0,200}?><\\w+ size=\\{12\\} className="${tone}"`).test(panel),
+  ok(new RegExp(`name: "${label}", Icon: \\w+, ic: "${tone}"`).test(panel),
     `④c 右侧面板「${label}」tab 图标挂了色相类（${tone}）`);
 }
+/* ⛔ 表写对还不够：渲染必须真的用 `tab.ic`（写成写死的类名就会与表脱钩）。 */
+ok(/<tab\.Icon size=\{12\} className=\{tab\.ic\}/.test(panel),
+  "④c 标签条把表里的色相类真的挂到图标上（⛔ 表与渲染脱钩 = 表对而页面无色）");
 ok(/\.panel-tab > svg \{[\s\S]{0,160}?color:\s*var\(--ic,\s*currentColor\)/.test(codeOnly(composer)),
   "④c .panel-tab 只给**直系** svg 上色（文字与关闭 × 保持中性）");
 ok(/\.view-tab svg \{[\s\S]{0,200}?color:\s*var\(--ic,\s*currentColor\)/.test(codeOnly(queue)),

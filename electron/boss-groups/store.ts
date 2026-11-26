@@ -25,6 +25,16 @@ export class BossGroupStore {
     return this.file;
   }
 
+  /** 账本文件是否存在且为合法 v1 结构（⚠️ 不要求 groups 非空 —— 用户可能真的把群删光了）。
+   *  供"删群残留会话自愈"判安全闸：文件缺失/损坏时绝不能拿空群表去删所有成员会话。 */
+  async hasUsableFile(): Promise<boolean> {
+    try {
+      const raw = await fs.readFile(this.resolveFile(), "utf8");
+      const parsed = JSON.parse(raw);
+      return Boolean(parsed && parsed.version === 1 && parsed.groups && parsed.tasks);
+    } catch { return false; }
+  }
+
   async load(): Promise<BossState> {
     if (this.loaded) return this.state;
     try {

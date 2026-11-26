@@ -112,6 +112,9 @@ export interface DramaBoardApi {
   addNode: (kind: string, payload?: Record<string, any>, position?: { x: number; y: number }) => DramaRFNode;
   updatePayload: (id: string, patch: Record<string, any>) => void;
   updateManyPayloads: (entries: Array<{ id: string; patch: Record<string, any> }>) => void;
+  /** 调层级（11-26）：数组顺序即叠放顺序，后面的盖住前面的。
+   *  ⛔ 不改 zIndex 属性 —— 那个值不会随快照保存，重开画布就丢。 */
+  moveLayer: (id: string, dir: "top" | "up" | "down" | "bottom") => void;
   removeNodes: (ids: string[]) => void;
   /** 删连线（09-29 用户：「线没办法删」—— 底层一直能删，只是没有任何入口）。 */
   removeEdges: (ids: string[]) => void;
@@ -397,6 +400,23 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     scheduleSave();
   }, [scheduleHistory, scheduleSave, serializeNow]);
 
+  /* 11-26：层级 = 数组顺序（后画的盖前面的）。上移/下移一格或直接顶/底。 */
+  const moveLayer = useCallback((id: string, dir: "top" | "up" | "down" | "bottom") => {
+    setNodes((current) => {
+      const at = current.findIndex((n) => n.id === id);
+      if (at < 0) return current;
+      const next = current.slice();
+      const [node] = next.splice(at, 1);
+      if (dir === "top") next.push(node);
+      else if (dir === "bottom") next.unshift(node);
+      else if (dir === "up") next.splice(Math.min(at + 1, next.length), 0, node);
+      else next.splice(Math.max(at - 1, 0), 0, node);
+      nodesRef.current = next;
+      return next;
+    });
+    scheduleSave();
+  }, [scheduleSave]);
+
   const removeNodes = useCallback((ids: string[]) => {
     const set = new Set(ids);
     if (!set.size) return;
@@ -618,6 +638,7 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     addNode,
     updatePayload,
     updateManyPayloads,
+    moveLayer,
     removeNodes,
     removeEdges,
     onReconnect,
