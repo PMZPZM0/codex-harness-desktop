@@ -278,7 +278,14 @@ export async function imageEditCore(input: ImageEditInput): Promise<ImageEditRes
     } else {
       const dir = path.dirname(source);
       const base = path.basename(source, srcExt);
-      dest = path.join(dir, `${base}-edit${FORMAT_TO_EXT[format]}`);
+      const ext = FORMAT_TO_EXT[format];
+      /* ⛔⛔ 11-26 审查：默认名 `<源>-edit<ext>` 是**固定名**。同一张图连改两次 ⇒ 后一次覆盖前一次，
+         产物真丢；而且路径没变 ⇒ 渲染层的 `updatePayload` 写的是同一个值，历史里不算改动，
+         「已增强（可撤销）」是空话，同 URL 还可能命中图片缓存看不出变化。
+         ⇒ 同名已存在就加时间戳，第一次仍用原来的名字（不打扰既有调用方的预期）。 */
+      const first = path.join(dir, `${base}-edit${ext}`);
+      const taken = await fs.access(first).then(() => true, () => false);
+      dest = taken ? path.join(dir, `${base}-edit-${Date.now()}${ext}`) : first;
     }
     await fs.mkdir(path.dirname(dest), { recursive: true });
     const buffer = await image.getBuffer(FORMAT_TO_MIME[format], format === "jpeg" ? { quality } : undefined);

@@ -355,7 +355,10 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             </div>
             {/* 新标签页（11-26 用户令）：⛔ 列的是**右栏自己的页**（监控/变更/审阅/浏览器/文件/画布/终端），
                 ⛔ 不是照抄参考截图里那四条 —— 那四条是别的应用的入口，照搬过来等于凭空多长一坨。 */}
-            <div className={`panel-page ${rightTab === "newtab" || !openedTabs.length ? "" : "hidden"}`}>
+            {/* ⛔ 11-26 审查：这里只认 `rightTab === "newtab"`。原来还带 `|| !openedTabs.length`
+                —— 外部（文件卡 / 命令面板）刚把 rightTab 切到功能页、补标签的 effect 还没跑那一帧，
+                新标签页与功能页会**同时显示**，挤成上下各半。标签条那处保留该条件（只是多一颗芯片）。 */}
+            <div className={`panel-page ${rightTab === "newtab" ? "" : "hidden"}`}>
               {/* ⛔ 11-26 用户：「按键居中来，做好看一点，靠左不好看」。
                   ⇒ 整块居中 + 两列入口卡（图标带淡色底），⛔ 不是把左对齐的行拉宽 ——
                   原来那种「一行一条细线」在宽栏里左边一坨、右边空一片，最难看。 */}

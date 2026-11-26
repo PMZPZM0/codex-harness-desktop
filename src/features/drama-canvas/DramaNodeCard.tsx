@@ -156,10 +156,12 @@ function AudioPreview({ path }: { path: string }) {
 
 /** 卡面上的**可编辑提示词**（11-26 用户：「第一张图没法输入」）。
  *  原来这里是一段只读 div：写着「在这里写你要什么」，点了没反应，也没有输入框。
- *  ⇒ 换成 textarea，直接写 payload.prompt（面板里同一个字段，改哪边都一样）。
+ *  ⇒ 换成 textarea，直接写 payload[field]（面板里同一个字段，改哪边都一样）。
  *  ⛔ `nodrag nowheel` 必须有：否则拖选文字会把整张卡拖走、滚轮会缩放画布。
- *  ⛔ 受控组件 + 官方 stopPropagation：React Flow 的节点拖动从 pointerdown 起手。 */
-function PromptInput({ nodeId, value, placeholder }: { nodeId: string; value: string; placeholder: string }) {
+ *  ⛔ 受控组件 + 官方 stopPropagation：React Flow 的节点拖动从 pointerdown 起手。
+ *  ⛔⛔ 11-26 审查：**字段要按类型分**。配音卡的正文明在 `payload.text`（配音合成读
+ *     `line || text`），一律写 `prompt` 会出现「卡上改了台词、点配音还是旧词」。 */
+function PromptInput({ nodeId, value, placeholder, field = "prompt" }: { nodeId: string; value: string; placeholder: string; field?: "prompt" | "text" }) {
   const actions = useDramaActions();
   return (
     <textarea
@@ -168,7 +170,7 @@ function PromptInput({ nodeId, value, placeholder }: { nodeId: string; value: st
       placeholder={placeholder}
       spellCheck={false}
       onPointerDown={(e) => e.stopPropagation()}
-      onChange={(e) => actions.board.updatePayload(nodeId, { prompt: e.target.value })}
+      onChange={(e) => actions.board.updatePayload(nodeId, { [field]: e.target.value })}
       onBlur={() => void actions.story.writeBack(nodeId)}
     />
   );
@@ -297,16 +299,21 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
   if (!dramaIsKnownKind(kind)) {
     const keys = Object.keys(payload).filter((k) => payload[k] !== "" && payload[k] != null).slice(0, 5);
     return (
-      <article className={`drama-canvas-card is-unknown ${selected ? "is-selected" : ""}`}>
+      /* ⛔⛔ 11-26 审查：NodeResizer 必须渲染在 `<article>` **外面**。
+         卡片是 `overflow: hidden`（内容不许把卡撑大），而 React Flow 的缩放手柄是
+         `translate: -50% -50%` 贴角摆放 ⇒ 放在卡里会被裁掉一半，可点面积只剩 4px。 */
+      <>
+        <article className={`drama-canvas-card is-unknown ${selected ? "is-selected" : ""}`}>
+          <Head kind="note" id={id} title={payload.title || payload.name || id} subtitle={`这个版本不认识「${kind}」`} />
+          <div className="drama-canvas-card-body">
+            <p className="drama-canvas-hint">内容已原样保留，不会丢。换成建它的那个版本就能编辑。</p>
+            <dl className="drama-canvas-kv">{keys.map((k) => <div key={k}><dt>{k}</dt><dd>{String(payload[k]).slice(0, 40)}</dd></div>)}</dl>
+          </div>
+          {isConnectable ? <Handle type="target" position={Position.Left} className="drama-canvas-handle" /> : null}
+          {isConnectable ? <Handle type="source" position={Position.Right} className="drama-canvas-handle" /> : null}
+        </article>
         {selected && onResize ? <NodeResizer minWidth={160} minHeight={120} onResizeEnd={(_, size) => onResize(size.width, size.height)} /> : null}
-        <Head kind="note" id={id} title={payload.title || payload.name || id} subtitle={`这个版本不认识「${kind}」`} />
-        <div className="drama-canvas-card-body">
-          <p className="drama-canvas-hint">内容已原样保留，不会丢。换成建它的那个版本就能编辑。</p>
-          <dl className="drama-canvas-kv">{keys.map((k) => <div key={k}><dt>{k}</dt><dd>{String(payload[k]).slice(0, 40)}</dd></div>)}</dl>
-        </div>
-        {isConnectable ? <Handle type="target" position={Position.Left} className="drama-canvas-handle" /> : null}
-        {isConnectable ? <Handle type="source" position={Position.Right} className="drama-canvas-handle" /> : null}
-      </article>
+      </>
     );
   }
 
@@ -500,10 +507,12 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
           ) : (
             <PromptInput
               nodeId={id}
-              value={String(payload.prompt || payload.text || "")}
+              /* ⛔ 配音卡的正文是 `text`（配音合成读 line || text），编辑也必须写回 text。 */
+              field={kind === "audio" ? "text" : "prompt"}
+              value={String(kind === "audio" ? (payload.text || payload.line || "") : (payload.prompt || payload.text || ""))}
               placeholder={path
-                ? "这张已经出图了：想换一版就改这段提示词，再点下面的「重出」"
-                : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。"}
+                ? (kind === "audio" ? "改台词后点下面的「配音」会重新合成" : "这张已经出图了：想换一版就改这段提示词，再点下面的「重出」")
+                : (kind === "audio" ? "写这一句要念的台词，写完点下面的「配音」。" : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。")}
             />
           )}
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
@@ -549,15 +558,20 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
   })();
 
   return (
-    <article className={`drama-canvas-card is-${kind} ${role ? `is-role-${role.key}` : ""} ${selected ? "is-selected" : ""} ${working ? "is-working" : ""}`} data-kind={kind}>
-      <Head kind={kind} id={id} title={dramaNodeLabel(kind, payload)} subtitle={subtitleOf()} role={role} step={step} />
-      <div className="drama-canvas-card-body">{body}</div>
-      {isConnectable ? <Handle type="target" position={Position.Left} className="drama-canvas-handle" /> : null}
-      {isConnectable ? <Handle type="source" position={Position.Right} className="drama-canvas-handle" /> : null}
-      {kind === "shot" && payload.first_frame ? (
-        <button className="drama-canvas-card-peek nodrag" title="在右侧预览" onClick={(e) => { e.stopPropagation(); actions.openInspector(id); }}><Eye size={12} /></button>
-      ) : null}
-    </article>
+    /* ⛔⛔ 11-26 审查：缩放手柄放 `<article>` 外侧（理由同上面 is-unknown 分支）——
+       卡片的 overflow:hidden 会把贴角摆放的手柄裁掉一半。 */
+    <>
+      <article className={`drama-canvas-card is-${kind} ${role ? `is-role-${role.key}` : ""} ${selected ? "is-selected" : ""} ${working ? "is-working" : ""}`} data-kind={kind}>
+        <Head kind={kind} id={id} title={dramaNodeLabel(kind, payload)} subtitle={subtitleOf()} role={role} step={step} />
+        <div className="drama-canvas-card-body">{body}</div>
+        {isConnectable ? <Handle type="target" position={Position.Left} className="drama-canvas-handle" /> : null}
+        {isConnectable ? <Handle type="source" position={Position.Right} className="drama-canvas-handle" /> : null}
+        {kind === "shot" && payload.first_frame ? (
+          <button className="drama-canvas-card-peek nodrag" title="在右侧预览" onClick={(e) => { e.stopPropagation(); actions.openInspector(id); }}><Eye size={12} /></button>
+        ) : null}
+      </article>
+      {selected && onResize ? <NodeResizer minWidth={160} minHeight={120} onResizeEnd={(_, size) => onResize(size.width, size.height)} /> : null}
+    </>
   );
 }
 

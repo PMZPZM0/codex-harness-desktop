@@ -85,6 +85,18 @@ export type ImageGenExtras = {
   outputDir?: string;
 };
 
+/** 从网关报错体里抠一句给人看的说明（`{"error":{"message"}}` 优先，否则截断原文）。
+ *  11-26 抽出：生图 / 图生图三处原本各写一遍同样的 try-parse。 */
+function hintOf(raw: string): string {
+  if (!raw) return "";
+  try {
+    const message = JSON.parse(raw)?.error?.message ?? "";
+    return message ? "：" + String(message).slice(0, 200) : "";
+  } catch {
+    return "：" + raw.slice(0, 160);
+  }
+}
+
 /** 调上游生图接口（兼容 base 已带 `/images/generations` 与只有 `/v1` 两种写法），返回图片字节。 */
 export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string } & ImageGenExtras) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
@@ -112,23 +124,26 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
   let response: Response;
   try {
     response = await post(true);
+    /* ⛔⛔ 11-26 审查：**任何** 400 都去掉这三项再试一次。
+       原来只在报错文案命中 quality/background/output_format/unknown/unexpected/extra 时才降级，
+       而多数网关写的是「Unrecognized request argument」「Invalid parameter」「not supported」——
+       判据不中 ⇒ 本来能用的老网关在这个版本直接 400 失败（把用户正在用的通道打挂）。
+       多打一次的代价远小于打挂；参数真错时第二次也会失败，只是多一个请求。 */
     if (response.status === 400) {
-      const detail = await response.text().catch(() => "");
-      if (/quality|background|output_format|output format|unknown|unexpected|extra/i.test(detail)) {
-        response = await post(false);
-      } else {
-        throw new Error("生图失败 HTTP 400" + (detail ? "：" + detail.slice(0, 160) : ""));
+      const first = await response.text().catch(() => "");
+      response = await post(false);
+      if (!response.ok) {
+        const second = await response.text().catch(() => "");
+        throw new Error("生图失败 HTTP 400" + hintOf(second || first));
       }
     }
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("生图失败 HTTP 400")) throw error;
+    /* 上面那条已经拼好了给用户看的文案，别再被网络错误包装盖掉。 */
+    if (error instanceof Error && error.message.startsWith("生图失败")) throw error;
     throw describeNetworkError(error, "生图请求");
   }
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    let hint = "";
-    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
-    throw new Error("生图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
+    throw new Error("生图失败 HTTP " + response.status + hintOf(await response.text().catch(() => "")));
   }
   const data = await response.json();
   const item = data?.data?.[0];
@@ -157,33 +172,48 @@ export async function editImageWith(input: {
   if (!bytes) throw new Error("图生图的源图读不到：" + input.imagePath);
   const ext = path.extname(input.imagePath).toLowerCase();
   const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
-  const form = new FormData();
-  form.append("model", input.model);
-  form.append("prompt", input.prompt);
-  form.append("n", "1");
-  if (input.size) form.append("size", input.size);
-  form.append("quality", input.quality || "max");
-  form.append("background", input.background || "opaque");
-  form.append("output_format", input.outputFormat || "png");
-  form.append("response_format", "b64_json");
-  /* ⛔ 不手动设 Content-Type：multipart 的 boundary 必须由 fetch 自己生成。 */
-  form.append("image", new Blob([new Uint8Array(bytes)], { type: mime }), path.basename(input.imagePath));
+  /* ⛔ 11-26 审查：文档要求 opaque + png + b64_json，但**老网关不认这三项会 400**。
+     与生图同一口径：先按文档带上，400 就去掉这三项重发一次（multipart 要整份重建，
+     不能复用 FormData —— body 已被读过）。 */
+  const formOf = (extras: boolean) => {
+    const form = new FormData();
+    form.append("model", input.model);
+    form.append("prompt", input.prompt);
+    form.append("n", "1");
+    if (input.size) form.append("size", input.size);
+    if (extras) {
+      form.append("quality", input.quality || "max");
+      form.append("background", input.background || "opaque");
+      form.append("output_format", input.outputFormat || "png");
+    }
+    form.append("response_format", "b64_json");
+    /* ⛔ 不手动设 Content-Type：multipart 的 boundary 必须由 fetch 自己生成。 */
+    form.append("image", new Blob([new Uint8Array(bytes)], { type: mime }), path.basename(input.imagePath));
+    return form;
+  };
+  const post = (extras: boolean) => outboundFetch(endpoint, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + input.apiKey },
+    body: formOf(extras),
+    signal: AbortSignal.timeout(300_000),
+  });
   let response: Response;
   try {
-    response = await outboundFetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + input.apiKey },
-      body: form,
-      signal: AbortSignal.timeout(300_000),
-    });
+    response = await post(true);
+    if (response.status === 400) {
+      const first = await response.text().catch(() => "");
+      response = await post(false);
+      if (!response.ok) {
+        const second = await response.text().catch(() => "");
+        throw new Error("图生图失败 HTTP 400" + hintOf(second || first));
+      }
+    }
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("图生图失败")) throw error;
     throw describeNetworkError(error, "图生图请求");
   }
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    let hint = "";
-    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
-    throw new Error("图生图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
+    throw new Error("图生图失败 HTTP " + response.status + hintOf(await response.text().catch(() => "")));
   }
   const data = await response.json();
   const item = data?.data?.[0];

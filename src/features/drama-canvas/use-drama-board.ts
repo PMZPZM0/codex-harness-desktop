@@ -382,11 +382,14 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
   }, [scheduleHistory, scheduleSave, serializeNow]);
 
   const updatePayload = useCallback((id: string, patch: Record<string, any>) => {
-    setNodes((current) => {
-      const next = current.map((n) => (n.id === id ? { ...n, data: { ...n.data, payload: { ...n.data.payload, ...patch } } } : n));
-      nodesRef.current = next;
-      return next;
-    });
+    /* ⛔⛔ 11-26 审查：**先算好 next 并写回 nodesRef，再取快照**。
+       原来把 `next` 与 `nodesRef.current = next` 都写在 setNodes 的 updater 里，紧跟其后的
+       `serializeNow()` 读到的可能还是**改动前**的 ref（updater 何时执行由 React 决定）⇒
+       历史里记的是上一版状态，压栈又被去重掉，于是「改完点撤销」会一路退回更早的动作
+       （卡面提示词逐字编辑把这条路变成高频路径）。 */
+    const next = nodesRef.current.map((n) => (n.id === id ? { ...n, data: { ...n.data, payload: { ...n.data.payload, ...patch } } } : n));
+    nodesRef.current = next;
+    setNodes(next);
     scheduleHistory(serializeNow());
     scheduleSave();
   }, [scheduleHistory, scheduleSave, serializeNow]);
@@ -424,11 +427,10 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
   const setNodeSize = useCallback((id: string, width: number, height: number) => {
     const w = Math.max(160, Math.round(width));
     const h = Math.max(120, Math.round(height));
-    setNodes((current) => {
-      const next = current.map((n) => (n.id === id ? { ...n, style: { ...n.style, width: w, height: h } } : n));
-      nodesRef.current = next;
-      return next;
-    });
+    /* ⛔ 同 updatePayload：ref 先落地再取快照，否则撤销栈记的是改尺寸之前的旧值。 */
+    const next = nodesRef.current.map((n) => (n.id === id ? { ...n, style: { ...n.style, width: w, height: h } } : n));
+    nodesRef.current = next;
+    setNodes(next);
     scheduleHistory(serializeNow());
     scheduleSave();
   }, [scheduleHistory, scheduleSave, serializeNow]);

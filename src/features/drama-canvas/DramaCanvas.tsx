@@ -64,6 +64,7 @@ import { DramaResultsPanel } from "./DramaResultsPanel";
 import { DramaProjectsPanel } from "./DramaProjectsPanel";
 import { DramaNodeCard } from "./DramaNodeCard";
 import { DramaBlankGuide, DramaZoomDock } from "./DramaCanvasOverlays";
+import { DramaCanvasMenu } from "./DramaCanvasMenu";
 import { DramaTimeline } from "./DramaTimeline";
 import { useDramaBoard, type DramaRFEdge, type DramaRFNode } from "./use-drama-board";
 import { useDramaStory } from "./use-drama-story";
@@ -217,7 +218,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   /* 产物查看器（09-29 用户：「卡片里的图片没有预览功能」）—— 卡片缩略图与结果面板共用同一个 */
   const [viewer, setViewer] = useState<ViewerTarget | null>(null);
   const [marquee, setMarquee] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null; at?: { x: number; y: number } } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [zoomText, setZoomText] = useState("100%");
 
@@ -505,6 +506,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     const ops = mode === "sharpen"
       ? [{ op: "normalize" }, { op: "contrast", value: 0.06 }, { op: "sharpen", sigma: 1.1 }]
       : [{ op: "scale", factor: 2 }];
+    // 产物名由主进程给（11-26 审查：`imageEditCore` 原默认 `<源>-edit.<ext>` 是固定名，
+    // 连点两次会互相覆盖、且路径不变 ⇒ 历史里不算改动、「可撤销」是空话）。已改成「同名存在就加时间戳」。
     const result = await window.codex.imageEdit({ path: src, ops }).catch(() => null) as
       { ok?: boolean; output?: string; paths?: string[] } | null;
     const out = Array.isArray(result?.paths) ? String(result.paths[0] ?? "") : "";
@@ -652,6 +655,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       node ? { key: "cut", label: "剪切", run: () => { const ids = board.selectedIds.length ? board.selectedIds : [nodeId]; const n = copyNodes(ids); if (!n) return; board.removeNodes(ids); pushNotice(`已剪切 ${n} 个节点`, "", () => board.undo()); } } : null,
       clipCount > 0 ? { key: "paste", label: "粘贴", run: () => { const n = pasteNodes(); if (n) pushNotice(`已粘贴 ${n} 个节点`, "", () => board.undo()); } } : null,
       node ? { key: "duplicate", label: "复制节点", run: () => { const p = node.position; const copy = { ...payload }; ["id", "board", "board_scene", "board_character"].forEach((k) => delete (copy as any)[k]); board.addNode(String(node.data?.kind || "note"), copy, { x: p.x + 42, y: p.y + 42 }); } } : null,
+      media && node ? { key: "preview", label: "预览", run: () => actions.openMedia({ path: media, kind: String(payload.video ? "video" : payload.audio ? "audio" : "image") as ViewerTarget["kind"], title: String(payload.title || payload.name || ""), nodeId }) } : null,
       media && node ? { key: "inspector", label: "打开属性面板", run: () => { board.select([nodeId], nodeId); setInspectorOpen(true); } } : null,
       /* ⛔ 只有「有图片文件」的节点才给这两项（视频/音频节点不该出现）。 */
       media && node ? { key: "sharpen", label: "清晰增强", run: () => void enhanceImage(nodeId, "sharpen") } : null,
@@ -661,8 +665,6 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       node ? { key: "front", label: "置于顶层", run: () => board.moveLayer(nodeId, "top") } : null,
       node ? { key: "back", label: "置于底层", run: () => board.moveLayer(nodeId, "bottom") } : null,
       node ? { key: "delete", label: "删除节点", danger: true, run: () => { board.removeNodes([nodeId]); pushNotice("节点已删除", "", () => board.undo()); } } : null,
-      !node ? { key: "add-note", label: "添加笔记", run: () => board.addNode("note") } : null,
-      !node ? { key: "add-image", label: "添加参考图", run: () => board.addNode("image") } : null,
       !node ? { key: "layout", label: "自动排版", run: () => board.autoLayout() } : null,
       !node ? { key: "fit", label: "适配全部节点", run: () => fitAll() } : null,
     ].filter(Boolean) as Array<{ key: string; label: string; danger?: boolean; run: () => void }>;
@@ -965,7 +967,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 panActivationKeyCode="Space"
                 nodesConnectable={variant !== "inline"}
                 connectionRadius={28}
-                onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null }); }}
+                onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); /* 记住右键的**画布坐标**：新建的卡片落在指针处，不是默认网格位 */ const at = rfRef.current?.screenToFlowPosition({ x: evt.clientX, y: evt.clientY }) ?? { x: 120, y: 120 }; setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null, at }); }}
                 onNodeContextMenu={(e, node) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }}
                 onNodeDoubleClick={(_, node) => { board.select([node.id], node.id); setInspectorOpen(true); }}
                 onPaneClick={() => setMenu(null)}
@@ -1027,18 +1029,16 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
         ) : null}
 
         {menu ? (
-          /* ⛔ 右键菜单钳进视口（10-06 用户令「凡事弹窗类都要自适应，不能被裁剪」）：坐标来自
-             clientX/Y，贴右/下边缘右键会把菜单顶出屏幕。menuActions 每项 ~30px + 内边距。 */
-          <div className="drama-canvas-context"
-            style={{
-              left: Math.max(8, Math.min(menu.x, window.innerWidth - 168)),
-              top: Math.max(8, Math.min(menu.y, window.innerHeight - (menuActions.length * 30 + 12))),
-            }}
-            role="menu">
-            {menuActions.map((item) => (
-              <button key={item.key} className={item.danger ? "is-danger" : ""} onClick={() => { setMenu(null); item.run(); }}>{item.label}</button>
-            ))}
-          </div>
+          <DramaCanvasMenu
+            at={{ x: menu.x, y: menu.y }}
+            container={shellRef.current}
+            items={menuActions}
+            /* ⛔ 用户令（11-26）：「右侧栏的无限画布右键功能配套齐全一点」——
+               空白处右键给「新建卡片 ▸」全量类型，卡片落在**右键的那个点**（原来只有两项、
+               且走默认网格位，点了像没反应）。节点上不给这一项。 */
+            onAddCard={menu.nodeId ? undefined : (kind, label) => { board.addNode(kind, undefined, menu.at); pushNotice(`已新建「${label}」`, "", () => board.undo()); }}
+            onClose={() => setMenu(null)}
+          />
         ) : null}
 
         <div className="drama-canvas-notices" aria-live="polite">

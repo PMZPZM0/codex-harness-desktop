@@ -631,7 +631,9 @@
 /* ------------------------------------------------------------ 右键菜单/提示 */
 
 .drama-canvas-context {
-  position: fixed;
+  /* ⛔ absolute 而不是 fixed：画布根有 backdrop-filter（创建 containing block），
+     fixed 会变成"相对画布"，坐标再按画布偏移平移一次 ⇒ 菜单飞出屏幕（11-26 实测 x=1892）。 */
+  position: absolute;
   z-index: 120;
   min-width: 148px;
   padding: 4px;
@@ -654,6 +656,11 @@
 }
 .drama-canvas-context button:hover { background: var(--panel-2); }
 .drama-canvas-context button.is-danger:hover { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+/* 「新建卡片」二级：10 种类型 + 返回 ⇒ 超出屏幕就自己滚（⛔ 别让菜单长出视口被裁）。
+   「新建卡片 ▸」「← 返回」用淡色分隔，避免和动作项混成一片。 */
+.drama-canvas-context { max-height: min(72vh, 420px); overflow-y: auto; overscroll-behavior: contain; }
+.drama-canvas-context button.is-more { color: var(--accent); border-top: 1px solid var(--line-soft); border-radius: 0 0 6px 6px; margin-top: 2px; }
+.drama-canvas-context button.is-back { color: var(--muted); border-bottom: 1px solid var(--line-soft); border-radius: 6px 6px 0 0; margin-bottom: 2px; }
 
 .drama-canvas-notices {
   position: absolute;
@@ -1994,8 +2001,10 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
-/* 拖角句柄：默认那颗小方块在浅色主题下几乎看不见，给个实心点 + 描边 */
-.drama-canvas-card .react-flow__resize-control.handle {
+/* 拖角句柄：默认那颗小方块在浅色主题下几乎看不见，给个实心点 + 描边。
+   ⛔ 选择器不能再挂在 .drama-canvas-card 下 —— 手柄现在渲染在卡片**外面**（卡片 overflow:hidden
+   会把贴角的手柄裁掉一半），只认画布范围内。 */
+.drama-canvas-backdrop .react-flow__resize-control.handle {
   width: 9px;
   height: 9px;
   border-radius: 3px;
