@@ -1035,6 +1035,58 @@
   flex: 1;
   min-height: 0;
 }
+/* 「图片」页（11-26 用户令）：只读查看 —— 顶部一条工具、下面是预览体；
+   ⛔ 与「画布」页互不影响：查看一张图不该改画布的任何状态。 */
+.panel-image-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.panel-image-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.panel-image-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.panel-image-pick:hover { background: var(--panel-2); }
+.panel-image-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.panel-image-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.panel-image-empty p { margin: 0; }
+.panel-image-hint { color: var(--faint); font-size: 11.5px; }
 /* 右栏「审阅」（10-18 用户对照 Qoder）：顶部最新回合；左栏筛选 + 目录树；右栏整轮文件 diff 逐块堆叠。 */
 .turn-review-panel {
   display: grid;

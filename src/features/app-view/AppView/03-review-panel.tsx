@@ -159,6 +159,9 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
   { key: "turn-review", name: "审阅", Icon: FileText, ic: "ic-pink", title: "审阅：本轮对话改过的文件与完整对比" },
   { key: "browser", name: "浏览器", Icon: Globe2, ic: "ic-blue", title: "浏览器：在内置浏览器打开网页" },
   { key: "tree", name: "文件", Icon: FolderTree, ic: "ic-amber", title: "文件：浏览工作区并预览" },
+  /* ⛔ 11-26 用户令：「加一个标签页打开图片功能，不是在画布 —— 画布是编辑图的」。
+     ⇒ 图片页 = **只读查看**（打开本地图 / 看尺寸与路径 / 放大缩小），改图仍去「画布」页。 */
+  { key: "image", name: "图片", Icon: Image, ic: "ic-pink", title: "图片：打开并查看图片（只读预览；改图请用「画布」）" },
   { key: "canvas", name: "画布", Icon: LayoutGrid, ic: "ic-cyan", title: "无限画布：卡片连线的工作流（电商出图 / 生图 / 短剧 / 3D 建模）" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
@@ -216,6 +219,14 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
       setOpenedTabs((prev) => (prev.includes(rightTab) ? prev : [...prev, rightTab]));
     }
   }, [rightTab]);
+
+  /* 图片页（11-26）：只读查看 —— 记住当前那张图；⛔ 不落盘、不进 bag，重开面板即清空。 */
+  const [imagePath, setImagePath] = useState("");
+  const pickImage = async () => {
+    const picked = await window.codex.chooseImages().catch(() => [] as string[]);
+    const first = Array.isArray(picked) ? picked.find((item) => typeof item === "string" && item) : "";
+    if (first) setImagePath(first);
+  };
 
   const stripRef = useRef<HTMLDivElement | null>(null);
 
@@ -376,6 +387,28 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                   threads={threads}
                 />
               ) : null}
+            </div>
+            {/* 图片页（11-26 用户令）：「加一个标签页打开图片功能，不是在画布 —— 画布是编辑图的」。
+                ⛔ 这里只做**只读查看**（打开本地图 / 看尺寸与路径 / 放大），改图去「画布」页；
+                ⛔ 不复用画布那份状态 —— 两边各管各的，免得查看一张图就把画布切了。 */}
+            <div className={`panel-page ${rightTab === "image" ? "" : "hidden"}`}>
+              <div className="panel-image-viewer">
+                <div className="panel-image-bar">
+                  <button type="button" className="panel-image-pick" onClick={() => void pickImage()}>
+                    <Image size={13} />{imagePath ? "换一张图片" : "打开图片"}
+                  </button>
+                  {imagePath ? <span className="panel-image-name" title={imagePath}>{imagePath.split(/[\/]/).pop()}</span> : null}
+                </div>
+                {imagePath ? (
+                  <WorkspaceFilePreview path={imagePath} onOpenEditor={() => undefined} expanded />
+                ) : (
+                  <div className="panel-image-empty">
+                    <Image size={26} className="ic-pink" />
+                    <p>打开一张图片查看（PNG / JPG / WEBP / GIF）</p>
+                    <p className="panel-image-hint">要看层叠与编辑，用「画布」页</p>
+                  </div>
+                )}
+              </div>
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
             <div ref={filesWrapRef} className={`workspace-files${previewExpanded ? " is-preview-expanded" : ""}`}>

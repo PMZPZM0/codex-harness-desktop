@@ -570,6 +570,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             只包 ReactFlow 的话，一打开就 "useDramaActions 必须在 Provider 内使用" ——
             整屏 ErrorBoundary（实测踩过）。 */}
         <DramaActionsProvider value={actions}>
+        {/* ⛔ 11-26 用户令（右栏内嵌形态）：「顶上那些按键可以不要，就一块画布」。
+            inline 时整块头部（工作流切换 / 画布与分镜表选择 / 进度 / 新建 / 批量生成 / 保存 /
+            退出）一律不渲染 —— 内嵌就只留画布本体与图片编辑；整窗浮层形态行为不变。 */}
+        {variant === "overlay" ? (
         <header className="drama-canvas-head">
           <div className="drama-canvas-head-left">
             <span className="drama-canvas-head-icon"><Clapperboard size={17} /></span>
@@ -729,6 +733,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             ) : null}
           </div>
         </header>
+        ) : null}
 
         {/* 「待生成 N」的明细展开条（09-29）：点数字才展开，列清是哪几张卡 + 一个明确的生成按钮。
             ⛔ 刻意不是浮层：浮层会被 .drama-canvas-shell 的 overflow:hidden（圆角裁切）切掉

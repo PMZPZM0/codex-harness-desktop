@@ -194,7 +194,7 @@ for (const [label, re] of ACCOUNT) ok(re.test(sidebar), `④c 账号菜单「${l
 /* ⛔ 11-26：右栏改成浏览器式标签条后，标签由 `PANEL_TABS` 表驱动（name/Icon/ic 三元同源），
    原来按「title 后面紧跟 <Icon className=…>」的锚抓不到了 ⇒ 改读表，并额外钉一条
    「表里的色相类真的挂到图标上」（否则表写对了、渲染没接也照样无色）。 */
-const PANEL_TABS = [["监控", "ic-violet"], ["变更", "ic-green"], ["审阅", "ic-pink"], ["浏览器", "ic-blue"], ["文件", "ic-amber"], ["画布", "ic-cyan"], ["终端", "ic-accent"]];
+const PANEL_TABS = [["监控", "ic-violet"], ["变更", "ic-green"], ["审阅", "ic-pink"], ["浏览器", "ic-blue"], ["文件", "ic-amber"], ["图片", "ic-pink"], ["画布", "ic-cyan"], ["终端", "ic-accent"]];
 const panel = read("src/features/app-view/AppView/03-review-panel.tsx");
 for (const [label, tone] of PANEL_TABS) {
   ok(new RegExp(`name: "${label}", Icon: \\w+, ic: "${tone}"`).test(panel),
