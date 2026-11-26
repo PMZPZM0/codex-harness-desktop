@@ -335,7 +335,7 @@ export async function run() {
     const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
     /* ⛔ 11-25：工具面多了一层身份裁剪（applyToolIdentity）⇒ 判据跟着接线走，仍要求
        「withStepParam 在外、filterToolSurface 在中」这两层包装不能少（少了 = 卡片没标题 / 画像没收窄）。 */
-    (/withStepParam\(filterToolSurface\(applyToolIdentity\(\[teamTool, teamPhaseTool/.test(teamsSrc) && /const desiredTools = withStepParam\(\[[\s\S]{0,120}?\.\.\.teamTools/.test(delegateSrc) ? ok : fail)(
+    (/withStepParam\(applyToolIdentity\(\[teamTool, teamPhaseTool/.test(teamsSrc) && /const desiredTools = withStepParam\(\[[\s\S]{0,120}?\.\.\.teamTools/.test(delegateSrc) ? ok : fail)(
       "【127】委派 / 团队会话的工具面也包了（主进程自己发的 thread/start **不经过** codex-ipc 拦截；11-25 起再多一层身份表）"
     );
     /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」：正则绿着、函数是坏的也照样过） */

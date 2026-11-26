@@ -16,12 +16,13 @@
  * ⛔ 待接缝化（阶段 2）：safeStorage 为宿主能力。
  */
 
-import { buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig, readExpertTeams, readUsableExpertTeams, writeExpertTeams } from "../expert-teams";
+import { buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamPlanTool, buildTeamStatusTool, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig, readExpertTeams, readUsableExpertTeams, writeExpertTeams } from "../expert-teams";
 import { invokeTeamMemberCore, type InvokeMemberInput } from "../team-invoke";
 import { memberThreadName } from "../team-runs";
 import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
-import { allowedToolsFor, filterToolSurface } from "../tool-profiles";
+/* 11-26：⛔ 不再从 tool-profiles 引 allowedToolsFor / filterToolSurface ——
+   派生会话的工具面是手写最小集，套 CORE 画像收窄会把 team_* 与 role_memory_* 整批裁掉（见 140 行注释）。 */
 /* 11-25：团队会话的工具面也过**同一张身份表**（tool-surface.ts）—— 口径只有一份。 */
 import { applyToolIdentity } from "../tool-surface";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
@@ -137,8 +138,11 @@ export const teamsFeature = defineFeature<null>({
         personality: input.personality || null,
         config: shouldBindHarness(customModel) ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
         // 10-21：主进程自己发的 thread/start 不经过 codex-ipc 的拦截 ⇒ 工具面各自包一层 `withStepParam`
-        /* 11-19 阶段 2：成员会话按岗位收窄（三个调度工具本来就少，这里只做档案口径统一）。 */
-        dynamicTools: withStepParam(filterToolSurface(applyToolIdentity([teamTool, teamPhaseTool, buildDelegateHarnessTool()], "expertTeam"), allowedToolsFor("expert", `${team.displayName?.zh ?? ""}`))),
+        /* ⛔⛔ 11-26：派生会话的工具面是**手写最小集**，⛔ 不再过 `filterToolSurface`（CORE 画像）。
+           CORE 里没有 `team_*` ⇒ 那条收窄会把 `team_member_invoke` / `team_phase_invoke` 整批裁掉，
+           模型拿到的是「未知工具」（用户实测：竹影专家团报 team_member_invoke 未知、team_plan 不存在）。
+           ⛔ 收窄只服务宿主那 48 个工具，别套到派生会话上。 */
+        dynamicTools: withStepParam(applyToolIdentity([teamTool, teamPhaseTool, buildTeamPlanTool(), buildTeamStatusTool(), buildDelegateHarnessTool()], "expertTeam")),
       });
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
@@ -196,7 +200,8 @@ export const teamsFeature = defineFeature<null>({
         // 10-05：成员会话能写自己的私有记忆（主进程侧应答，见 role-memory-tool.ts）
         // 10-10：+ 能力网关（用户令「全开 harness_tools」；见 delegate-harness-tool.ts。
         //        ⛔ 权限边界在执行端，被拒时工具会如实回报原因）
-        dynamicTools: filterToolSurface(applyToolIdentity([buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()], "expertTeam"), allowedToolsFor("expert", `${member.profession ?? ""} ${team.displayName.zh}`)),
+        /* ⛔ 11-26：同上 —— ⛔ 不过 `filterToolSurface`（CORE 里没有 role_memory_* 与 team_*，会整批裁掉）。 */
+        dynamicTools: withStepParam(applyToolIdentity([buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()], "expertTeam")),
       });
       const equipmentQuery = JSON.stringify({ teamId: team.teamId, memberId: member.id });
       const systemBase = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n任务需要配套技能或工具时，调用 expert_list(${equipmentQuery}) 核对状态。按缺项返回的安装指引处理，安装后复检。`;
@@ -263,3 +268,37 @@ export const teamsFeature = defineFeature<null>({
     });
   },
 });
+
+/**
+ * 把**已有**专家团主理人会话的工具面补到最新（引擎只在 spawn 时读 rollout 首行）。
+ *
+ * 为什么需要：11-19 的 CORE 画像收窄把 team 系工具裁掉了，历史会话的首行至今是那份残缺表面 ——
+ * 用户被迫「必须重开会话」才能派活。启动时按团队定义重写一遍即可，逐条幂等。
+ * ⛔ 群聊主理人（group lead）归 harness-team-ipc 的 upgradeGroupLeadSurfaces，这里跳过：
+ *    两套表面互斥，抢着写会把群工具覆盖成团队工具。
+ * ⛔ 失败静默：预升级不该挡住启动。
+ */
+export async function upgradeTeamLeadSurfaces(): Promise<void> {
+  try {
+    const { codexHome } = await import("../runtime-refs");
+    if (!codexHome) return;
+    const { syncToolSurfaceAsync } = await import("../rollout-pool");
+    /* 动态 import：group-talk 与 teams-ipc 都可能被 boot 拉起，静态环会拖慢启动。 */
+    const { listTalkThreads } = await import("./group-talk");
+    const talkIds = new Set((listTalkThreads() ?? []).map((row: { threadId?: string }) => String(row.threadId ?? "")));
+    const teams = await readUsableExpertTeams();
+    const { threads, leads } = teamRunStore.listThreads();
+    let patched = 0;
+    for (const [threadId, teamId] of Object.entries(threads ?? {})) {
+      if (!leads?.[threadId] || talkIds.has(threadId)) continue;
+      const team = teams.find((entry) => String(entry.teamId) === String(teamId));
+      if (!team) continue;
+      const surface = withStepParam(applyToolIdentity([
+        buildTeamTools(team), buildTeamPhaseTool(team), buildTeamPlanTool(), buildTeamStatusTool(), buildDelegateHarnessTool(),
+      ], "expertTeam"));
+      const result = await syncToolSurfaceAsync(codexHome, threadId, surface as unknown[]).catch(() => null);
+      if (result && (result as { patched?: boolean }).patched) patched += 1;
+    }
+    if (patched) console.log("[team-tools] 启动预升级 " + patched + " 个专家团主理人会话的工具面");
+  } catch { /* 预升级失败不挡启动 */ }
+}

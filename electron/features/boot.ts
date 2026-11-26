@@ -829,8 +829,9 @@ export async function bootApp() {
      ⛔ 必须 await：这是**时序正确性**问题，不是性能问题 —— 手快的人点开团群不到一秒。
      失败静默，首次派活时 ensureTalkThread 还会补一次。 */
   try {
-    const { upgradeGroupLeadSurfaces } = await import("./harness-team-ipc");
-    await upgradeGroupLeadSurfaces();
+    /* ⛔ 11-26：先补专家团主理人（teams 台账 lead），再补群聊主理人 —— 群主的表面更宽，后写赢。 */
+    await (await import("./teams-ipc")).upgradeTeamLeadSurfaces();
+    await (await import("./harness-team-ipc")).upgradeGroupLeadSurfaces();
   } catch { /* 预升级失败不阻断启动 */ }
   /* ⛔ 11-12 用户：「系统消息要来干嘛」—— 启动对账往群里补的系统提示已整体移除。
      接力靠「链空必回交主理人」（runDispatchRounds 里的根因修复），不再补系统消息。 */

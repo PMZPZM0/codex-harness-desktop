@@ -186,16 +186,22 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
     && !/filterToolSurface\(surface as any\[\]/.test(codexIpc),
     "thread/resume：按**目标会话**类型裁身份类、只收窄其余（切会话的唯一重写点）");
   ok(/applyToolIdentity\(desiredTools as unknown\[\], "expert"\)/.test(delegationSrc)
-    && /dynamicTools: filterToolSurface\(identityTools,/.test(delegationSrc),
+    && /dynamicTools: identityTools,/.test(delegationSrc),
     "派生会话（专家/团/伙伴/被调度）用同一张表 + 真的用上了裁剪后的数组");
   const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8");
   const groupSrc = readFileSync(join(ROOT, "electron", "features", "group-talk", "01-channel.ts"), "utf8");
   ok((teamsSrc.match(/applyToolIdentity\(/g) ?? []).length >= 2
-    && /applyToolIdentity\(\[teamTool, teamPhaseTool, buildDelegateHarnessTool\(\)\], "expertTeam"\)/.test(teamsSrc)
+    && /applyToolIdentity\(\[teamTool, teamPhaseTool, buildTeamPlanTool\(\), buildTeamStatusTool\(\), buildDelegateHarnessTool\(\)\], "expertTeam"\)/.test(teamsSrc)
     && /applyToolIdentity\(\[buildRoleMemoryTool\(/.test(teamsSrc),
     "专家团主理人 / 成员两个写面都过表（团队会话不许有派活与群编排工具）");
   ok(/applyToolIdentity\(surface \?\? buildGroupTalkTools\(\), "workPartner"\)/.test(groupSrc),
     "工作伙伴（群聊）会话写面也过表（dispatch / 群编排全关）");
+  /* ⛔⛔ 11-26：派生会话的工具面是**手写最小集**，⛔ 不许再套 CORE 画像收窄（filterToolSurface）——
+     那张表里没有 team_* 与 role_memory_*，一收窄就整批消失（用户实测：竹影专家团里
+     team_member_invoke 返回「未知工具」、team_plan 也不存在）。收窄只服务宿主那 48 个工具。 */
+  const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  ok(!/filterToolSurface/.test(stripComments(teamsSrc)) && !/filterToolSurface/.test(stripComments(delegationSrc)),
+    "⛔ 派生会话不吃 CORE 画像收窄（否则团队调度工具 / 角色记忆会被裁掉，模型报「未知工具」）");
 
   /* 期望表：正常/中枢 = 派活三件套 + 群编排九件套；派生四类 = 空。
      ⛔ 这里逐名字写死，就是为了让"表里写错一个能力位"当场红。 */

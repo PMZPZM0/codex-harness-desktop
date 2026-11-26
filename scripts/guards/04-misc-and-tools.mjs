@@ -986,7 +986,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        判据盯组装内容与「新建分支真的用它」，不再盯 `dynamicTools:` 那一行字面量。 */
     /const desiredTools = withStepParam\(\[[\s\S]{0,200}?\.\.\.teamTools, buildDelegateHarnessTool\(\),[\s\S]{0,160}?buildRoleMemoryTool\(roleRef\)/.test(mainSrc9)
       /* 11-25：写面用的数组变成了 `identityTools`（desiredTools 过完身份表的那份）—— 判据盯"用了过表的那份"。 */
-      && /dynamicTools: filterToolSurface\(identityTools/.test(mainSrc9)
+      && /dynamicTools: identityTools,/.test(mainSrc9)
       ? ok("desiredTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
       : fail("dynamicTools 的组装变了 —— 确认被委派会话拿得到网关、且调度工具仍只给主理人");
     // ⛔ 回归防线：这些工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）

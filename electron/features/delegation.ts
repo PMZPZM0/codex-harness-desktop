@@ -18,7 +18,7 @@ import { senderFromDispatch, senderLineOf, taskLineOf, normalizeSender } from ".
 import { SUBCONV_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
-import { allowedToolsFor, filterToolSurface } from "../tool-profiles";
+/* 11-26：⛔ 不再引 allowedToolsFor / filterToolSurface（派生会话不吃 CORE 画像收窄，见 337 行注释）。 */
 import { binOnPath, buildCliRolePrompt, cliCodexHome, cliCodexHomeReady, cliModelEnv, readUsableCliAgents } from "../cli-agents";
 import { isLocalBaseUrl, cliProtocolOf } from "../../src/lib/cli-provider-config.mjs";
 import { augmentedPath } from "../toolchain";
@@ -334,7 +334,10 @@ export async function runDelegatedTask(input: {
     // 10-21：`withStepParam` 给这批工具注入可选的「这一步在干什么」参数（卡片标题）。
     // ⛔ 主进程自己发的 thread/start **不经过** codex-ipc 的拦截 ⇒ 这里必须各自包一层。
     /* 11-19 阶段 2：按岗位（产品/工程/设计）收窄；识别不出岗位时回落 CORE。 */
-    dynamicTools: filterToolSurface(identityTools, allowedToolsFor("expert", `${displayName} ${String(target.kind ?? "")}`)),
+    /* ⛔⛔ 11-26：⛔ 不再过 `filterToolSurface` —— 与 teams-ipc 同款根因：CORE 画像里没有 `team_*`
+       与 `role_memory_*`，那条收窄会把成员调度工具与角色记忆整批裁掉（模型看到「未知工具」）。
+       派生会话的列表本来就是手写最小集，收窄只该服务宿主那 48 个工具。 */
+    dynamicTools: identityTools,
   });
   threadId = String(started?.thread?.id ?? "");
   }

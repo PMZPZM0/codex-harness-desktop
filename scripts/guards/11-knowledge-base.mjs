@@ -285,7 +285,7 @@ try {
        identityTools，⛔ 不许一处 raw desiredTools、一处过表（那就是两套工具面）。 */
     ok(/const desiredTools = withStepParam\(\[\s*\.\.\.teamTools, buildDelegateHarnessTool\(\)/.test(delegation)
       && /const identityTools = applyToolIdentity\(desiredTools as unknown\[\], "expert"\)/.test(delegation)
-      && /dynamicTools: filterToolSurface\(identityTools,/.test(delegation)
+      && /dynamicTools: identityTools,/.test(delegation)
       && /syncToolSurfaceAsync\(codexHome, reusable\.threadId, identityTools/.test(delegation),
       "被委派会话（子智能体 / 专家 / 团主理人）拿到能力网关；新建与复用共用过完身份表的同一份工具面，且复用先于 resume 同步");
     ok(/const desiredTools = withStepParam\(/.test(delegation),

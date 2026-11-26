@@ -796,7 +796,7 @@ try {
     "⛔ 复用会话在 thread/resume **之前**同步工具面（老会话升级唯一路，见附录 Z；REA 装好后专家会话同样要升级）");
   /* 11-25：两份写面（新建 / 复用）必须用**同一个** identityTools（过完身份表的那份），
      ⛔ 不许一处用 desiredTools、一处用 identityTools —— 那等于两套工具面。 */
-  ok(/dynamicTools: filterToolSurface\(identityTools,/.test(delegationSrc)
+  ok(/dynamicTools: identityTools,/.test(delegationSrc)
     && /identityTools as unknown\[\]/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
     "新建与复用共用同一份工具面（identityTools），且都登记主理人身份（team_member_invoke 的硬闸认它）");
   ok(/kind: leadOfTeam \? "team" : target\.kind/.test(delegationSrc),
