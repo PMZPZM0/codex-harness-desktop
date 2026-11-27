@@ -253,6 +253,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
    *     不再从这里手动给 `.app-shell` 加类 —— className 是 AppView 每帧算的，手加的类会打架。 */
   const panelMax = useSyncExternalStore(subscribePanelMaximized, getPanelMaximized, getPanelMaximized);
 
+
   /* 关右栏时退出放大态：否则下次打开直接顶格，用户会以为界面坏了。 */
   useEffect(() => {
     if (!app.rightOpen) setPanelMaximized(false);
@@ -352,8 +353,12 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   if (!mounted) return null;
   return (
     <aside className="context-panel" data-state={rightOpen && entered ? "open" : "closed"}
-      /* 放大态：列宽已经不是 --panel-w 了，面板再用固定宽会在右边留一条空白 */
-      style={panelMax ? { width: "auto", minWidth: 0 } : undefined}>
+      /* 放大态（11-27 用户令「放大要覆盖主对话框」）：**不改网格列宽**，而是让面板自己跨到主区那一列 ——
+         ⛔ 压列宽会把主区内容挤成一条竖排文字（用户连拍两次），
+         ⛔ display:none 主区会让自动排布把面板挤成 21px，
+         ⛔ 藏 .workspace 又是 10-25 明令禁止的老坑（父级 hidden 会全白）。
+         跨列 + 面板自身不透明背景 = 真的「盖住」，主区在下面原样待着、缩回来立刻恢复。 */
+      style={panelMax ? { gridColumn: "2 / -1", gridRow: 2, width: "auto", minWidth: 0, zIndex: 30 } : undefined}>
             <div className="panel-tabstrip">
               <div className="tabstrip-tabs" role="tablist" aria-label="右侧面板" ref={stripRef}>
                 {/* 11-26 用户令：右栏做成浏览器式标签条 —— 每个标签带 ×，右侧「+」开新标签页，

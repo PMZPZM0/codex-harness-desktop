@@ -245,15 +245,16 @@ ok(/panel-newtab-inner/.test(reviewPanel) && /panel-newtab-grid/.test(reviewPane
    ⛔ 也别靠给 `.app-shell` 手加类做布局状态（className 是 AppView 每帧算的，会打架）。
    判据：一颗 panel-tab-zoom-glyph（面板+中缝+左右箭头）+ 两个 half 热区；
         开关状态在 panel-zoom store（AppView 与右栏各读一次）；
-        放大 = AppView 内联 `--right-w: calc(100vw - 侧栏 - 1px)` + aside 内联 `width:auto`。 */
+        放大 = 右栏 aside 内联 `grid-column: 2 / -1` + `width:auto`（跨到主区那一列盖住它），
+        ⛔ 不许改回「压窄列宽 / 藏 .workspace」那两条失败路径。 */
 ok(/panel-tab-zoom-glyph/.test(reviewPanel) && /panel-tab-zoom-half is-left/.test(reviewPanel)
   && /panel-tab-zoom-half is-right/.test(reviewPanel)
   && /setPanelMaximized\(true\)/.test(reviewPanel) && /shrinkPanel/.test(reviewPanel)
   && /subscribePanelMaximized/.test(reviewPanel) && /defaultPanelWidth\(\)/.test(reviewPanel)
-  && /--right-w": "calc\(100vw - var\(--side-w/.test(read("src/features/app-view/AppView.tsx"))
-  && /style=\{panelMax \? \{ width: "auto", minWidth: 0 \} : undefined\}/.test(reviewPanel)
+  && /gridColumn: "2 \/ -1"/.test(reviewPanel) && /zIndex: 30/.test(reviewPanel)
+  && !/visibility:\s*"hidden"/.test(read("src/features/app-view/AppView/02-main-stage.tsx"))
   && /\.panel-tab-zoom\s*\{/.test(read("src/styles/05-composer-input.css")),
-  "右栏缩放＝一颗图标两段（左半放大覆盖主对话区 / 右半缩小回原宽）");
+  "右栏缩放＝一颗图标两段（左半放大跨列盖住主对话区 / 右半缩小回原宽）");
 
 /* 11-26 用户令：「codex 调用画布工作流就绿灯自动展开，在这里同步展示」。
    三处必须同时存在，缺一处用户就看不到：活动桥（IPC → 事件箱）· 自动开右栏 · 标签亮绿点。 */
