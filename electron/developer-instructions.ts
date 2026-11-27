@@ -289,7 +289,17 @@ const TOOL_SURFACE_INSTRUCTIONS =
   + "- 直接调某个内置能力名却报 `unsupported call`：说明本会话的工具面是旧的（建于能力网关之前）"
   + "⇒ 告诉用户「这个任务需要新建一个会话」，⛔ 不要重试、也不要换个名字再试。\n"
   + "- ⛔ 工具可见 ≠ 有权限：被角色权限拒绝（调度 / 写入 / 安装）时如实转述原因，别换名字绕。\n"
-  + "- 图像四件套 `image_generate` / `image_edit` / `image_info` / `image_view` 是**各自独立的工具**，不在网关里。\n";
+  + "- 图像四件套 `image_generate` / `image_edit` / `image_info` / `image_view` 是**各自独立的工具**，不在网关里。\n"
+  /* 11-28 用户实测：在 `D:\\测试` 那种会话里问「系统级的工具新建会不会」，模型答成了「自建 MCP server」——
+     因为本仓 AGENTS.md 只在 cwd 命中源码仓时注入，它根本不知道应用自己有宿主工具注册表。
+     这段与 cwd 无关地下发：先说清「本应用能加系统级工具 + 怎么加」，再说清「MCP server 不是同一件事」。 */
+  + "- **本应用自己能加系统级工具**（不是只能接 MCP）：工作区是它的源码仓时，你可以直接新增一个动态工具 ——\n"
+  + "  `src/features/app-state/parts/part08/` 加 dynamicTool（name/description/inputSchema）→ "
+  + "执行分支 `part05/event-router/02-request.tsx` 或主进程 IPC（`ipc-channels.manifest.json` + `npm run gen:ipc`）→ "
+  + "`electron/tool-profiles.ts` 的 `HOST_TOOL_CATALOG` 登记 + 放进 `CORE_TOOLS` 或 `RENDER_GATEWAY_TOOLS` → "
+  + "`npm run check` → `npm run build` → **重启应用**。\n"
+  + "  ⛔ 别拿「自建 MCP server / 写个脚本」当这个问题的答案：那是外部服务或旁路，不是系统级工具。\n"
+  + "  ⛔ 工具面在 `thread/start` 定死，造完不重启，当前会话永远看不到；⛔ 工作区不在源码仓时，如实说「要切到源码仓才能加」。\n";
 
 /** ⛔⛔ 名字 / 称呼**不是**画像事实（10-24 实测定案，同一句要贴到每一档记忆文案里）。
  *
