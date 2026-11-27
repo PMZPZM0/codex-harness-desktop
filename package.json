@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.81",
+  "version": "0.0.82",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@google/model-viewer": "^4.4.0",
-    "@larksuiteoapi/node-sdk": "^1.76.0",
+    "@larksuiteoapi/node-sdk": "^1.77.0",
     "@lydell/node-pty": "^1.2.0-beta.18",
     "@openai/codex": "^0.172.0",
     "@tsparticles/engine": "^4.6.0",
@@ -51,10 +51,10 @@
     "dingtalk-stream": "^2.1.6-beta.1",
     "electron-updater": "^6.8.11",
     "hls.js": "^1.7.4",
-    "jimp": "^1.6.1",
+    "jimp": "^1.7.0",
     "katex": "^0.19.1",
     "koffi": "^3.3.8",
-    "lucide-react": "^1.80.0",
+    "lucide-react": "^1.81.0",
     "mermaid": "^12.3.0",
     "pixi.js": "^8.23.0",
     "qrcode": "^1.5.4",
@@ -66,16 +66,16 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "sherpa-onnx-node": "^2.0.2",
+    "sherpa-onnx-node": "^2.0.3",
     "ssh2": "^1.17.0",
     "tsparticles": "^4.6.0",
     "vanta": "^0.5.24",
     "ws": "^8.23.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.10",
+    "@types/node": "^26.6.11",
     "@types/qrcode": "^1.5.6",
-    "@types/react": "^19.3.2",
+    "@types/react": "^19.3.3",
     "@types/react-dom": "^19.3.0",
     "@types/ssh2": "^1.15.6",
     "@typescript-eslint/parser": "^8.74.0",
@@ -87,7 +87,7 @@
     "eslint": "^10.15.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "typescript": "^6.0.3",
-    "vite": "^8.3.8",
+    "vite": "^8.4.0",
     "wait-on": "^9.5.1"
   },
   "build": {
