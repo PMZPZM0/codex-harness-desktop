@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * gen-ipc-bridge —— IPC 桥的单一真相源 + 代码生成（09-23 落地 docs/ARCHITECTURE.md §6 第 4 条）。
+ * gen-ipc-bridge —— IPC 桥的单一真相源 + 代码生成（09-23 落地；原目标形态草案 §4 第 3 条，现见
+ * docs/archive/ARCHITECTURE-2026-09-21-目标形态草案.md，现行说明见 docs/ARCHITECTURE.md §4）。
  *
  * 解决的问题（体检报告「最大瓶颈」）：加一个 IPC 接口要**手写多处**（main handler + preload 方法 +
  * vite-env.d.ts 签名 + ipc-registry 登记），纯靠人肉同步，漏一处只能靠预检【2】事后报红 —— 且渲染层

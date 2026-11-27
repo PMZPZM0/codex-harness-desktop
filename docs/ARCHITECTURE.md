@@ -1,179 +1,165 @@
-# 架构与扩展点（目标形态）
+# 应用架构
 
-> ⚠️ **本文是 09-21 写的目标形态草案，不是现行规则**。文中 `src/features/registry.ts`、`defineFeature`、
-> `src/components/Slot.tsx`、`src/lib/bus.mjs`、`src/lib/ipc.ts`、`scripts/gen-ipc-bridge.mjs`
-> **均未落地**（截至 09-22）；`App.tsx` 也早已不是本文假设的 22,216 行（现 21 行，视图在 `app-view/`）。
-> **写代码前请读 `docs/ARCHITECTURE-RULES.md`（现行有效，以实测现状为基准）**；本文只在讨论"要不要按目标形态演进"时参考。
-
-> 配套：`docs/archive/REFACTOR-PLAN-2026-09-21.md`（怎么分批改）、`docs/REFACTOR-COMPARE-2026-09-21.md`（现状 vs 目标 + 利弊）。
-> 本文回答：**新功能放哪、接口在哪、怎么不改别人就加功能、mac 上会不会瘸**。
+> 面向「这个应用是怎么搭起来的」。数字为 **2026-11-27（v0.0.82）实测**，口径一律 `wc -l` / `ls`。
+> 规则条文（该放哪一层、加板块的 checklist、红线）见 [`ARCHITECTURE-RULES.md`](ARCHITECTURE-RULES.md)；
+> 板块清单见 [`MODULES.md`](MODULES.md)；长文变更史见 [`FEATURE-LEDGER.md`](FEATURE-LEDGER.md)。
+> 09-21 那份「目标形态草案」已归档到 [`archive/ARCHITECTURE-2026-09-21-目标形态草案.md`](archive/ARCHITECTURE-2026-09-21-目标形态草案.md)。
 
 ---
 
-## 0. 一句话目标
+## 1. 运行时形态：三进程 + 一个引擎子进程
 
-**两个壳 + 一堆域 + 一张注册表。** 加一个功能 = 新增一个目录 + 在注册表加一行，
-**不碰 `App.tsx`、不碰 `main.ts`、不碰别人的目录**。
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 主进程 (Electron main, electron/main.ts 1,573 行)                 │
+│  窗口 / 托盘 / 自定义协议 / 单实例锁 / 全部系统能力                  │
+│  ├─ electron/features/*.ts        158 个条目 = 121 个 IPC 域       │
+│  ├─ codex-server.ts               spawn 引擎，stdio JSON-RPC       │
+│  └─ 存储：codex-home / app-settings / 记忆原子 / 会话 rollout       │
+└───────────────▲──────────────────────────────────────────────────┘
+                │ ipcMain.handle（经 ipc-registry 账本登记）
+┌───────────────┴──────────────────────────────────────────────────┐
+│ 预加载桥 (electron/preload.ts，contextIsolation)                  │
+│  window.codex.*  ← 由 ipc-channels.manifest.json **生成**         │
+│  统一 __ipc：参数个数校验 / 错误归一化 [ERR_*] / 通道级超时表        │
+└───────────────▲──────────────────────────────────────────────────┘
+                │
+┌───────────────┴──────────────────────────────────────────────────┐
+│ 渲染层 (React 19 + Vite 8)                                        │
+│  src/App.tsx 22 行 → AppView 992 行 → features/ 103 个域目录       │
+│  状态：useHarnessApp 建 bag → 9 个 part → bag-types（自动生成）    │
+└──────────────────────────────────────────────────────────────────┘
+
+          引擎子进程：@openai/codex app-server
+          上行 item/* turn/* 事件（JSON-RPC notification）→ 渲染层归约成回合
+```
+
+关键点：**引擎是子进程、不是内嵌库**。主进程只做「起进程 + 转发 JSON-RPC + 落盘」，对话状态的归约在渲染层完成。
 
 ---
 
-## 1. 分层（三层，职责不重叠）
+## 2. 分层与依赖方向
 
-| 层 | 是什么 | 允许做什么 | 禁止做什么 |
+| 层 | 目录 | 允许 | 禁止 |
 |---|---|---|---|
-| **壳层** `src/App.tsx` / `electron/main.ts` | 装配：路由、布局骨架、Provider 组合、启动链 | 遍历注册表渲染、调各域注册函数 | 写具体业务逻辑、持有域状态 |
-| **域层** `src/features/<域>/`、`electron/features/<域>.ts` | 一个功能的自有组件 + 状态 + 样式 + IPC 实现 | 域内自由实现 | 直接引别的域的内部文件；直接 `window.codex.*` |
-| **基座层** `src/lib/`、`src/components/`、`src/hooks/`、`electron/*.ts`（基础设施） | 纯函数、通用组件、通用 hook、引擎/桥/存储/策略 | 被任何域依赖 | 反向依赖某个域 |
+| **壳层** | `src/App.tsx`、`src/features/app-view/`、`electron/main.ts` | 装配、路由、布局骨架、启动链、遍历注册面 | 写业务逻辑、持有域状态、长出新分支堆 |
+| **域层** | `src/features/<域>/`、`electron/features/<域>.ts` | 域内自由实现（组件 / 状态 / 样式 / IPC） | 深链引别的域的内部文件（只许走对方公开面） |
+| **基座层** | `src/lib/*.mjs`(+`.d.mts`)、`src/components/`、`src/hooks/`、`electron/*.ts` | 纯函数、通用件、通用 hook、引擎 / 桥 / 存储 / 策略 | 反向 import 域层 |
+
+**依赖方向恒为**：壳 → 域 → 基座。域 ↔ 域只经 `app` 对象、显式 props、对方 barrel。
+
+主进程侧另有「域组合层」：`electron/composition.json`（121 个域）→ `npm run gen:domains` → `composition.gen.ts`，只导出 `mountEnabledDomains()`，由壳在 `app.setPath("userData")` 之后 `process.nextTick` 调用（模块体求值早于壳句体，早挂会读错目录）。
 
 ---
 
-## 2. 目标模块树
+## 3. 目录地图（实测）
 
-```
-src/
-  main.tsx                引导（挂载 + Provider）
-  App.tsx                 < 800 行：遍历注册表 → 布局 + 路由
-  features/
-    registry.ts           ★ 域注册表（唯一新增入口）
-    relay/                index.ts  RelayCenterPage.tsx  useRelayAccounts.ts  relay.css
-    openai/ voice/ memory/ dispatch/ channels/ agents/ models/ extensions/ threads/ …
-  lib/                    纯函数（.mjs + 同名 .d.mts）
-  components/             跨域通用件
-  hooks/                  跨域通用 hook
-  styles/index.css        @import 各域 css
-electron/
-  main.ts                 < 1,200 行：启动链 + 窗口 + 各域注册调用
-  ipc-registry.ts         ★ channel → handler → 模块（"接口在哪"查表）
-  features/               relay.ts / openai.ts / voice.ts / …（每个导出 register<Domain>Handlers(ctx)）
-  *.ts                    引擎、桥、存储、策略（基础设施）
-```
+| 位置 | 规模 | 职责 |
+|---|---:|---|
+| `src/App.tsx` | 22 行 | 只做 `useHarnessApp()` + earlyView 短路 + `<AppView/>` |
+| `src/features/app-view/AppView.tsx` | 992 行 | 视图装配壳：编号段 `01-sidebar-shell` … `09-file-preview-editor` |
+| `src/features/` | 103 个域目录 | 每个功能一个目录；`settings-*` 按页同构拆分 |
+| `src/features/app-state/` | 组合根 + 9 个 part | `bag` 是渲染层唯一状态容器 |
+| `src/lib/` | 纯函数 `.mjs` + 同名 `.d.mts` | 可被预检直接跑真断言 |
+| `src/styles/` | 65 个分节 CSS | 前缀 = 域 id，禁跨域选择器 |
+| `electron/main.ts` | 1,573 行 | 启动链 + 7 个搬不动的 handler（`theme:apply` + `window:popout-*`）+ 单例 |
+| `electron/features/` | 158 个条目 / 121 个域 | 一个板块 = 一个域前缀 |
+| `electron/*.ts` | 175 个顶层模块 | 引擎、桥、存储、策略、市场、记忆 |
+| `electron/builtin-skills/` | 35 个内置技能 | 启动时落盘到 `$CODEX_HOME/skills` |
+| `electron/ipc-channels.manifest.json` | 725 个通道 | IPC 桥**单一真相源** |
+| `scripts/guards/` | 130 个守卫文件 | 每个板块可机器校验的不变量 |
 
 ---
 
-## 3. 前端扩展点（★ 你问的"哪里留接口"）
+## 4. IPC 契约链：manifest 是唯一真相源
 
-**设计原则**：把"要改壳层才能加功能"的每一处，都改成"注册表加一行"。
-现在有 **29 个设置页分支写在 `App.tsx` 的 `settingsPage === "xxx"` 里** —— 这就是要消掉的样板。
-
-| # | 扩展点 | 目标文件 | 用途 | 新增功能时的写法 |
-|---|---|---|---|---|
-| 1 | **域注册表** | `src/features/registry.ts` | 声明"本域有哪些页面/入口/设置区/命令" | `defineFeature({ id, pages, settings, topbar, commands })` |
-| 2 | **设置页插槽** | 同上 → `settings` | 设置页分区不再硬编码 | 声明 `{ id, title, group, order, Component }` |
-| 3 | **顶栏动作槽** | 同上 → `topbar` | 顶栏按钮（调度、通知、独立弹窗…）按注册顺序渲染 | 声明 `{ id, order, Component }` |
-| 4 | **侧栏面板槽** | 同上 → `sidebar` | 左侧导航项 | 声明项 + 图标 + 排序 |
-| 5 | **命令与快捷键** | `src/features/registry.ts` + `src/lib/hotkey.mjs` | 命令面板 / 快捷键集中注册，不散落 | `{ id, title, run, keys }` |
-| 6 | **UI 插槽（slot）** | `src/components/Slot.tsx` | 往"别人的"界面里塞东西而不改它 | 输入区工具条 `composer.toolbar`、消息操作条 `message.actions`、卡片脚 `card.footer`、设置页头 `settings.header` |
-| 7 | **服务访问层** | `src/lib/ipc.ts` | 域**不直接** `window.codex.*`，统一走包装层 | `ipc.relay.accounts()` —— 便于测试替身与批量改名 |
-| 8 | **域公开面** | `features/<域>/index.ts` | 域的"接口声明" | 只导出组件 + hook + 动作；内部实现文件不 export |
-| 9 | **跨域通信** | `src/lib/bus.mjs` | 域之间**不互相 import**，用事件解耦 | `emit("thread:changed", …)` / `on(...)` |
-| 10 | **主题与样式** | `src/styles/index.css` + 域内 `*.css` | 主题色 / 尺寸一律走 CSS 变量 | 域 css 前缀 = 域 id，禁跨域选择器 |
-
-### 3.1 一个"插件"长什么样（加功能的完整步骤）
-
-```ts
-// src/features/relay/index.ts
-import { defineFeature } from "../registry";
-import { RelayCenterPage } from "./RelayCenterPage";
-
-export default defineFeature({
-  id: "relay",
-  title: "中转站",
-  pages: [{ id: "relay", title: "中转站", Component: RelayCenterPage }],
-  settings: [{ id: "relay", title: "中转站账户", group: "accounts", order: 10 }],
-  topbar: [{ id: "relay-balance", order: 30, Component: RelayBalanceBadge }],
-  commands: [{ id: "relay.refresh", title: "刷新中转站余额", run: refresh }],
-});
+```
+electron/features/<域>.ts        handler 实现（defineFeature + ctx.ipcHost.handle）
+        │  同轮登记
+        ▼
+electron/ipc-channels.manifest.json   通道 + 参数名（invokeArgs）  ← 手写源
+        │  npm run gen:ipc
+        ▼
+electron/preload.ts        window.codex 的方法体（生成段，禁手改）
+src/vite-env.d.ts          类型声明（生成段，禁手改）
+electron/ipc-registry.ts   账本：prefix / count / file / channels（改通道要同轮改 count）
 ```
 
-**要改的只有这一处**：`registry.ts` 里加一行 import 并放进数组。壳层从此不动。
+- ⛔ **实参只由 `invokeArgs` 决定**：manifest 里漏写某个参数名 = preload 层静默丢参（历史两次事故：工具描述恒全列、通知对象类别恒空）。守卫【2】逐字节比对生成物，`verify-preload-args.mjs` 在编译产物上验到 IPC 边界。
+- ⛔ 没有 `preload.generated.ts`：那会让 `window.codex` 不存在。
+- 新增一条通道 = handler + manifest + `gen:ipc` + registry 记账，四处缺一即红。
 
 ---
 
-## 4. 主进程扩展点
+## 5. 状态模型：一个 bag + 按序 part
 
-| # | 扩展点 | 目标文件 | 解决的问题 |
-|---|---|---|---|
-| 1 | **IPC 注册表** | `electron/ipc-registry.ts` | "这个 channel 在哪实现"**查表**，不再在 8,971 行里 grep |
-| 2 | **域上下文 `ctx`（deps 契约）** | `electron/features/types.ts` | 313 个 handler 现在共享模块级闭包（server / codexHome / 各 store）→ 收成显式对象，可测可换 |
-| 3 | ★★ **preload 与类型声明自动生成** | `scripts/gen-ipc-bridge.mjs` | 现在 IPC 是**手写三件套**（handler ↔ `preload.ts` ↔ `vite-env.d.ts`，313×3），漏一处**静默坏**；改为从注册表生成后两件 |
-| 4 | **能力声明** | `electron/capability-registry.ts`（已存在） | 域声明自己需要的能力（视觉 / 浏览器 / 桌面），由注册表断言"想开先问能力" |
-| 5 | **工具域总闸** | `electron/automation-policy.ts`（已存在） | MCP 工具级开关的唯一来源，UI 必须同源 |
+```
+useHarnessApp.tsx（组合根，39 行）
+  ├─ 建 bag（一个可变对象，跨 part 共享）
+  ├─ 按序调用 9 个 part：parts/part01 … part09
+  └─ 合并 return → HarnessAppApi（壳与各域按需解构）
 
-> ⚠️ 第 3 条是**唯一能根治"加功能要改三处、漏一处不报错"**的扩展点，优先级最高；
-> 但它依赖第 1、2 条先落地（注册表 + ctx），所以排在第 4 批的后半段。
+bag-types.ts  ← 自动生成（从 part 实现推断），禁手改；守卫【93】双向覆盖 + 类型串比对
+```
+
+- 渲染层**不引入全局 store**：状态只挂 `bag`，跨域通过 `app` 传引用；纯展示件 props ≤5。
+- 事件箱模式（跨模块一次性通知）用极小 `.mjs` store + `useSyncExternalStore`，例如 `panel-zoom` / `canvas-open` / `canvas-activity`。
 
 ---
 
-## 5. 新功能落点决策树（照着走不会放错）
+## 6. 引擎事件 → 回合：归约在渲染层
 
-```
-要加的东西是什么？
-├─ 纯计算 / 解析 / 判定（无 React、无 IPC）
-│   → src/lib/<名>.mjs + 同名 .d.mts（预检直接跑真断言）
-├─ 跨域复用的 UI 件（按钮、卡片壳、头像…）
-│   → src/components/<名>.tsx
-├─ 一个完整功能（有自己的界面 + 状态 + 后端）
-│   → src/features/<域>/  +  electron/features/<域>.ts  +  在 registry 加一行
-├─ 只是给"已经存在的界面"加一块
-│   → 用插槽（<Slot name="…" />），不改那个界面
-└─ 只是给引擎加"知识/流程"（不涉 UI）
-    → 内置技能或指令（electron/builtin-skills.ts / developer-instructions.ts）
-```
-
----
-
-## 6. 每个域必须遵守的契约（**可机器校验**，不靠自觉）
-
-| 契约 | 校验方式 |
+| 事件 | 处理 |
 |---|---|
-| `features/<域>/index.ts` 存在且只导出公开面 | 预检：每个域目录必须有 index |
-| 跨域 import 只许走 `../<域>`（即 index） | 预检：跨域路径不许出现 `/内部文件`（除 index 外的深路径） |
-| 域内状态独占（域外不许 `set`） | 第 3 批后由 hook 边界保证；预检扫"域外引用域内 setter" |
-| 域 css 前缀 = 域 id，禁跨域选择器 | 预检扫 `features/<域>/*.css` 的选择器前缀 |
-| 不直接 `window.codex.*` | 预检扫 `features/**` 里出现 `window.codex` |
-| 两个壳行数只许降 | 预检阈值（`App.tsx` 22,216 / `main.ts` 8,971） |
+| `item/*`（消息 / 推理 / 工具调用 / 文件变更 / 审批） | 追加到对应回合的条目列表 |
+| `turn/started` · `turn/completed` | 只标状态；**回合容器必须由事件流建立**，未知回合的 item 不能丢弃（用 userMessage 兜底建回合，否则「用户消息不出现」） |
+| `request/*`（审批 / 询问） | 弹覆盖层；**回合结束必须释放覆盖层**（唯一实现 `app-view/helpers/turn-overlays`） |
+| 排队消息 | 由引擎自己启动，宿主不假设能启动它 |
+
+渲染层的三条硬约束：钉顶几何只看正文底、内容高度变化后必须重算贴底、灰线只留回合级大折叠。
 
 ---
 
-## 7. 跨平台（macOS）约束 ★
+## 7. 记忆与技能
 
-**为什么单列一节**：拆文件会新增大量目录与路径拼接，而 mac 只有 CI（`macos-14` / `macos-15-intel`）在跑，
-**本机永远踩不到**。以下每条都对应历史事故或已存在的守卫。
+- **记忆**：一个内核 + 三作用域（private / team / project），落盘 `<workspace>/.codex-harness/memory/`；注入有预算（用户级 4,000 字符、工程级按层分配），写在 `memory-layers.ts` / `memory-lessons.ts`；前端 `memory-ui` 只读。
+- **技能**：两个落点 —— 全局 `$CODEX_HOME/skills/` + 项目级 `<cwd>/.codex/skills/`（引擎原生发现）；`.codex-harness/skills` 引擎不认。内置技能启动时由 `builtin-skills/` 落盘。
+- **工具面**：在 `thread/start` 定死，resume / fork 的 `dynamicTools` 引擎整份忽略；派生会话的工具面由主进程按会话类型决定（`ownsHostToolSurface`）。
 
-| 约束 | 说明 | 反例（曾发生） |
-|---|---|---|
-| 路径一律 `path.join` / `path.delimiter` | 不许手写 `/` 或 `\`，不许用 `;` 切 PATH | v0.0.22 审出「用 `;` 切 PATH」，mac 直接坏 |
-| **新增 `electron/` 子目录必须改 `tsconfig.json` 的 `include`** | 现在是白名单 `["*.ts", "voice/**/*.ts", "features/**/*.ts"]`（09-21 起 `features/**` 已加入） | 新建 `electron/<新目录>/**` 不在编译范围（只靠 import 跟随） |
-| 目录/文件名**全小写**，import 大小写与磁盘一致 | CI runner 是 Linux（大小写敏感），Windows 会掩盖错误 | — |
-| 随包资源新增要**同步两个平台脚本** | `prepare-windows-tools.cjs` + `prepare-mac-tools.cjs`（+ `build-mac.yml`） | 预检【29】按 `extraResources` 逐条比对 |
-| 平台分支要**两条都在**（不是只判 win32） | 预检【74】一类守卫盯着 | 「只认 Windows 解压器」曾让 mac 修复安装必失败 |
-| 每批收尾跑 **`mac-audit.mjs v0.0.26-b`** | 起点锚点 = 本次发版的 tag；扫"新增行"的平台敏感模式 | — |
+---
 
-```bash
-# 每批收尾（Windows 上必须先补 PortableGit 到 PATH，否则 spawn git 报 ENOENT）
-PATH="/c/Users/Administrator/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd:$PATH" \
-  node scripts/mac-audit.mjs v0.0.26-b
+## 8. 打包与发布
+
+```
+scripts/prepare-windows-tools.cjs   →  resources/tools（Node / nuphus / agent-desktop / VS Code CLI /
+scripts/prepare-mac-tools.cjs           cloudflared / ponytail / python / rg / uv / jq / ninja /
+                                        7-Zip / yt-dlp / CMake / adb；>50MB 的大件按需下载）
+        ↓  electron-builder（extraResources / afterPack 逐条补齐）
+Windows NSIS exe  +  macOS arm64 / x64 zip
+        ↓  git push origin v<版本>（tag 触发 .github/workflows/release.yml）
+GitHub Releases（唯一渠道，完整包；客户端点胶囊才下载安装）
 ```
 
----
-
-## 8. 扩展点的落地顺序（与改造批次对齐）
-
-| 批 | 落地的扩展点 | 之后能做什么 |
-|---|---|---|
-| 1 | `features/` 目录约定 + `index.ts` 公开面 | 能搬页面，接口面开始成形 |
-| 2 | `src/lib` 继续下沉纯函数 | 逻辑可被真断言测试 |
-| 3 | **域 hook（状态收拢）** | 域内独占状态 → 改 A 不碰 B 真正成立 |
-| 4 | `ipc-registry` + `ctx` + **自动生成 preload/类型** | 加 IPC 不再改三处 |
-| 5 | CSS 按域拆 + `styles/index.css` | 观感不乱、样式不互相污染 |
-| 6 | **域注册表**（`registry.ts`）+ 插槽 | 加功能 = 加目录 + 加一行 |
-| 7 | 命令注册 / 事件总线 / 契约守卫断言 | 扩展方式固定、越界会被预检拦下 |
+版本号 4 处对齐：`package.json` / `package-lock.json`（根 + `packages[""]`）/ `electron/whats-new-notes.ts` 最新条目 / `docs/releases/v<版本>.md`。`app.getVersion()` 是运行时唯一版本来源，⛔ 不手写第二份。
 
 ---
 
-## 9. 这份架构**不解决**什么（别抱错期待）
+## 9. 质量门
 
-- **不解决"同一文件两个人同时改"**：域化只是把冲突从 `App.tsx` 挪到各自域内；同一个域里并行改仍会撞。
-- **不引入运行时插件热插拔**：域是**编译期**注册（Vite 静态 import），不做动态加载 —— 在这个应用里动态加载只会带来安全面与打包复杂度。
-- **不替换现有引擎能力层**：nuphus / MCP / 技能市场照旧，本文只管"我们自己的代码怎么组织"。
-- **不承诺一次到位**：扩展点是**逐批长出来**的，第 1 批结束时你只会看到 `features/relay/` 一个目录，这很正常。
+- **`npm run check`**：清 dist → 构建（`tsc -p electron` + vite）→ 130 个守卫 + 5 个结构校验（bag-types / 死导入 / require 路径 / 运行时文件）→ 末尾总账必须 0 ✗。
+- **`npm run accept`**：驱动真实应用跑验收项，失败自动截图。
+- 守卫是**可读的判据**：改哪个板块，就往 `scripts/guards/` 对应域文件补一条机器可校验的不变量；守卫还会「自洽地错」，所以关键契约要问「主进程真返回吗」，参照值要独立测量。
+
+---
+
+## 10. 加一个功能，改哪几处
+
+1. **新建板块目录**：`src/features/<域>/`（组件 + 状态 + 样式），页面组件命名导出、可整页 lazy。
+2. **主进程域文件**：`electron/features/<域>.ts`，`defineFeature` + `ctx.ipcHost.handle`。
+3. **登记 IPC**：`ipc-channels.manifest.json` 加通道 → `npm run gen:ipc` → `ipc-registry.ts` 改该域 `count`。
+4. **状态**：新状态进既有 part 或新建 part，同轮更新自动生成的 `bag-types.ts`。
+5. **样式**：`src/styles/<编号>-<域>.css`，类前缀 = 域 id。
+6. **判据**：往 `scripts/guards/` 补断言，`npm run check` 全绿。
+7. **文档**：`docs/MODULES.md` 板块表、`docs/FEATURE-LEDGER.md` 一行、必要时 `DESIGN.md`。
+
+⛔ 新增功能一律**独立板块 + 留拓展接口**，不往既有域里顺手加块。
