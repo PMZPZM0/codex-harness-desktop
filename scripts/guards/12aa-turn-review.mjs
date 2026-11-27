@@ -238,12 +238,22 @@ ok(/panel-newtab-inner/.test(reviewPanel) && /panel-newtab-grid/.test(reviewPane
   && /\.panel-newtab\s*\{[\s\S]{0,160}?justify-content:\s*center/.test(read("src/styles/05-composer-input.css")),
   "新标签页入口居中（网格卡片，不是左对齐列表）");
 
-/* 11-26 用户：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」。
-   ⛔ 必须是**两段一组**（panel-tab-zoom 里两颗），且与拖拽改宽同一口径（240~560 + 同一个 localStorage key）。 */
-ok(/panel-tab-zoom/.test(reviewPanel) && /stepPanelWidth\(64\)/.test(reviewPanel) && /stepPanelWidth\(-64\)/.test(reviewPanel)
-  && /Math\.min\(560, Math\.max\(240/.test(reviewPanel) && /localStorage\.setItem\("panel-width"/.test(reviewPanel)
+/* 11-26 用户：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」；
+   11-27 两次纠正：「放大是要可以整个侧边栏覆盖主对话框，缩小是恢复原来大小侧边栏」+
+   「不能做成一个图标，两段展示吗」。
+   ⛔ 别实现成「把宽度调大几档」（原地打转，已否掉），也别退回并排两颗独立图标；
+   ⛔ 也别靠给 `.app-shell` 手加类做布局状态（className 是 AppView 每帧算的，会打架）。
+   判据：一颗 panel-tab-zoom-glyph（面板+中缝+左右箭头）+ 两个 half 热区；
+        开关状态在 panel-zoom store（AppView 与右栏各读一次）；
+        放大 = AppView 内联 `--right-w: calc(100vw - 侧栏 - 1px)` + aside 内联 `width:auto`。 */
+ok(/panel-tab-zoom-glyph/.test(reviewPanel) && /panel-tab-zoom-half is-left/.test(reviewPanel)
+  && /panel-tab-zoom-half is-right/.test(reviewPanel)
+  && /setPanelMaximized\(true\)/.test(reviewPanel) && /shrinkPanel/.test(reviewPanel)
+  && /subscribePanelMaximized/.test(reviewPanel) && /defaultPanelWidth\(\)/.test(reviewPanel)
+  && /--right-w": "calc\(100vw - var\(--side-w/.test(read("src/features/app-view/AppView.tsx"))
+  && /style=\{panelMax \? \{ width: "auto", minWidth: 0 \} : undefined\}/.test(reviewPanel)
   && /\.panel-tab-zoom\s*\{/.test(read("src/styles/05-composer-input.css")),
-  "右栏宽度两段按键（加宽/收窄，240~560 与拖拽同口径，放大/缩小同一组）");
+  "右栏缩放＝一颗图标两段（左半放大覆盖主对话区 / 右半缩小回原宽）");
 
 /* 11-26 用户令：「codex 调用画布工作流就绿灯自动展开，在这里同步展示」。
    三处必须同时存在，缺一处用户就看不到：活动桥（IPC → 事件箱）· 自动开右栏 · 标签亮绿点。 */

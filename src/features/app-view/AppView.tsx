@@ -11,6 +11,7 @@ import { basename } from "../../lib/basename";
 import { setActiveModel } from "../../lib/active-model.mjs";
 import { registerRateLimitCancel } from "../../lib/team-runtime.mjs";
 import { aliasLabelOf, getAliasState, subscribeAliases } from "../../lib/alias-store.mjs";
+import { getPanelMaximized, subscribePanelMaximized } from "../../lib/panel-zoom.mjs";
 import { ShortcutsDialog } from "../shortcuts";
 import { VaultWriteConfirm } from "../data-access";
 import {
@@ -491,6 +492,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
   const aliasSnapForTitle = useSyncExternalStore(subscribeAliases, getAliasState);
   const headerAlias = aliasLabelOf(aliasSnapForTitle, thread?.id ?? "");
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
+  /* 11-27 用户令：「放大要能整个侧边栏覆盖主对话框」—— 开关状态在右栏标签条上，
+     布局属于壳 ⇒ 这里读同一个 store，把 `--right-w` 写成「除侧栏与 1px 分隔外的全部宽度」。 */
+  const panelMax = useSyncExternalStore(subscribePanelMaximized, getPanelMaximized, getPanelMaximized);
   const bossDirContext = isBossSessionContext(bossThreadsForDir, thread?.id);
   const officeBossGroupId = useMemo(() => {
     if (!thread?.id) return "";
@@ -582,6 +586,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       // ⛔ 别退回"开右栏才 inline 换模板"：轨道数变了不能插值，面板与主区一起瞬移。
       style={{
         "--panel-w": `${panelWidth}px`,
+        /* 11-27：右栏放大态 —— 主区那一列压成 0，右栏吃掉整行剩余宽度。
+           ⛔ 只覆盖 `--right-w`（已注册为 <length>，仍能插值）；⛔ 别写百分比（会落到初始值 0px），
+              也别换 grid-template-columns 的轨道定义（轨道数一变就不能插值，主区会瞬移）。 */
+        ...(panelMax && rightOpen && !narrow ? { "--right-w": "calc(100vw - var(--side-w, 236px) - 1px)" } : {}),
         /* 拖动改的侧栏宽度：只在展开态下写（折叠 / 窄屏 / 独立窗口由布局决定） */
         ...(!sidebarCollapsed && !narrow && !popoutThreadId ? { "--side-w": `${sidebarWidth}px` } : {}),
       } as CSSProperties}

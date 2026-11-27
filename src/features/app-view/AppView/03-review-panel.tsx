@@ -44,7 +44,6 @@ import {
   Layers3,
   Link2,
   ListFilter,
-  Maximize2,
   Megaphone,
   Menu,
   BarChart3,
@@ -86,7 +85,6 @@ import {
   X,
   ChevronUp,
   FileUp,
-  Minimize2,
   Zap,
   MonitorUp,
   BookOpen,
@@ -116,8 +114,6 @@ import {
   LogOut,
   ChevronRight,
   ChevronLeft,
-  ChevronsLeft,
-  ChevronsRight,
   ExternalLink,
   Pin,
   Wallet,
@@ -150,6 +146,7 @@ import { getRightFile, subscribeRightFile } from "../../../lib/right-file.mjs";
 import { isImagePath } from "../../../lib/is-image-path";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import { canvasLightMs, subscribeCanvasActivity } from "../../../lib/canvas-activity.mjs";
+import { defaultPanelWidth, getPanelMaximized, setPanelMaximized, subscribePanelMaximized } from "../../../lib/panel-zoom.mjs";
 import { CommandExecutionCard, TerminalPanel } from "../../terminal";
 import { StorageSection, ReviewPanel } from "../../storage-settings";
 import { DramaCanvas } from "../../drama-canvas";
@@ -248,12 +245,24 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
     return () => { off(); window.clearTimeout(timer); };
   }, []);
 
-  /** 右栏宽度两段按键（11-26 用户令：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」）。
-   *  ⛔ 与拖拽改宽同一条口径（240~560）+ 同一个 localStorage key，别造第二套宽度真相源。 */
-  const stepPanelWidth = (delta: number) => {
-    const next = Math.min(560, Math.max(240, Math.round((app.panelWidth || 308) + delta)));
-    app.setPanelWidth(next);
-    try { localStorage.setItem("panel-width", String(next)); } catch { /* 隐私模式：宽度仍生效，只是不记 */ }
+  /** 右栏「放大 / 缩小」（11-27 用户两次纠正后定稿）：
+   *  放大 = **整个侧边栏覆盖主对话区**（主区那一列压成 0、右栏吃掉整行剩余宽度）；
+   *  缩小 = 恢复原来的侧边栏宽度（默认 308，与拖拽同一个 localStorage key）。
+   *  ⛔ 不是把面板宽度调大几档 —— 那叫原地打转，用户明确否掉了。
+   *  ⛔ 放大态放**共享 store**（`panel-zoom`）：壳的 `--right-w` 由 AppView 读同一个 store 写内联样式，
+   *     不再从这里手动给 `.app-shell` 加类 —— className 是 AppView 每帧算的，手加的类会打架。 */
+  const panelMax = useSyncExternalStore(subscribePanelMaximized, getPanelMaximized, getPanelMaximized);
+
+  /* 关右栏时退出放大态：否则下次打开直接顶格，用户会以为界面坏了。 */
+  useEffect(() => {
+    if (!app.rightOpen) setPanelMaximized(false);
+  }, [app.rightOpen]);
+
+  const shrinkPanel = () => {
+    setPanelMaximized(false);
+    const width = defaultPanelWidth();
+    app.setPanelWidth(width);
+    try { localStorage.setItem("panel-width", String(width)); } catch { /* 隐私模式：宽度仍生效，只是不记 */ }
   };
 
   /** 从新标签页（或别处）打开一个功能页 */
@@ -342,7 +351,9 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   }, [rightOpen, mounted]);
   if (!mounted) return null;
   return (
-    <aside className="context-panel" data-state={rightOpen && entered ? "open" : "closed"}>
+    <aside className="context-panel" data-state={rightOpen && entered ? "open" : "closed"}
+      /* 放大态：列宽已经不是 --panel-w 了，面板再用固定宽会在右边留一条空白 */
+      style={panelMax ? { width: "auto", minWidth: 0 } : undefined}>
             <div className="panel-tabstrip">
               <div className="tabstrip-tabs" role="tablist" aria-label="右侧面板" ref={stripRef}>
                 {/* 11-26 用户令：右栏做成浏览器式标签条 —— 每个标签带 ×，右侧「+」开新标签页，
@@ -381,12 +392,21 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                   </div>
                 ) : null}
               </div>
-              {/* 11-26 用户令：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」。
-                  ⛔ 做成**两段一组**的小胶囊（同一个底、中间一条分隔），不是两颗各自成型的按钮 ——
-                  用户要的是「右栏宽度」这一件事的两个方向，成组才不会跟「+」混成三颗圆钮。 */}
-              <div className="panel-tab-zoom" role="group" aria-label="调整右侧面板宽度">
-                <button type="button" title="加宽右侧面板" aria-label="加宽右侧面板" onClick={() => stepPanelWidth(64)}><ChevronsLeft size={13} /></button>
-                <button type="button" title="收窄右侧面板" aria-label="收窄右侧面板" onClick={() => stepPanelWidth(-64)}><ChevronsRight size={13} /></button>
+              {/* 11-26 用户令 + 11-27 两次纠正：
+                  · 放大 = 整个侧边栏**覆盖主对话区**（不是把宽度调大几档，那是原地打转）；
+                  · 缩小 = 恢复原来的侧边栏宽度；
+                  · 形态 = **一颗图标、两段热区**（用户：「不能做成一个图标，两段展示吗」）。
+                    ⛔ 不是并排两颗各自成型的按钮 —— 那样看着像两个不相干的功能。
+                    一颗「面板 + 中缝 + 左右箭头」的图标，左半＝放大、右半＝缩回，中缝就是分界。 */}
+              <div className={`panel-tab-zoom ${panelMax ? "is-max" : ""}`} role="group" aria-label="缩放右侧面板">
+                <svg className="panel-tab-zoom-glyph" width="30" height="16" viewBox="0 0 30 16" aria-hidden="true">
+                  <rect x="2.5" y="1.5" width="25" height="13" rx="3" />
+                  <line x1="15" y1="4" x2="15" y2="12" />
+                  <path d="M9.5 4.5 L6.5 8 L9.5 11.5" />
+                  <path d="M20.5 4.5 L23.5 8 L20.5 11.5" />
+                </svg>
+                <button type="button" className="panel-tab-zoom-half is-left" title="放大：整个侧边栏覆盖主对话区" aria-label="放大侧边栏（覆盖主对话区）" aria-pressed={panelMax} onClick={() => setPanelMaximized(true)} />
+                <button type="button" className="panel-tab-zoom-half is-right" title="缩小：恢复原来的侧边栏宽度" aria-label="缩小侧边栏（恢复原宽）" onClick={shrinkPanel} />
               </div>
               <button className="panel-tab-add" title="新标签页" onClick={() => setRightTab("newtab")}><Plus size={14} /></button>
             </div>

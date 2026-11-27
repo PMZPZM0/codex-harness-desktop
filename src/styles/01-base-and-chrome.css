@@ -813,6 +813,13 @@ button.brand-mark.sidebar-toggle:hover {
   background: var(--panel);
   min-width: 0;
 }
+/* ── 右栏「放大覆盖主对话区」（11-27 用户纠正）────────────────────────────────
+   用户原话：「放大是要可以整个侧边栏覆盖主对话框，缩小是恢复原来大小侧边栏」。
+   实现**不在 CSS 里**：`--right-w` 由 AppView 写内联样式（`calc(100vw - 侧栏 - 1px 分隔)`），
+   面板的 `width:auto` 由右栏 aside 写内联样式，开关状态在 `src/lib/panel-zoom.mjs`。
+   ⛔ 别在这里再加 `.app-shell.panel-max { --right-w: … }` 这类规则：
+      壳的 className 是 AppView 每帧算出来的，靠类名做布局状态会和 React 渲染打架
+      （11-27 实证：面板宽得离谱，还找不到是谁加的类）。要改就改 store + 内联样式。
 /* ── 右侧面板：横向抽屉（10-31 用户：「左边做了右边为啥不做」）──────────────────
    宽度恒定（--panel-w），开合靠两件事同时发生：网格第 4 列 `--right-w` 插值 +
    面板自身 translate 滑入/滑出。⛔ 别再回到"条件渲染 + 换列模板"：
