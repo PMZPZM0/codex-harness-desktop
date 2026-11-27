@@ -62,6 +62,34 @@ sudo systemctl reload caddy
 可选环境变量：`RELAY_PORT`（默认 18700）、`RELAY_HOST`、`RELAY_LEGACY_TARGET`（默认 127.0.0.1:18092）、
 `RELAY_STATE`、`RELAY_APK_URL`（默认指向 `mobile-remote-v0.1.2` 的 CodexRemote 资产）。
 
+## 服务端实际落点（11-27 恢复时核对）
+
+| 件 | 位置 | 备注 |
+|---|---|---|
+| 网关脚本 | `/opt/relay/relay-gateway.mjs` | 来自本仓 `scripts/relay-gateway.mjs`（唯一源） |
+| 依赖 | `/opt/relay/node_modules/ws` | 只有 `ws` 一个依赖 |
+| systemd unit | `/etc/systemd/system/relay-gateway.service` | `User=ubuntu` / `Restart=always`；`RELAY_PORT=18700`、`RELAY_STATE=/var/lib/relay/relay-devices.json`、`RELAY_APK_DIR=/var/lib/relay/apk` |
+| Caddy 站点 | `/etc/caddy/remote-ppz123.caddy` + `Caddyfile` 里 `import` 一行 | 内容：`import security-headers` + `reverse_proxy 127.0.0.1:18700` |
+| 设备表 / 安装包缓存 | `/var/lib/relay/relay-devices.json` · `/var/lib/relay/apk/` | 设备表丢了 = 所有电脑端要重新 TOFU 绑定、手机要重新配对 |
+
+### 故障表现：HTTPS 直接 TLS 报错（alert 80）
+
+11-27 实际事故：**unit 与 Caddy 站点段被删**（`/opt/relay` 与 `relay-gateway.service` 都没了，
+`grep remote.ppz123.asia /etc/caddy/*` 为空）。外部表现**不是 404**，而是：
+
+```
+SSL3 alert read:fatal:internal error          # openssl s_client
+schannel: SEC_E_ILLEGAL_MESSAGE (0x80090326)   # Windows curl
+```
+
+同时 `http://` 仍返回 `308 → https` 且 `Server: Caddy` —— Caddy 进程活着，只是没有这个域名的站点/证书。
+⇒ 判据：**80 有 Caddy 响应 + 443 握手 internal error = 站点配置缺失**，不是防火墙、不是 DNS、不是证书过期。
+
+恢复三步：装回 unit → 起网关（服务器本机 `curl 127.0.0.1:18700` 应回 503/200 而不是拒绝连接）→
+装回 Caddy 站点并 `reload`。证书在 Caddy 存储里仍在（10-28 签发、01-26 到期），站点恢复后无需重签。
+自检：`https://<域名>/t/<10位设备ID>/` 应 200（配对页）、`/t/<id>/api/ping` 应 401（未配对）、`/apk` 应 200。
+
+
 ## 电脑端（为什么不需要装 frpc 了）
 
 `remote.ts` 在远控服务起来后启动内置隧道；配对地址优先级：
