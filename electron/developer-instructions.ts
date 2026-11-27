@@ -271,6 +271,26 @@ const AGENT_MANAGEMENT_INSTRUCTIONS =
   + "- 用户问「有哪些 CLI 智能体 / 装没装」→ `cli_agent_list` / `cli_agent_detect`。内置里已有 Claude Code、Codex CLI、Gemini CLI、Aider、OpenClaw、Qwen Code、QwenPaw、iFlow CLI、Kimi Code CLI、CodeBuddy Code、Comate CLI、Qoder CLI、Trae CLI（Trae 官方只有安装脚本 ⇒ 只能引导按文档装，不能一键）。\n"
   + "- 用户说「装一下 / 卸载某个 CLI」→ ⛔⛔ **先向用户说明要装什么、会执行哪条命令，征得明确同意后**再调 `cli_agent_install` / `cli_agent_uninstall` 并传 `confirm: true`；没有 confirm 会被拒绝，也不要绕过（不要自己跑 npm/pip 安装）。装/卸只动应用自己的工具目录；**被委派的会话（专家/子智能体/CLI）无权装卸**。装完如实转述结果（含失败原因与文档链接），装好的 CLI 会出现在输入框 @ 列表里（没装好时是置灰的）。\n";
 
+/** 11-27 用户令：「应用他就是主宰，要啥都会，工具没注册自己都不知道怎么解决」。
+ *
+ *  现象：模型想用的能力既不在工具面、也不知道去网关里找，于是原地重试或干脆放弃。
+ *  这里把「工具面长什么样 + 缺能力时的固定自救顺序」写成常驻指令：
+ *  ① 网关 `name="list"` 拉全量；② `find_skills` 找技能；③ `mcp_tools` 找连接器；
+ *  ④ 三步都没有 ⇒ **如实说缺什么**（⛔ 不许试错、不许手写脚本硬凑、不许假装做完）。
+ *  ⛔ 只教「怎么发现能力」，不承诺能力一定存在 —— 这句是防「模型编一个能用的工具」的关键。 */
+const TOOL_SURFACE_INSTRUCTIONS =
+  "\n### 你的工具面 · 工具用不了怎么自救\n"
+  + "Your tool surface = 你的工具列表（核心能力 + 图像/修图/RPA/前端文档/连接器等独立工具）+ 一个能力网关 `harness_tools`（其余内置能力都在它后面）。\n"
+  + "- 想做的事**没有对应工具**时，按这个顺序自救，⛔ 不要用同一个名字反复重试：\n"
+  + "  1) `harness_tools({ name: \"list\" })` 拉全量能力清单（含每项参数）；\n"
+  + "  2) 流程类需求 → `find_skills` / `skill_search` 找现成技能；\n"
+  + "  3) 接外部系统 → `mcp_tools` / `mcp_call`（已装连接器），或网关里的 `connector_search` / `connector_install`；\n"
+  + "  4) 三步都没有 ⇒ **当面说清缺哪个能力、需要谁提供、有没有替代做法**；⛔ 不要试错、不要手写脚本硬凑、不要假装做完。\n"
+  + "- 直接调某个内置能力名却报 `unsupported call`：说明本会话的工具面是旧的（建于能力网关之前）"
+  + "⇒ 告诉用户「这个任务需要新建一个会话」，⛔ 不要重试、也不要换个名字再试。\n"
+  + "- ⛔ 工具可见 ≠ 有权限：被角色权限拒绝（调度 / 写入 / 安装）时如实转述原因，别换名字绕。\n"
+  + "- 图像四件套 `image_generate` / `image_edit` / `image_info` / `image_view` 是**各自独立的工具**，不在网关里。\n";
+
 /** ⛔⛔ 名字 / 称呼**不是**画像事实（10-24 实测定案，同一句要贴到每一档记忆文案里）。
  *
  *  事故形态（用户截图）：用户给助手取名「小布子」、自称「小潘总」，模型回「记住了」，
@@ -644,6 +664,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += REVIEW_INSTRUCTIONS;
   // 10-31：专家 / 专家团 / 子智能体的建、CLI 智能体的装/卸（都要模型知道工具存在）
   text += AGENT_MANAGEMENT_INSTRUCTIONS;
+  // 11-27：工具面结构 + 缺能力时的自救顺序（用户：「工具没注册自己都不知道怎么解决」）
+  text += TOOL_SURFACE_INSTRUCTIONS;
   // 记忆分层与踩坑留痕：无条件下发（用户 09-22 点名的痛点：坑不记 ⇒ 反复踩）
   text += memoryInstructions();
   /* 10-20：**当前生效后端**（记忆三态 + 知识库两态 + 真实工具名 + 以工具列表为准的口诀）。

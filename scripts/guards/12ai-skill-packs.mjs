@@ -154,7 +154,7 @@ const grab = (name) => {
 };
 const catalogTools = grab("HOST_TOOL_CATALOG");
 const coreTools = grab("CORE_TOOLS");
-ok(coreTools.length >= 8 && coreTools.length <= 24, `【工具画像】CORE_TOOLS 是精选子集（实测 ${coreTools.length} 个）`);
+ok(coreTools.length >= 8 && coreTools.length <= 40, `【工具画像】CORE_TOOLS 是精选子集（实测 ${coreTools.length} 个；11-27 上限 24→40：渲染层注册的独立工具必须全在 CORE，被裁的既不在网关也没有执行路径 = 死工具）`);
 ok(coreTools.every((name) => catalogTools.includes(name)), "【工具画像】CORE_TOOLS 全部在 HOST_TOOL_CATALOG 里（⛔ 漏登记 = 默认保留 = 没纳入画像）");
 ok(/export const TOOL_PROFILES_ENABLED\s*=\s*(true|false)/.test(profilesSrc), "【工具画像】有 TOOL_PROFILES_ENABLED 回滚开关（置 false 即恢复全量）");
 ok(/roleKeyOf/.test(profilesSrc) && /设计|engineering|工程/.test(profilesSrc), "【工具画像】岗位判定走 roleKeyOf（识别不出岗位时回落 CORE）");

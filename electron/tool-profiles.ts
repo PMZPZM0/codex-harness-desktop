@@ -39,13 +39,37 @@ export const CORE_TOOLS: readonly string[] = [
   /* 11-19：MCP 懒加载的两个入口 */
   "mcp_tools",
   "mcp_call",
-  // 图像（用户日常用得最多的一件）
+  /* 图像四件套必须**全在 CORE**（11-27 修死局）：网关描述明确写着「image_generate / image_edit /
+     image_info / image_view 是各自独立的工具，本工具里调不到 —— 直接按名字调它们」。
+     而 CORE 原先只留了 generate / view ⇒ 模型照描述直调 image_edit 必然 `unsupported call`，
+     网关里又明确说"不在这里" ⇒ 无路可走（用户原话：「工具调不用，也不知道怎么解决」）。 */
   "image_generate",
+  "image_edit",
+  "image_info",
   "image_view",
   /* 11-24 用户令：「codex 要知道侧边栏可以展示 PPT 进度」—— 普通会话做演示稿是主场景，
      ⛔ 不能只挂在岗位增量里（那样只有产品/设计专家会话看得见，普通会话既没 schema、
      网关也调不通：它的执行在渲染层，主进程能力表里没有这个名）。 */
   "slide_show",
+  /* ⛔⛔ 11-27 用户令（原话：「应用他就是主宰，要啥都会，工具没注册自己都不知道怎么解决」）：
+     **凡在渲染层注册了 schema 的独立工具，一律进 CORE** —— 它们的执行端就在事件路由里
+     （`rpa_save` / `rpa_run` / `photocraft` / `frontend_*` … 各自一条分支），
+     而 `harness_tools` 网关只转发主进程能力表（`callDispatchTool`）⇒ 被裁掉 = **两头都够不到的死工具**。
+     ⇒ 这一组是「注册表里有、工具面里没有」的历史缺口（14 个），不是新能力。 */
+  "photocraft",          // 图像工坊（修图/拼图，本地 jimp）
+  "frontend_get_doc",    // 前端组件文档：读某组件用法
+  "frontend_apply_doc",  // 前端组件文档：把示例应用到项目
+  "filee_convert",       // 办公文档转换（Word/Excel/PPT/PDF → Markdown 等）
+  "feishu_cli",          // 飞书 CLI
+  "rpa_save",            // RPA 配方：保存
+  "rpa_run",             // RPA 配方：运行 / 列清单
+  "rpa_schedule",        // RPA 配方：定时
+  "connector_search",    // 连接器（MCP）市场检索
+  "connector_install",   // 连接器（MCP）安装
+  "apkstart",            // 安卓包启动 / 安装相关
+  "husk",                // Husk 能力
+  "openmaic",            // OpenMAIC
+  "laya_judge",          // Laya 本地判定模型（思考档位自动档）
 ];
 
 /** 已知的宿主工具名目录（只裁这些；⛔ MCP 连接器工具名带 `__` 前缀，一律保留）。
