@@ -659,7 +659,11 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "artifact_archive / artifact_list（产物归档：把成品存进 artifacts/日期-任务短名/ 并查清单；⛔ 只复制不删原文件）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"
-          + "⛔ 图像生成与编辑（image_generate / image_edit / image_info / image_view）是**各自独立的工具**，本工具里调不到 —— 直接按名字调它们。"
+          + "⛔ 图像：`image_generate` / `image_view` 是独立工具（直接按名字调）；`image_edit`（改图）/ `image_info`（尺寸元信息）走本网关："
+          + "name=\"image_edit\" / name=\"image_info\"。"
+          + "⛔ 下面这些**也走本网关**（schema 不常驻，只为省首回合 token）：photocraft / frontend_get_doc / frontend_apply_doc / "
+          + "filee_convert / feishu_cli / rpa_save / rpa_run / rpa_schedule / connector_search / connector_install / "
+          + "apkstart / husk / openmaic / laya_judge —— 参数拿不准先 name=\"list\"。"
           + "⛔ 若你直接调用某个内置能力名（而不是走本工具）却报 unsupported call，说明**本会话的工具面是旧的**"
           + "（创建于能力网关之前）—— 直接告诉用户「这个任务需要新建一个才能用」，不要重试、不要换个名字再试。",
         inputSchema: {

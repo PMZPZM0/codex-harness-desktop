@@ -154,10 +154,27 @@ const grab = (name) => {
 };
 const catalogTools = grab("HOST_TOOL_CATALOG");
 const coreTools = grab("CORE_TOOLS");
-ok(coreTools.length >= 8 && coreTools.length <= 40, `【工具画像】CORE_TOOLS 是精选子集（实测 ${coreTools.length} 个；11-27 上限 24→40：渲染层注册的独立工具必须全在 CORE，被裁的既不在网关也没有执行路径 = 死工具）`);
+ok(coreTools.length >= 8 && coreTools.length <= 24, `【工具画像】CORE_TOOLS 是精选子集（实测 ${coreTools.length} 个；11-27 定为「常用才常驻」——其余工具走能力网关，⛔ 别再靠加大 CORE 修可达性）`);
 ok(coreTools.every((name) => catalogTools.includes(name)), "【工具画像】CORE_TOOLS 全部在 HOST_TOOL_CATALOG 里（⛔ 漏登记 = 默认保留 = 没纳入画像）");
 ok(/export const TOOL_PROFILES_ENABLED\s*=\s*(true|false)/.test(profilesSrc), "【工具画像】有 TOOL_PROFILES_ENABLED 回滚开关（置 false 即恢复全量）");
 ok(/roleKeyOf/.test(profilesSrc) && /设计|engineering|工程/.test(profilesSrc), "【工具画像】岗位判定走 roleKeyOf（识别不出岗位时回落 CORE）");
+/* ⛔⛔ 11-27 用户实测「工具调不动，也不知道怎么解决」的根因判据：
+   渲染层注册了 schema 的工具，**要么在 CORE（常驻、模型直接调），要么在网关的渲染层转发名单里**；
+   两个都不在 = 死工具（模型看不到、网关也不认，只能报 unsupported call）。
+   ⛔ 别再靠「把 16 份 schema 塞回 CORE」修可达性 —— 那是拿首回合 token 换的（用户明确反对）。 */
+{
+  const segSrc = readFileSync(ROOT + "/src/features/app-state/parts/part08/01-seg.tsx", "utf8");
+  const reqSrc = readFileSync(ROOT + "/src/features/app-state/parts/part05/event-router/02-request.tsx", "utf8");
+  const registered = [...new Set([...segSrc.matchAll(/name:\s*"([a-z0-9_]+)"/g)].map((m) => m[1]))];
+  const forwardBlock = (reqSrc.match(/RENDER_GATEWAY_TOOLS = new Set\(\[([\s\S]*?)\]\)/) ?? ["", ""])[1];
+  const forward = new Set([...forwardBlock.matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]));
+  const unreachable = registered.filter((name) => !coreTools.includes(name) && !forward.has(name));
+  ok(unreachable.length === 0,
+    `【工具画像】没有「注册了但够不到」的死工具（注册 ${registered.length} 个；缺：${unreachable.join(" ") || "无"}）`);
+  /* 反向：转发名单里的名字必须在渲染层真注册过（⛔ 拼错一个 = 网关点了没反应） */
+  const ghost = [...forward].filter((name) => !registered.includes(name));
+  ok(ghost.length === 0, `【工具画像】网关转发名单都对得上渲染层注册（幽灵名：${ghost.join(" ") || "无"}）`);
+}
 
 /* ── 11-21 首回合瘦身（用户令：前缀压到 ~30k token，能力不阉割）────────────────────────
    三处必须同时成立，否则「省 token」会变成「功能消失」：

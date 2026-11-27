@@ -110,8 +110,13 @@ ok(
   const avail = availStart >= 0 ? descBlock.slice(availStart, availEnd > availStart ? availEnd : undefined) : "";
   ok(!!avail && !/image_generate|image_edit|image_info|image_view/.test(avail),
     "⛔ harness_tools 的「可用：」枚举里不再有图像能力（列了 = 一个能力两个入口）");
-  ok(/各自独立的工具/.test(descBlock),
-    "harness_tools 的描述里点明了图像四件套是独立工具（模型才知道该直接按名字调）");
+  /* 11-27 改口径：图像四件套不再「全独立」—— generate / view 常驻直调，edit / info 走能力网关
+     （CORE 只留常用，省首回合 token；网关已能转发渲染层工具）。两条都要点明，
+     ⛔ 别再写「四件套都在本工具里调不到」—— 那句配上被裁掉的工具面 = 模型无路可走。 */
+  ok(/image_generate/.test(descBlock) && /image_view/.test(descBlock) && /独立工具/.test(descBlock),
+    "harness_tools 描述点明 image_generate / image_view 是独立工具（模型才知道该直接按名字调）");
+  ok(/image_edit/.test(descBlock) && /走本网关/.test(descBlock),
+    "harness_tools 描述点明 image_edit / image_info 走网关（⛔ 只说\"调不到\"会让模型无路可走）");
 }
 {
   // 用户要的前置询问：生图 / 修图两条描述里必须写明"小改动先问，别自己替用户决定"

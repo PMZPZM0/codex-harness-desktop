@@ -71,7 +71,25 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
         if (event.method === "item/tool/call") {
           void toolCallDedupe.run(event.id, async () => {
             try {
-              const args = typeof event.params?.arguments === "string" ? JSON.parse(event.params.arguments) : event.params?.arguments ?? {};
+              let args = typeof event.params?.arguments === "string" ? JSON.parse(event.params.arguments) : event.params?.arguments ?? {};
+              /* ⛔⛔ 11-27：能力网关**也能调渲染层工具**。
+                 背景：用户既要「工具调不动…应用他就是主宰，要啥都会」，又要「别把首回合 token 再堆上来」——
+                 这批工具（rpa_* / photocraft / frontend_* / connector_* / filee / feishu / apkstart / husk /
+                 openmaic / laya_judge / image_edit / image_info）的执行端就是**下面这串分支**，
+                 但 schema 为了省首回合 token 被工具面裁掉了 ⇒ 模型两头都够不到（原来只能报 unsupported call）。
+                 做法：网关里点了这些名字时，只把 `tool` 换成真实名、`args` 换成内层 args，**原样走同一条链**
+                 —— ⛔ 不复制任何执行逻辑（复制 = 两份实现必然漂移），也不把这些 schema 重新塞回工具面。
+                 ⛔ 集合只放**有专属分支**的工具名；主进程能力（scheduler_* / knowledge_* …）由网关自己转发，别列进来。 */
+              const RENDER_GATEWAY_TOOLS = new Set([
+                "photocraft", "frontend_get_doc", "frontend_apply_doc", "filee_convert", "feishu_cli",
+                "rpa_save", "rpa_run", "rpa_schedule", "connector_search", "connector_install",
+                "apkstart", "husk", "openmaic", "laya_judge", "image_edit", "image_info",
+              ]);
+              if (event.params?.tool === "harness_tools" && RENDER_GATEWAY_TOOLS.has(String(args?.name ?? ""))) {
+                const inner = args?.args && typeof args.args === "object" && !Array.isArray(args.args) ? args.args : {};
+                event = { ...event, params: { ...event.params, tool: String(args.name) } };
+                args = inner;
+              }
               /* 10-29：收藏夹 / 开发日记 / 密码本（用户定的权限模型：会话级授权、默认关、
                  只读 + 只追加、密码本写入先弹一次性确认）。执行端在 data-access/tool-handler，
                  权限闸在主进程 dataaccess:*（这里的判断不算数）。 */
