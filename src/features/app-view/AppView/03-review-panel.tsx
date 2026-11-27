@@ -353,12 +353,16 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   if (!mounted) return null;
   return (
     <aside className="context-panel" data-state={rightOpen && entered ? "open" : "closed"}
-      /* 放大态（11-27 用户令「放大要覆盖主对话框」）：**不改网格列宽**，而是让面板自己跨到主区那一列 ——
-         ⛔ 压列宽会把主区内容挤成一条竖排文字（用户连拍两次），
-         ⛔ display:none 主区会让自动排布把面板挤成 21px，
-         ⛔ 藏 .workspace 又是 10-25 明令禁止的老坑（父级 hidden 会全白）。
-         跨列 + 面板自身不透明背景 = 真的「盖住」，主区在下面原样待着、缩回来立刻恢复。 */
-      style={panelMax ? { gridColumn: "2 / -1", gridRow: 2, width: "auto", minWidth: 0, zIndex: 30 } : undefined}>
+      /* 放大态（11-27 用户第三次纠正后定稿）：**脱离网格、绝对定位铺满侧栏右侧的整块区域**。
+         样式全在 CSS（`.context-panel[data-max="1"]`，窄屏要改 top/left）—— 这里只给状态属性。
+         ⛔ 三条已实证失败的路，别再走：
+           ① 压窄列宽（`--right-w` 吃满整行）⇒ 主区被挤成 20px 竖排文字（用户连拍三张）；
+           ② 跨列（`grid-column: 2 / -1`）⇒ 主区那一列仍被 `--right-w` 占着，
+              面板宽度受网格剩余空间约束，用户看到的还是"主区一条缝 + 空白"；
+           ③ 藏主区（display:none / visibility:hidden）⇒ 面板塌成 21px / 全白（10-25 老坑）。
+         ⇒ 绝对定位让网格一列都不动：主区在底下原样待着（滚动位置与草稿都不丢），
+            用不透明背景整块盖住。缩回来 = 属性撤掉，回到第 4 列。 */
+      data-max={panelMax ? "1" : undefined}>
             <div className="panel-tabstrip">
               <div className="tabstrip-tabs" role="tablist" aria-label="右侧面板" ref={stripRef}>
                 {/* 11-26 用户令：右栏做成浏览器式标签条 —— 每个标签带 ×，右侧「+」开新标签页，
