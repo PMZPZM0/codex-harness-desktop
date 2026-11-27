@@ -533,6 +533,10 @@ const remote = new RemoteControlService({
     // 不挡的话手机上会看到电脑端已经删掉的会话（见 purgeDeletedThread 注释）。
     return (result.data ?? [])
       .filter((entry: any) => !deletedThreadIds.has(String(entry.id ?? "").toLowerCase()))
+      /* 11-27 用户实测「手机里好多旧会话，很多都已经删了」：桌面侧栏本来就不显示内部会话
+         （记忆蒸馏 / 内省，`internalThreads`），手机这条链路漏了同一条过滤 ⇒ 一排"看着像旧会话"。
+         ⛔ 与桌面同源，别在手机页另写一份名单。 */
+      .filter((entry: any) => !internalThreads.has(String(entry.id ?? "")))
       .map((entry: any) => {
         const id = String(entry.id ?? "");
         const isBoss = bossIds.has(id) || ownBossIds.has(id);

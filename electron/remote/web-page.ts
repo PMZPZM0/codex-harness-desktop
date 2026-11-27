@@ -619,14 +619,24 @@ function threadTitle(t) {
   const line = (t.preview || "").split("\\n").map((s) => s.trim()).find(Boolean) || "";
   return line ? clipText(line, 24) : "未命名任务";
 }
-async function loadThreads() {
+/* 11-27 用户实测「手机里好多旧会话 / 不同步实时会话」：
+   ① 数据源已由主进程过滤掉墓碑与内部会话（见 electron/main.ts listThreads）；
+   ② 列表打开期间每 8 秒静默刷新一次 —— 桌面删了/新建了会话，手机停在列表页也能跟上。
+   ⛔ 静默刷新走签名比对：没变化不重绘，否则每 8 秒白闪一次。关闭列表 / 点进会话就停表。 */
+let threadsSig = "";
+let threadsTimer = 0;
+function stopThreadsAutoRefresh() {
+  if (threadsTimer) { clearInterval(threadsTimer); threadsTimer = 0; }
+}
+async function loadThreads(silent) {
   const el = document.getElementById("thread-list");
-  el.innerHTML = "<div class='empty-tip'>加载中…</div>";
+  if (!silent) el.innerHTML = "<div class='empty-tip'>加载中…</div>";
   let threads = [];
   try {
     const r = await rpc({ type: "list-threads" });
     threads = r.threads || [];
   } catch (e) {
+    if (silent) return;   // 静默刷新失败不打断正在看的列表，下一轮再试
     // 引擎未就绪 / 凭据失效时不能只留一片白：给出原因与重试（手机上看不到控制台）
     el.innerHTML = "";
     const tip = document.createElement("div");
@@ -640,6 +650,9 @@ async function loadThreads() {
     el.appendChild(tip);
     return;
   }
+  const sig = threads.map((t) => [t.id, t.updatedAt, t.name, t.kind, t.groupName].join(":")).join("|");
+  if (silent && sig === threadsSig) return;
+  threadsSig = sig;
   el.innerHTML = "";
   if (!threads.length) {
     el.innerHTML = "<div class='empty-tip'>暂无会话，点右上角「＋ 新建」开始</div>";
@@ -655,11 +668,21 @@ async function loadThreads() {
     else if (t.kind === "bossMember") title.appendChild(makeEl("i", "thread-tag member", "中枢调度"));
     title.appendChild(document.createTextNode(threadTitle(t)));
     row.querySelector("small").textContent = new Date(t.updatedAt * 1000).toLocaleString();
-    row.onclick = () => { hideHome(); currentThreadId = t.id; writeStore(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
+    row.onclick = () => { stopThreadsAutoRefresh(); hideHome(); currentThreadId = t.id; writeStore(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
     el.appendChild(row);
   }
 }
-function toggleThreads() { const el = document.getElementById("threads"); if (el.classList.contains("open")) el.classList.remove("open"); else { loadThreads(); el.classList.add("open"); } }
+function toggleThreads() {
+  const el = document.getElementById("threads");
+  if (el.classList.contains("open")) { el.classList.remove("open"); stopThreadsAutoRefresh(); return; }
+  loadThreads();
+  el.classList.add("open");
+  stopThreadsAutoRefresh();
+  threadsTimer = setInterval(() => {
+    if (document.getElementById("threads")?.classList.contains("open")) void loadThreads(true);
+    else stopThreadsAutoRefresh();
+  }, 8000);
+}
 function updateThreadLabel(name) {
   const el = document.getElementById("thread-label");
   if (el) el.textContent = name || "";

@@ -859,7 +859,7 @@ export class RemoteControlService {
       const params = new URL(url, "http://x").searchParams;
       const botId = params.get("bot") ?? undefined;
       const botName = params.get("name") ?? undefined;
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       res.end(this.html(code, botId, botName));
       return;
     }
@@ -1293,7 +1293,7 @@ export class RemoteControlService {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: "unauthorized", hint: "请从应用里重新扫码配对" }));
     } else {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       res.end(this.pairHtml());
     }
     return false;
