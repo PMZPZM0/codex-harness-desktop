@@ -46,6 +46,7 @@
 - **文档附件**：PDF/Word/Excel/PPT 拖进对话转成 Markdown 正文（markitdown，本机转换不上传）
 - **输入体验**：草稿按会话独立保存；文件/图片内联 chip；粘贴超 200 字自动转 .txt；`#` 引用技能
 - **内置写作技能**：humanizer / no-ai-slop / i-have-adhd（MIT，可单独停用）
+- **任务监控**：后台跑批集中看进度与结果，失败可直接回到那一回合
 - **会话备份与导出**：Markdown 导出、跨设备恢复
 
 ### 🎨 画布与创作
@@ -174,6 +175,24 @@ npm run verify   # = npm run check（离线预检）+ npm run accept（拉起应
 - 看全新用户首启：`npm run preview:fresh`（前台运行，不碰真实配置）
 
 详见 [`docs/TESTING.md`](docs/TESTING.md)。
+
+## 🧱 应用架构
+
+主进程 + 预加载桥 + 渲染层，Codex 引擎（`@openai/codex` app-server）作为**子进程**跑，事件经 stdio JSON-RPC 回流到渲染层归约成回合。渲染层不直连引擎，也不直连 Node。
+
+| 层 | 位置 | 职责 |
+|---|---|---|
+| 壳层 | `src/App.tsx`（22 行）· `features/app-view/` · `electron/main.ts` | 装配、路由、布局骨架、启动链 |
+| 域层 | `src/features/<域>/`（103 个）· `electron/features/<域>.ts`（121 个域） | 一个功能一个板块，自带组件/状态/样式/IPC |
+| 基座层 | `src/lib/*.mjs` · `src/components/` · `electron/*.ts` | 纯函数、通用件、引擎/桥/存储/策略 |
+
+三条硬机制：
+
+- **IPC 单一真相源**：`electron/ipc-channels.manifest.json`（725 个通道）→ `npm run gen:ipc` 生成 `preload.ts` 与 `vite-env.d.ts`，生成物禁手改；漏一个参数名就是静默丢参。
+- **状态只有一份**：`useHarnessApp` 建 `bag` → 9 个 part 按序组合，`bag-types.ts` 自动生成，`any` 与类型漂移由守卫拦下。
+- **改动必须留判据**：`scripts/guards/` 130 个守卫文件 + `npm run check` 一条链；`npm run accept` 驱动真实应用跑验收。
+
+新增一个功能 = 新板块目录 + 主进程域文件 + manifest 登记（跑生成器）+ 一条守卫断言。细节见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、规则见 [docs/ARCHITECTURE-RULES.md](docs/ARCHITECTURE-RULES.md)、板块清单见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
 ## 🏗 技术栈
 
