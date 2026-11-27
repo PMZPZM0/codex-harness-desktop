@@ -239,17 +239,18 @@ ok(/panel-newtab-inner/.test(reviewPanel) && /panel-newtab-grid/.test(reviewPane
   "新标签页入口居中（网格卡片，不是左对齐列表）");
 
 /* 11-26 用户：「在这个新建标签页左边加一个放大缩小侧边栏两段按键图标」；
-   11-27 两次纠正：「放大是要可以整个侧边栏覆盖主对话框，缩小是恢复原来大小侧边栏」+
-   「不能做成一个图标，两段展示吗」。
-   ⛔ 别实现成「把宽度调大几档」（原地打转，已否掉），也别退回并排两颗独立图标；
+   11-27 三次纠正：「放大是要可以整个侧边栏覆盖主对话框」→「不能做成一个图标，两段展示吗」
+   →「换个图标，一个图标做两种状态展示就行了，现在左右按键很丑」。
+   ⛔ 别实现成「把宽度调大几档」（原地打转，已否掉）；⛔ 也别再画「面板+中缝+左右箭头」的自制字形
+      或左右两段热区（用户明确说丑）；
    ⛔ 也别靠给 `.app-shell` 手加类做布局状态（className 是 AppView 每帧算的，会打架）。
-   判据：一颗 panel-tab-zoom-glyph（面板+中缝+左右箭头）+ 两个 half 热区；
+   判据：**一个按钮两态**（Maximize2 / Minimize2 随 panelMax 切换 + aria-pressed）；
         开关状态在 panel-zoom store（AppView 与右栏各读一次）；
         放大 = 面板 `data-max="1"` + CSS 里**绝对定位铺满侧栏右侧**（网格一列都不动），
         ⛔ 不许改回「压窄列宽（--right-w 吃满整行）/ 跨列 / 藏 .workspace」那三条失败路径。 */
-ok(/panel-tab-zoom-glyph/.test(reviewPanel) && /panel-tab-zoom-half is-left/.test(reviewPanel)
-  && /panel-tab-zoom-half is-right/.test(reviewPanel)
-  && /setPanelMaximized\(true\)/.test(reviewPanel) && /shrinkPanel/.test(reviewPanel)
+ok(/panelMax \? <Minimize2/.test(reviewPanel) && /<Maximize2/.test(reviewPanel)
+  && /aria-pressed=\{panelMax\}/.test(reviewPanel)
+  && /panelMax \? shrinkPanel\(\) : setPanelMaximized\(true\)/.test(reviewPanel)
   && /subscribePanelMaximized/.test(reviewPanel) && /defaultPanelWidth\(\)/.test(reviewPanel)
   && /data-max=\{panelMax \? "1" : undefined\}/.test(reviewPanel)
   && /\.context-panel\[data-max="1"\]\s*\{[\s\S]{0,260}?position:\s*absolute[\s\S]{0,260}?left:\s*calc\(var\(--side-w/.test(read("src/styles/01-base-and-chrome.css"))
@@ -257,8 +258,10 @@ ok(/panel-tab-zoom-glyph/.test(reviewPanel) && /panel-tab-zoom-half is-left/.tes
   && !/--right-w":\s*"calc\(100vw/.test(read("src/features/app-view/AppView.tsx"))
   && !/gridColumn: "2 \/ -1"/.test(reviewPanel)
   && !/visibility:\s*"hidden"/.test(read("src/features/app-view/AppView/02-main-stage.tsx"))
+  /* ⛔ 负向：自制字形 / 两段热区不许回来（用户 11-27：「左右按键很丑」） */
+  && !/panel-tab-zoom-glyph/.test(reviewPanel) && !/panel-tab-zoom-half/.test(reviewPanel)
   && /\.panel-tab-zoom\s*\{/.test(read("src/styles/05-composer-input.css")),
-  "右栏缩放＝一颗图标两段（左半放大＝绝对定位整块盖住主对话区 / 右半缩小回原宽）");
+  "右栏缩放＝一个图标两态（放大：绝对定位盖住主区 / 放大态换缩回图标回原宽）");
 
 /* 11-26 用户令：「codex 调用画布工作流就绿灯自动展开，在这里同步展示」。
    三处必须同时存在，缺一处用户就看不到：活动桥（IPC → 事件箱）· 自动开右栏 · 标签亮绿点。 */

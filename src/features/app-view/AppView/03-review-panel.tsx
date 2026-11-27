@@ -136,6 +136,8 @@ import {
   Bell,
   CheckCheck,
   SquareTerminal,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../components/CardShell";
 import BrowserPane from "../../../components/BrowserPane";
@@ -143,6 +145,7 @@ import { TaskMonitorPanel } from "../../task-monitor/TaskMonitorPanel";
 import { TurnReviewPanel } from "../../status";
 import { WorkspaceFilePreview } from "./03-workspace-files";
 import { getRightFile, subscribeRightFile } from "../../../lib/right-file.mjs";
+import { subscribeRightImage, takeRightImage } from "../../../lib/right-image.mjs";
 import { isImagePath } from "../../../lib/is-image-path";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import { canvasLightMs, subscribeCanvasActivity } from "../../../lib/canvas-activity.mjs";
@@ -222,6 +225,13 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
 
   /* 图片页（11-26）：只读查看 —— 记住当前那张图；⛔ 不落盘、不进 bag，重开面板即清空。 */
   const [imagePath, setImagePath] = useState("");
+  /* 11-27 用户实测「点图片芯片打开的不是图片标签页」：桥（RightFileBridge）按扩展名分流，
+     图片走这里 —— 挂载时取一次排队的，活着时订阅后续请求。 */
+  useEffect(() => {
+    const pending = takeRightImage();
+    if (pending?.path) setImagePath(pending.path);
+    return subscribeRightImage((request) => setImagePath(request.path));
+  }, []);
   const pickImage = async () => {
     const picked = await window.codex.chooseImages().catch(() => [] as string[]);
     const first = Array.isArray(picked) ? picked.find((item) => typeof item === "string" && item) : "";
@@ -401,22 +411,20 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                   </div>
                 ) : null}
               </div>
-              {/* 11-26 用户令 + 11-27 两次纠正：
-                  · 放大 = 整个侧边栏**覆盖主对话区**（不是把宽度调大几档，那是原地打转）；
-                  · 缩小 = 恢复原来的侧边栏宽度；
-                  · 形态 = **一颗图标、两段热区**（用户：「不能做成一个图标，两段展示吗」）。
-                    ⛔ 不是并排两颗各自成型的按钮 —— 那样看着像两个不相干的功能。
-                    一颗「面板 + 中缝 + 左右箭头」的图标，左半＝放大、右半＝缩回，中缝就是分界。 */}
-              <div className={`panel-tab-zoom ${panelMax ? "is-max" : ""}`} role="group" aria-label="缩放右侧面板">
-                <svg className="panel-tab-zoom-glyph" width="30" height="16" viewBox="0 0 30 16" aria-hidden="true">
-                  <rect x="2.5" y="1.5" width="25" height="13" rx="3" />
-                  <line x1="15" y1="4" x2="15" y2="12" />
-                  <path d="M9.5 4.5 L6.5 8 L9.5 11.5" />
-                  <path d="M20.5 4.5 L23.5 8 L20.5 11.5" />
-                </svg>
-                <button type="button" className="panel-tab-zoom-half is-left" title="放大：整个侧边栏覆盖主对话区" aria-label="放大侧边栏（覆盖主对话区）" aria-pressed={panelMax} onClick={() => setPanelMaximized(true)} />
-                <button type="button" className="panel-tab-zoom-half is-right" title="缩小：恢复原来的侧边栏宽度" aria-label="缩小侧边栏（恢复原宽）" onClick={shrinkPanel} />
-              </div>
+              {/* 右栏缩放（11-27 三次改口后定稿）：
+                  · 放大 = 整个侧边栏**覆盖主对话区**；缩回 = 恢复原来的侧边栏宽度；
+                  · 形态 = **一个图标两态**（用户：「一个图标做两种状态展示就行了，现在左右按键很丑」）。
+                    ⛔ 不要再画「面板 + 中缝 + 左右箭头」的自制字形，也不要做左右两段热区。 */}
+              <button
+                type="button"
+                className={`panel-tab-zoom ${panelMax ? "is-max" : ""}`}
+                title={panelMax ? "缩回：恢复原来的侧边栏宽度" : "放大：整个侧边栏覆盖主对话区"}
+                aria-label={panelMax ? "缩回侧边栏（恢复原宽）" : "放大侧边栏（覆盖主对话区）"}
+                aria-pressed={panelMax}
+                onClick={() => (panelMax ? shrinkPanel() : setPanelMaximized(true))}
+              >
+                {panelMax ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
               <button className="panel-tab-add" title="新标签页" onClick={() => setRightTab("newtab")}><Plus size={14} /></button>
             </div>
             {/* 新标签页（11-26 用户令）：⛔ 列的是**右栏自己的页**（监控/变更/审阅/浏览器/文件/画布/终端），
@@ -476,6 +484,9 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                   {imagePath ? <span className="panel-image-name" title={imagePath}>{imagePath.split(/[\/]/).pop()}</span> : null}
                 </div>
                 {imagePath ? (
+                  /* ⛔ 悬停放大镜 + 点击灯箱是 `WorkspaceFilePreview` **自带**的能力（11-11 立的），
+                     这里再包一层就会出现两个放大镜（11-27 用户截图「重复了吧，怎么两个」）。
+                     图片页只负责「显示哪张图」，交互交给预览组件自己。 */
                   <WorkspaceFilePreview path={imagePath} onOpenEditor={() => undefined} expanded />
                 ) : (
                   <div className="panel-image-empty">

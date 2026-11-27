@@ -987,58 +987,34 @@
 }
 .panel-tab-add:hover { background: var(--panel-2); color: var(--text); }
 
-/* 右栏缩放按键（11-26 用户令 → 11-27 两次纠正）：
-   「在新建标签页左边加一个放大缩小侧边栏两段按键」+「不能做成一个图标，两段展示吗」。
-   ⇒ **一颗图标**（面板 + 中缝 + 左右箭头），左右各一半是热区：
-     左半＝放大（整个侧边栏覆盖主对话区）、右半＝缩小（回到原宽）。中缝就是这两段的分界。
-   ⛔ 不要退回并排两颗独立图标 —— 那样看着像两个不相干的功能，也不是「一个图标两段」。 */
+/* 右栏缩放按键（11-26 立 → 11-27 三次改口后定稿）：
+   用户最终原话：「换个图标，一个图标做两种状态展示就行了，现在左右按键很丑」。
+   ⇒ **一颗普通图标按钮**，靠图标本身表达状态：
+     普通态 = 放大图标（点它：整个侧边栏覆盖主对话区）；放大态 = 缩回图标（点它：回原宽）。
+   ⛔ 不要再画「面板 + 中缝 + 左右箭头」那种自制字形，也不要做两段热区 —— 用户明确否掉了。 */
 .panel-tab-zoom {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 42px;
+  width: 26px;
   height: 26px;
+  padding: 0;
   border: 1px solid var(--line-soft);
   border-radius: 7px;
   background: var(--panel-2);
   color: var(--muted);
-  overflow: hidden;
-}
-.panel-tab-zoom-glyph { pointer-events: none; display: block; }
-.panel-tab-zoom-glyph rect,
-.panel-tab-zoom-glyph line {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.2;
-  opacity: 0.55;
-}
-.panel-tab-zoom-glyph path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-/* 两段热区：铺在图标上、各占一半，鼠标不改变图标形状（不然又变成两颗按钮） */
-.panel-tab-zoom-half {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  width: 50%;
-  padding: 0;
-  border: 0;
-  background: transparent;
   cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-enter), color var(--dur-ui) var(--ease-enter), border-color var(--dur-ui) var(--ease-enter);
 }
-.panel-tab-zoom-half.is-left { left: 0; border-radius: 6px 0 0 6px; }
-.panel-tab-zoom-half.is-right { right: 0; border-radius: 0 6px 6px 0; }
-.panel-tab-zoom-half:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
-.panel-tab-zoom-half:active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
-/* 放大态：整颗图标转 accent + 左半淡底 —— 用户一眼看到「正覆盖着主区」、也知道点右半回去 */
-.panel-tab-zoom.is-max { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, var(--line-soft)); }
-.panel-tab-zoom.is-max .panel-tab-zoom-half.is-left { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.panel-tab-zoom:hover { background: var(--panel-2); color: var(--text); }
+.panel-tab-zoom:active { transform: translateY(.5px); }
+/* 放大态：整颗按钮转 accent —— 一眼看出「正覆盖着主区」，图标同时换成缩回 */
+.panel-tab-zoom.is-max {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-soft));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 
 /* 画布绿灯（11-26 用户令）：「codex 调用画布工作流就绿灯」。
    绿点 + 标签描边一起亮：只描边在暗色下几乎看不出，只点一个小点又容易被忽略。 */

@@ -13,6 +13,8 @@ import { OFFICIAL_MODELS } from "../../../../../lib/official-models";
 import { buildRelayCandidates } from "../../../../../lib/relay-targets.mjs";
 import { useFilePreview } from "../../../../../hooks/useFilePreview";
 import { effortLabels } from "../../../../../lib/effort-labels";
+import { isImagePath } from "../../../../../lib/is-image-path";
+import { requestRightImage } from "../../../../../lib/right-image.mjs";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 import type { usePart03b } from "../02-composer-memory-models";
@@ -217,6 +219,14 @@ bag.filePreview = filePreview as typeof bag.filePreview; bag.setFilePreview = se
       }
     }
     bag.setHighlightedFilePath(resolved);
+    /* 11-27 用户实测「点图片芯片打开的不是图片标签页」：图片一律进右栏「图片」页（只读大图），
+       ⛔ 不要再回「文件」页让用户在树里翻；非图片仍走下面的文件树联动。与 RightFileBridge 同口径。 */
+    if (isImagePath(resolved)) {
+      requestRightImage(resolved);
+      bag.setRightTab("image");
+      bag.setRightOpen(true);
+      return;
+    }
     // 联动：自动切到项目树面板，展开文件所在目录（树形模式下父目录惰性加载+展开，不动 root）
     const dir = resolved.replace(/[\\/][^\\/]+$/, "");
     if (dir) {

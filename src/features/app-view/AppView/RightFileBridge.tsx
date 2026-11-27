@@ -14,6 +14,8 @@
 import { useEffect, useRef } from "react";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { registerRightFileResolver, subscribeRightFile } from "../../../lib/right-file.mjs";
+import { requestRightImage } from "../../../lib/right-image.mjs";
+import { isImagePath } from "../../../lib/is-image-path";
 import { joinWorkspacePath, resolveForOpen } from "../../../lib/path-fallback.mjs";
 import { lookupKnownFile } from "../../../lib/ui-channels";
 
@@ -39,6 +41,16 @@ export function RightFileBridge({ app }: { app: HarnessAppApi }) {
       ? path
       : joinWorkspacePath(path, current.workspace);
     current.setHighlightedFilePath(resolved);
+    /* ⛔ 11-27 用户实测：「点这个图片芯片，打开的不是图片标签页」——
+       原来不管什么文件都切「文件」页（工作区树 + 预览），点图片等于要多点两下。
+       ⇒ 图片走「图片」页（只读大图），其余仍走「文件」页。 */
+    if (isImagePath(resolved)) {
+      requestRightImage(resolved);
+      current.setRightOpen(true);
+      current.setRightTab("image");
+      if (current.panelWidth < 420) current.setPanelWidth(420);
+      return;
+    }
     const dir = resolved.replace(/[\\/][^\\/]+$/, "");
     if (dir) {
       void current.fetchChildren(dir);
