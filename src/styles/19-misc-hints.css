@@ -430,6 +430,15 @@
   grid-column: 3;
   grid-row: 2;
 }
+/* 放大态（11-27）：绝对定位的 grid 子项**一旦带 grid 放置，containing block 就是那个 grid area**，
+   不是容器的 padding box ⇒ 弹窗里面板被显式放在第 3 列（宽 --right-w），放大后会塌在右栏那一列里。
+   这里把放置撤成 auto（回到 padding box），左边界收到窗口左缘（弹窗没有侧栏）。
+   ⛔ 选择器必须带 `.app-shell.popout-shell >`，否则压不住上面那条 (0,3,0) 的规则。 */
+.app-shell.popout-shell > .context-panel[data-max="1"] {
+  grid-column: auto;
+  grid-row: auto;
+  left: 3px;
+}
 
 /* ── 侧栏专家团聚簇（09-14 用户反馈）：主会话 + 成员会话合并为一行，默认折叠 ── */
 .team-cluster > .thread-row { position: relative; }
