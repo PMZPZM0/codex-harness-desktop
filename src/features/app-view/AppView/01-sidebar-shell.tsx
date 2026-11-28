@@ -416,7 +416,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     setAccountMenuOpen,
     setAccountMenuSub,
     setMobileNav,
-    setDramaCanvasOpen,
+    openPanelTab,
     setUiSketchOpen,
     setMobileRemoteOpen,
     setPaletteOpen,
@@ -739,7 +739,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     switch (target) {
       case "component-library": setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); break;
       case "ui-sketch": setUiSketchOpen(true); setMobileNav(false); break;
-      case "drama-canvas": setDramaCanvasOpen(true); setMobileNav(false); break;
+      /* ⛔ 11-28 用户令：「两个画布不再保留独立界面，全部统一在侧边栏中展示」——
+         原来这里开的是整屏浮层；现在统一成「开右栏 + 切到画布页」，与右栏标签条同一个落点。 */
+      case "drama-canvas": openPanelTab("canvas", "画布"); setMobileNav(false); break;
       case "skills": setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); break;
       case "plugins": setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); break;
       case "mcp": setSettingsPage("mcp"); setSettingsOpen(true); setMobileNav(false); break;

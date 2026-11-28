@@ -72,10 +72,9 @@ bag.settingsOpen = settingsOpen as typeof bag.settingsOpen; bag.setSettingsOpen 
   const [companyPreviewTeamId, setCompanyPreviewTeamId] = useState<string | null>(null);
 bag.companyPreviewTeamId = companyPreviewTeamId as typeof bag.companyPreviewTeamId; bag.setCompanyPreviewTeamId = setCompanyPreviewTeamId as typeof bag.setCompanyPreviewTeamId;
 
-  // AI 短剧无限画布（09-27）：侧栏入口的整体开关。画布自己的状态全在域内（localStorage 持久化），
-  // 挂 bag 的只有「开没开」这一位 —— 宿主只需要知道要不要渲染它。
-  const [dramaCanvasOpen, setDramaCanvasOpen] = useState(false);
-  bag.dramaCanvasOpen = dramaCanvasOpen as typeof bag.dramaCanvasOpen; bag.setDramaCanvasOpen = setDramaCanvasOpen as typeof bag.setDramaCanvasOpen;
+  /* ⛔ 11-28 用户令（两个画布统一进侧栏、不再保留独立界面）：原来这里挂的
+     `dramaCanvasOpen / setDramaCanvasOpen` 已删 —— 画布只在右栏「画布」页渲染，
+     入口改成「开右栏 + 切到画布页」，不再需要「整屏浮层开没开」这一位。 */
 
   // 前端开发（10-04，m3e-canvas 嵌入；两轮改名：界面草图 → 手机前端UI → 前端开发）：与画布同款 —— 界面自己的状态全在域内（iframe 里那份
   // localStorage），挂 bag 的只有「开没开」这一位（侧栏「···更多」开、AppView 渲染宿主）。
@@ -143,5 +142,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

@@ -48,7 +48,9 @@ export async function run() {
   (/channels: DramaChannelState;/.test(story) && /refreshChannels/.test(story) ? ok : fail)(
     "【192】story 层暴露两条通道的就绪状态（卡片据此显示「去配置生图模型 / 去配置视频接口」）"
   );
-  (/onOpenPluginSettings/.test(canvas) && /setSettingsPage\("plugins"\)/.test(readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8")) ? ok : fail)(
+  /* 11-28：整屏浮层那份画布实例删掉了（用户：两个画布统一进侧栏），入口回调搬到了右栏实例 ——
+     判据改读 `03-review-panel.tsx`（⛔ 语义不变：宿主必须把「设置 → 插件」接到画布上）。 */
+  (/onOpenPluginSettings/.test(canvas) && /setSettingsPage\("plugins"\)/.test(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "03-review-panel.tsx"), "utf8")) ? ok : fail)(
     "【192】宿主把「设置 → 插件」页面接到了画布（onOpenPluginSettings → plugins 页）"
   );
 
@@ -1077,9 +1079,10 @@ export async function run() {
     );
     /* 11-26 用户令：「把画布里面的卡片连线功能恢复吧」——上一轮为了「纯画布」把内嵌形态的连线整批关了
        （nodesConnectable=false + Handle 不渲染），可连线就是「这份输入喂给下一步」的唯一表达，
-       workflow_read 也靠它排执行顺序 ⇒ 不许再按形态关。 */
-    (/\n\s+nodesConnectable\n/.test(canvasSrc220) && !/nodesConnectable=\{variant !== "inline"\}/.test(canvasSrc220) ? ok : fail)(
-      "【220】内嵌（右栏）画布也能连线：nodesConnectable 无条件开，⛔ 不许再按形态关掉"
+       workflow_read 也靠它排执行顺序 ⇒ 不许再按**形态**关。
+       11-28 补：开的是**密度**不是形态 —— 完整态可连，精简态（侧栏窄/未放大）只读。 */
+    (/nodesConnectable=\{!compact\}/.test(canvasSrc220) && !/nodesConnectable=\{variant !== "inline"\}/.test(canvasSrc220) ? ok : fail)(
+      "【220】完整态可连线、精简态只读（nodesConnectable={!compact}），⛔ 不许按形态关掉"
     );
     /* 11-26 实测：回填监听原来写成 `window.addEventListener("message")` + `data.channel==="harness:event"`，
        但**没有任何地方往 window.postMessage 转发 harness 事件**（preload 走 ipcRenderer）

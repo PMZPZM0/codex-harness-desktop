@@ -46,7 +46,9 @@ const ok = (condition, message) => {
 const side = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
 
 ok(!/moreHubOpen/.test(side) && !side.includes("<span>更多</span>"), "「更多」入口与弹窗已删除（用户 10-21 要求）");
-ok(/setDramaCanvasOpen\(true\)/.test(side), "AI 画布工作流仍可从侧栏进入（已并入前端 UI · 组件库入口）");
+/* 11-28 用户令：「两个画布不再保留独立界面，全部统一在侧边栏中展示」——
+   侧栏入口的落点从「整屏浮层」改成「开右栏 + 切到画布页」；判据同步成新写法，⛔ 别删这条断言。 */
+ok(/openPanelTab\("canvas",\s*"画布"\)|setDramaCanvasOpen\(true\)/.test(side), "AI 画布工作流仍可从侧栏进入（11-28 起落点 = 右栏「画布」页）");
 ok(/setUiSketchOpen\(true\)/.test(side), "前端开发画布仍可从侧栏进入（同一个能力入口的教程/直达按钮）");
 ok(/setSettingsPage\("knowledge-base"\)/.test(side), "知识库仍可从侧栏进入（人格市场 / 记忆中心 / 知识库入口）");
 /* 10-24 并行线把入口抽成了 function-menu 板块：文案与行样式跟着搬走，判据允许两处之一，

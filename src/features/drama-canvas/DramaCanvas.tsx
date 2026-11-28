@@ -140,6 +140,11 @@ export interface DramaCanvasProps {
    *  ⛔ 只改外壳（定位/尺寸/圆角），画布本体（React Flow、动作、落盘）完全同一条代码路径，
    *     否则两条路径会各自长 bug。 */
   variant?: "overlay" | "inline";
+  /** 精简态（11-28 用户令：侧栏「收起或较小时仅展示精简状态」）。
+   *  · true：只读展示 —— 关掉节点拖拽/连线/框选，卡面动作条与检查器由 CSS 隐藏；
+   *  · 不传/false：完整画布，行为与原来一致。
+   *  ⛔ 不靠在这里挂第二份渲染树（那是状态分裂的老坑），只关交互开关。 */
+  compact?: boolean;
 }
 
 interface Notice { id: number; text: string; tone: "ok" | "err" | ""; undo?: () => void }
@@ -160,7 +165,7 @@ function detectFlowType(nodes: Array<{ data?: any; kind?: string }>): "drama" | 
 }
 
 /** AI 画布主组件：节点/连线编辑、视口取景、面板与浮层宿主。 */
-export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings, variant = "overlay" }: DramaCanvasProps) {
+export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings, variant = "overlay", compact = false }: DramaCanvasProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const rfRef = useRef<ReactFlowInstance<DramaRFNode, DramaRFEdge> | null>(null);
@@ -687,7 +692,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   }, [actions, board, clipCount, copyNodes, enhanceImage, fitAll, menu, pasteNodes, pushNotice, story]);
 
   return (
-    <div className={`drama-canvas-backdrop${variant === "inline" ? " is-inline" : ""}`} role="dialog" aria-modal={variant === "overlay" ? true : undefined} aria-label="AI 画布工作流">
+    <div className={`drama-canvas-backdrop${variant === "inline" ? " is-inline" : ""}`} data-density={compact ? "compact" : "full"} role="dialog" aria-modal={variant === "overlay" ? true : undefined} aria-label="AI 画布工作流">
       <section className="drama-canvas-shell" ref={shellRef} tabIndex={-1} onKeyDown={onKeyDown}>
         {/* ⛔ Provider 必须包住**整块**：检查器与时间线同样要读动作上下文。
             只包 ReactFlow 的话，一打开就 "useDramaActions 必须在 Provider 内使用" ——
@@ -971,6 +976,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 edges={board.edges}
                 nodeTypes={nodeTypes}
                 edgeTypes={EDGE_TYPES}
+                /* 精简态（侧栏窄）：只读展示 —— 关掉拖拽/连线/选择，避免窄栏里误触把卡片拖乱 */
+                nodesDraggable={!compact}
+                nodesConnectable={!compact}
+                elementsSelectable={!compact}
                 onNodesChange={board.onNodesChange}
                 onEdgesChange={board.onEdgesChange}
                 onConnect={board.onConnect}
@@ -989,10 +998,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 multiSelectionKeyCode={["Meta", "Control"]}
                 selectionKeyCode="Shift"
                 panActivationKeyCode="Space"
-                /* ⛔ 11-26 用户令「把画布里面的卡片连线功能恢复吧」：之前内嵌形态把连线整套关掉
-                   （nodesConnectable=false + Handle 不渲染），但连线就是「这份输入喂给下一步」的唯一表达，
-                   workflow_read 也靠它排执行顺序 ⇒ 两种形态一律可连线。 */
-                nodesConnectable
+                /* ⛔ 11-26 用户令「把画布里面的卡片连线功能恢复吧」：连线就是「这份输入喂给下一步」的
+                   唯一表达，workflow_read 也靠它排执行顺序 ⇒ **完整态一律可连线**。
+                   11-28 补：**精简态**（侧栏窄 / 未放大）只读 —— 连线与拖拽都关（见上面的 props），
+                   否则窄栏里一点就把卡片拖乱。 */
                 connectionRadius={28}
                 onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); /* 记住右键的**画布坐标**：新建的卡片落在指针处，不是默认网格位 */ const at = rfRef.current?.screenToFlowPosition({ x: evt.clientX, y: evt.clientY }) ?? { x: 120, y: 120 }; setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null, at }); }}
                 onNodeContextMenu={(e, node) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }}

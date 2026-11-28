@@ -174,6 +174,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   const {
     browserOpenReq,
     diff,
+    panelWidth,
     highlightedFilePath,
     loadTree,
     setHighlightedFilePath,
@@ -372,7 +373,12 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
            ③ 藏主区（display:none / visibility:hidden）⇒ 面板塌成 21px / 全白（10-25 老坑）。
          ⇒ 绝对定位让网格一列都不动：主区在底下原样待着（滚动位置与草稿都不丢），
             用不透明背景整块盖住。缩回来 = 属性撤掉，回到第 4 列。 */
-      data-max={panelMax ? "1" : undefined}>
+      /* ⛔ 11-28 用户令：「侧边栏收起或较小时，仅展示精简状态；展开时才完整展示画布」。
+         密度由**实时宽度**决定（放大态恒 full），⛔ 不看"上次拖到多少"——
+         样式侧只做减法（`.context-panel[data-density="compact"]` 隐藏次要区），
+         交互侧把 `compact` 传给画布关掉拖拽/连线（见下面的 DramaCanvas）。 */
+      data-max={panelMax ? "1" : undefined}
+      data-density={panelMax || panelWidth >= 480 ? "full" : "compact"}>
             <div className="panel-tabstrip">
               <div className="tabstrip-tabs" role="tablist" aria-label="右侧面板" ref={stripRef}>
                 {/* 11-26 用户令：右栏做成浏览器式标签条 —— 每个标签带 ×，右侧「+」开新标签页，
@@ -466,9 +472,33 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
               {rightTab === "canvas" ? (
                 <DramaCanvas
                   variant="inline"
+                  /* 精简态（侧栏窄 / 未放大）：画布只读展示，⛔ 不允许拖卡片/连线（窄栏里误触代价太大） */
+                  compact={!panelMax && panelWidth < 480}
                   onClose={() => setRightTab("monitor")}
                   workspace={workspace}
                   threads={threads}
+                  /* ⛔ 11-28 用户令：「两个画布不再保留独立界面，全部统一在侧边栏中展示」。
+                     AppView 那份 overlay 实例要删掉，所以它独有的三个闭环必须搬到这里，
+                     否则画布上的「去配置生图/视频」「让 Agent 做」「召唤专家团」会变成
+                     「这个入口没接上 Agent（宿主未提供）」。 */
+                  onOpenPluginSettings={() => {
+                    app.paletteHandlersRef.current?.setSettingsPage("plugins");
+                    app.paletteHandlersRef.current?.setSettingsOpen(true);
+                  }}
+                  onAskAgent={(text, threadId) => void (async () => {
+                    try {
+                      if (threadId) await app.openThread(threadId);
+                      else app.paletteHandlersRef.current?.startNewThread();
+                      /* 与 overlay 那条通路同口径：先塞 pending 文本再发送（⛔ 不靠 setPrompt 滞后） */
+                      await app.sendPrefilled({ text });
+                    } catch {
+                      app.setPrompt?.(text); /* 切会话失败兜底：塞进输入框由用户手动发 */
+                    }
+                  })()}
+                  onSummonTeam={(teamId, text) => {
+                    window.codex.startTeamSession({ teamId, task: text, cwd: workspace || undefined })
+                      .catch((error: unknown) => setNotice(`召唤专家失败：${String((error as Error)?.message ?? error).slice(0, 120)}`));
+                  }}
                 />
               ) : null}
             </div>

@@ -678,8 +678,7 @@ export interface Bag {
   setUiFont: React.Dispatch<React.SetStateAction<string>>;
   settingsOpen: boolean;
   setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  dramaCanvasOpen: boolean;
-  setDramaCanvasOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  /* ⛔ 11-28：`dramaCanvasOpen` 已删 —— 画布不再有独立整屏浮层，只在右栏「画布」页渲染。 */
   uiSketchOpen: boolean;
   setUiSketchOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pptokenCardOff: boolean;

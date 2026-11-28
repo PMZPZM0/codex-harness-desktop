@@ -173,7 +173,6 @@ import { RightFileBridge } from "./AppView/RightFileBridge";
 import { FileContextMenuHost } from "../shared/FileContextMenuHost";
 import { subscribeCanvasImage } from "../../lib/canvas-open.mjs";
 import { RemoteAskBridge } from "./RemoteAskBridge";
-import { DramaCanvas } from "../drama-canvas";
 import { CanvasActivityBridge } from "../drama-canvas/CanvasActivityBridge";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { UiSketchModal } from "../ui-sketch";
@@ -323,7 +322,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     deleteMemoryGroup, deleteMemoryRecord, deleteQueued, deleteSchedule,
     deleteSubAgent, deleteThreadsByCwd, desktopAuto, devRuntimes,
     dictationBaseRef, diff, dismissEnhanceHint, dismissNotice,
-    doneExpanded, downloadSource, dramaCanvasOpen, duplicateSshEntry, earlierLoadingId,
+    doneExpanded, downloadSource, duplicateSshEntry, earlierLoadingId,
     editSchedule, editingProvider, effort, emptySshDraft,
     emptySshJump, engineCheck, engineUpdateLog, engineUpdatePercent,
     engineUpdateResult, engineUpdateStageText, engineUpdating, engineVersion,
@@ -411,7 +410,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setConnectorDraft, setConnectorEditorOpen, setConnectorEnabled, setConnectorMenuOpen,
     setConnectorOAuth, setConnectorSearch, setConnectorSecret, setConnectorTemplateModal,
     setConnectorTemplateValues, setConnectorsManageOnly, setContextOpen, setCtxMenuOpen, setCustomDraft,
-    setDelegatedPopupId, setDoneExpanded, setDramaCanvasOpen, setEditingProvider,
+    setDelegatedPopupId, setDoneExpanded, setEditingProvider,
     setExpertQuery, setExpertTeamDraft, setExpertTeamEditorOpen, setFileDraft,
     setFileEditing, setFilePreview, setGoalText, setGoalsDocked,
     setGoalsExpanded, setGoalsOpen, setHelpKey, setHookEnabled,
@@ -890,39 +889,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           openThread={() => { /* 探针不跳会话 */ }}
         />
       )}
-      {/* AI 短剧无限画布（09-27）：与「专家团办公室预览」同一个档位的整屏浮层 —— 画布需要
-          一大片连续空间，塞进右栏或中央主区分栏都会被挤成缩略图。工作区传进去是因为
-          分镜表副本与素材要落到 <workspace>/.drama-canvas/ 下（引擎读的就是那份）。 */}
-      {dramaCanvasOpen && (
-        <DramaCanvas
-          onClose={() => setDramaCanvasOpen(false)}
-          workspace={workspace}
-          /* 画布上「去配置生图/视频」→ 直接开「设置 → 插件」页（生图插件卡 + 视频接口卡都在这页）。
-             ⛔ 不关画布：配完关掉设置就回到画布，接着生成。 */
-          onOpenPluginSettings={() => { setSettingsPage("plugins"); setSettingsOpen(true); }}
-          threads={threads}
-          onAskAgent={(text, threadId) => {
-            /* 闭环：画布选好目标会话 → 这里切过去（或新建）→ 用 pendingCommandTextRef 塞任务
-               （⛔ 它是 ref，不受 setPrompt 状态滞后影响，send 首选消费它）→ 直接发送。 */
-            setDramaCanvasOpen(false);
-            void (async () => {
-              try {
-                if (threadId) await openThread(threadId);
-                else paletteHandlersRef.current?.startNewThread();
-                pendingCommandTextRef.current = text;
-                await send();
-              } catch { setPrompt(text); /* 切会话失败兜底：塞进输入框由用户手动发 */ }
-            })();
-          }}
-          onSummonTeam={(teamId, text) => {
-            /* 召唤内置专家团（视频制作 / 生图）：teams:start-session 会新建团队会话并跑 task。 */
-            setDramaCanvasOpen(false);
-            window.codex.startTeamSession({ teamId, task: text, cwd: workspace || undefined }).catch((error: any) => {
-              setNotice(`召唤专家失败：${String(error?.message ?? error).slice(0, 120)}`);
-            });
-          }}
-        />
-      )}
+      {/* ⛔ 11-28 用户令：两个画布不再保留独立界面，全部统一在侧边栏中展示 ——
+          这里原来还有一份整屏 overlay 实例（开关 dramaCanvasOpen）；已删，画布只在右栏「画布」页
+          渲染（03-review-panel 的 variant="inline"），它的三个闭环回调也一并搬了过去。 */}
       {/* 前端开发（10-05，嵌 m3e-canvas；两轮改名：界面草图 → 手机前端UI → 前端开发）：与画布同档的整屏浮层，从侧栏「···更多」开。
           「交给 Codex 实现」走的是画布那条已验证的通路 —— 关浮层 → 塞 pendingCommandTextRef
           （⛔ 它是 ref，不受 setPrompt 状态滞后影响）→ 直接发送；发送失败兜底成填输入框。 */}

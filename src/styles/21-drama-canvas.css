@@ -2016,3 +2016,22 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   border: 1.5px solid var(--accent);
   background: var(--panel);
 }
+
+/* ── 精简态（11-28 用户令）────────────────────────────────────────────────
+   「当侧边栏收起或较小时，仅展示精简状态，不铺满全部内容；当侧边栏展开时，才完整展示
+     画布的全部界面与功能」。
+   ⛔ 只做**减法**：完整态一个像素都不改（否则两态又会各长一套）。
+   密度由宿主写 `data-density`（右栏宽度 < 480 且未放大 = compact），组件本身不判断宽度。 */
+.drama-canvas-backdrop[data-density="compact"] .drama-canvas-card-actions,
+.drama-canvas-backdrop[data-density="compact"] .drama-canvas-card-ref,
+.drama-canvas-backdrop[data-density="compact"] .drama-canvas-timeline,
+.drama-canvas-backdrop[data-density="compact"] .drama-canvas-nodes-strip,
+.drama-canvas-backdrop[data-density="compact"] .react-flow__handle,
+.drama-canvas-backdrop[data-density="compact"] .react-flow__resize-control { display: none !important; }
+/* 精简态卡片压扁：只留标题 + 一行摘要 + 缩略图；卡片可以点开看（进全屏态） */
+.drama-canvas-backdrop[data-density="compact"] .drama-canvas-card-prompt {
+  min-height: 0 !important;
+  max-height: 46px;
+  overflow: hidden;
+}
+.drama-canvas-backdrop[data-density="compact"] .drama-canvas-card-head { padding: 6px 8px; }
