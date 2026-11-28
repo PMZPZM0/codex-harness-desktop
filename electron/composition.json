@@ -854,6 +854,13 @@
       "file": "features/artifact-archive-ipc.ts",
       "export": "artifactArchiveFeature",
       "config": null
+    },
+    {
+      "id": "orencut",
+      "enabled": true,
+      "file": "features/orencut/ipc.ts",
+      "export": "orencutFeature",
+      "config": null
     }
   ]
 }

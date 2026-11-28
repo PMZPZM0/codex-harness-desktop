@@ -162,6 +162,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
    静态 import 会把它塞进主包，首屏白等一份没人看的目录。 */
 const ComponentLibraryPage = lazy(() => import("../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 /* ⛔ 11-28：前端开发（iframe 画布 + 桥）同样懒加载 —— 不进主包，点开才拉。 */
+const OrenCutPage = lazy(() => import("../../orencut").then((m) => ({ default: m.OrenCutPage })));
 const MediaDeskPage = lazy(() => import("../../media-desk").then((m) => ({ default: m.MediaDeskPage })));
 const MediaPanel = lazy(() => import("../../media").then((m) => ({ default: m.MediaPanel })));
 const OpenfilmPanel = lazy(() => import("../../openfilm").then((m) => ({ default: m.OpenfilmPanel })));
@@ -197,6 +198,8 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
      它本来就是 iframe 页面（外部本地服务，见 media-desk/index.tsx），直接搬进来即可；
      功能入口里的「独立窗口」入口保留不动。 */
   { key: "desk", name: "自媒体", Icon: Megaphone, ic: "ic-accent", title: "自媒体工作台：灵感 → 成稿 → 排期 → 复盘（同一份本地数据，独立窗口仍可用）" },
+  /* ⛔ 11-28 用户令：「orencut…做成按需下载，然后看看能不能接到侧边栏」。 */
+  { key: "orencut", name: "动效", Icon: Sparkles, ic: "ic-purple", title: "OrenCut 动效工坊：33 个可编辑的静音动效组件（按需下载，装好后可直接预览 / 导出 MP4）" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
 
@@ -657,6 +660,16 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             {/* 3D 预览页（11-28 用户令「3D 建模展示接到侧边栏新标签页」）：
                 模型调 preview_3d / openModelViewer 时桥会写 store 并请宿主切到本页；
                 没有目标时给引导文案（见 ModelViewerPanel 空态）。 */}
+            {/* 动效工坊页（11-28 用户令「orencut 做成按需下载，看看能不能接到侧边栏」）：
+                未下载时是本页的状态卡（下载 / 安装进度），装好后换成 Studio iframe（orencut:// 协议）。
+                ⛔ Studio 本体不自己实现 —— 那是上游 OrenFang/orencut 的界面。 */}
+            <div className={`panel-page ${rightTab === "orencut" ? "" : "hidden"}`}>
+              {rightTab === "orencut" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载动效工坊…</div>}>
+                  <OrenCutPage />
+                </Suspense>
+              ) : null}
+            </div>
             {/* 自媒体工作台页（11-28 用户令「把自媒体工作台也接到右侧边栏里面」）：
                 它本身是 iframe 页面（本地服务 + 版本检查/更新都在页内），搬进来即可。
                 ⛔ 数据与「功能入口 → 独立窗口」共用同一份，两边可以同时开。 */}

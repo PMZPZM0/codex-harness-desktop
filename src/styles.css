@@ -104,4 +104,5 @@
 @import "./styles/67-icon-neutral" layer(components);
 /* 11-20 设置 → 发现 → GitHub 热门榜单（日/周/月 × 10 页） */
 @import "./styles/68-github-trending" layer(components);
+@import "./styles/69-orencut" layer(components);
 @import "./styles/59-motion" layer(components);

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（123 个能力域 / 725 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（124 个能力域 / 728 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -513,6 +513,10 @@ RPA 配方（录制好的桌面自动化流程）
 ### media-desk（6 通道）
 自媒体工作台（工作伙伴 → 自媒体工作台，独立窗口；11-11 从设置页挪出）：灵感墙（文字/链接，链接抓标题摘要封面）→ 一键成稿（计划、口播脚本、封面与黑白分镜）→ 本地排期 → 数据记录 → 写作风格。文本模型用工作台设置或应用当前供应商；生图走用户配置的 OpenAI 兼容 /images/generations。⛔ 排期只是本地计划、不自动发布；数据是手动记录，不接平台 API
 通道：media-desk:endpoint, media-desk:popout, media-desk:version, media-desk:check-update, media-desk:update, media-desk:handoff
+
+### orencut（3 通道）
+OrenCut 动效组件库（右侧栏「动效」页，按需下载）：OrenFang/orencut，MIT，33 个可编辑的静音 Remotion 动效组件。下载仓库 zip 解压到 userData/orencut，Studio 用 orencut:// 协议内嵌（纯静态站，不需要 Docker/Bun）。⛔ 组件导出是浏览器本地编码 MP4，不经云端；装完还会带一份 SKILL.md 可供 Codex 直接调用
+通道：orencut:status, orencut:install, orencut:remove
 
 ### artifact（1 通道）
 产物归档（11-11）：设置 → 数据 →「产物归档」按 artifacts/YYYYMMDD-任务短名/ 列出每次任务的成品，可一键在资源管理器打开目录。只读清单；归档动作由模型经 harness_tools 的 artifact_archive 完成（只复制不删原文件、同名自动 -r2 迭代、写 manifest 与总台账），历史散落文件用 scripts/artifacts-migrate.mjs 归位（默认 dry-run）

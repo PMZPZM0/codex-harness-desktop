@@ -1,0 +1,33 @@
+/* 69-orencut.css —— OrenCut 动效工坊（11-28，按需下载的外部静态站）
+   页面 = 顶部状态条 + Studio iframe。⛔ 不自己画 Studio 界面（那是上游的）。 */
+
+.orencut-page { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
+
+.orencut-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.orencut-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted); }
+.orencut-state strong { color: var(--text); font-weight: 600; }
+.orencut-state.is-error { color: var(--danger, #c0392b); }
+
+.orencut-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--panel); }
+
+/* 空态（未下载）—— 给一件能做的事，别只放一句"未安装" */
+.orencut-empty {
+  margin: auto;
+  padding: 20px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+  color: var(--muted);
+}
+.orencut-empty strong { font-size: 13px; color: var(--text); font-weight: 600; }
+.orencut-empty p { margin: 0; font-size: 11.5px; line-height: 1.7; }
+.orencut-empty .orencut-meta { font-size: 11px; opacity: 0.8; }

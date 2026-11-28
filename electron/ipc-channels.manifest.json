@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-11-24T19:51:49.076Z",
-  "count": 725,
+  "count": 728,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -7219,6 +7219,36 @@
       "invokeArgs": "",
       "cast": null,
       "note": "扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事"
+    },
+    {
+      "name": "orencutStatus",
+      "channel": "orencut:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; installedAt: string; files: number; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-28 OrenCut 安装现状（按需下载：是否已下载 / 下载时间 / 文件数）"
+    },
+    {
+      "name": "orencutInstall",
+      "channel": "orencut:install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; installedAt: string; files: number; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-28 下载 OrenFang/orencut 仓库 zip 并解压到 userData/orencut（覆盖安装）"
+    },
+    {
+      "name": "orencutRemove",
+      "channel": "orencut:remove",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; installedAt: string; files: number; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-28 删除 userData/orencut（卸载）"
     }
   ]
 }

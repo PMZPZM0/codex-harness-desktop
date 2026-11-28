@@ -179,7 +179,7 @@ protocol.registerSchemesAsPrivileged([
   /* 11-24：PPT 预览页里的「用其他应用打开」（file:// 页面调不到 IPC）。 */
   { scheme: "harness-open", privileges: { secure: true, supportFetchAPI: true } },
   { scheme: "pet", privileges: { secure: true, supportFetchAPI: true } },
-  { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }, { scheme: "orencut", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
 app.setName("Codex Harness Desktop");
@@ -491,6 +491,9 @@ function queuePreviewText(input: any[]) {
 /* 手机发来的文字/图片 → 引擎 input（发送与排队共用同一条闸）。
    ⛔ 图片路径来自手机（外部输入）：只认 /api/upload 刚落进 remote-uploads 的文件，
       别的路径（..、任意盘符）一律丢弃 —— 这是「手机只能读自己刚上传的图」的唯一闸。 */
+/* 手机远控不允许读的敏感路径段：点文件、私钥、凭据/密钥目录。 */
+const SENSITIVE_REMOTE_SEGMENT = /^(\.|id_(rsa|dsa|ecdsa|ed25519)|credentials?|secrets?|tokens?|cookies?)(\.|$)/i;
+
 function mobileInputOf(text: string, images: string[] = [], mentions: { kind: string; name: string; key?: string }[] = []) {
   const uploadsRoot = remote.uploadsDir();
   const allowed = (uploadsRoot ? images : []).filter((candidate) => {
@@ -779,7 +782,8 @@ const remote = new RemoteControlService({
     throw new Error("未知的询问类型");
   },
   listFiles: async (threadId) => {
-    const root = threadCwd.get(threadId) || process.cwd();
+    const root = threadCwd.get(threadId);
+    if (!root) return [];
     const skip = new Set(["node_modules", ".git", "dist", "dist-electron", "build", "release", ".workbuddy", "out"]);
     const files: { path: string; dir: boolean; size: number }[] = [];
     const walk = (dir: string, prefix: string, depth: number) => {
@@ -788,7 +792,7 @@ const remote = new RemoteControlService({
       try { entries = readdirSync(dir, { withFileTypes: true }) as any[]; } catch { return; }
       for (const entry of entries) {
         if (files.length >= 300) return;
-        if (entry.name.startsWith(".") || skip.has(entry.name)) continue;
+        if (entry.name.startsWith(".") || skip.has(entry.name) || SENSITIVE_REMOTE_SEGMENT.test(entry.name)) continue;
         const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
         if (entry.isDirectory()) {
           files.push({ path: rel, dir: true, size: 0 });
@@ -804,7 +808,12 @@ const remote = new RemoteControlService({
     return files;
   },
   readFile: async (threadId, relPath) => {
-    const root = threadCwd.get(threadId) || process.cwd();
+    const root = threadCwd.get(threadId);
+    if (!root) return { kind: "other", error: "会话未绑定工作区，请先在电脑端打开该会话" };
+    const segments = String(relPath ?? "").split(/[\\/]+/).filter(Boolean);
+    if (segments.some((segment) => SENSITIVE_REMOTE_SEGMENT.test(segment))) {
+      return { kind: "other", error: "这个文件不允许远程预览" };
+    }
     const target = safeJoin(root, relPath);
     if (!target) return { kind: "other", error: "路径不合法" };
     try {
@@ -836,7 +845,7 @@ const remote = new RemoteControlService({
     return () => { const index = remoteEventForwarders.indexOf(listener); if (index >= 0) remoteEventForwarders.splice(index, 1); };
   },
   // 手机安装包资产名：按产品品牌区分（GitHub Release：mobile-remote-v0.1.0）
-  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.17.apk" : "CodexRemote-0.1.17.apk",
+  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.18.apk" : "CodexRemote-0.1.18.apk",
   /* 手机首页的品牌面（⛔ 各仓自有：桌面版 = Codex Harness；PPcode 仓的 main.ts 写 PPcode） */
   brandName: app.getName().toLowerCase().includes("ppcode") ? "PPcode" : "Codex Harness",
   brandIcon: remoteBrandIcon,

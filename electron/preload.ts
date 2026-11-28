@@ -1214,6 +1214,12 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsRead: (input: { path: string }) => __ipc("work-logs:read", 1, [input]),
   /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
+  /* 11-28 OrenCut 安装现状（按需下载：是否已下载 / 下载时间 / 文件数） */
+  orencutStatus: () => __ipc("orencut:status", 0, []),
+  /* 11-28 下载 OrenFang/orencut 仓库 zip 并解压到 userData/orencut（覆盖安装） */
+  orencutInstall: () => __ipc("orencut:install", 0, []),
+  /* 11-28 删除 userData/orencut（卸载） */
+  orencutRemove: () => __ipc("orencut:remove", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

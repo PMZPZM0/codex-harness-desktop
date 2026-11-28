@@ -36,6 +36,7 @@ import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setT
 import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";
 
 import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
+import { registerOrencutProtocol } from "../orencut-protocol";
 import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureEgoBrowserSkill, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
@@ -805,10 +806,8 @@ export async function bootApp() {
   });
 
   /* `sketch://`：随包的**前端开发画布静态站**（10-05 加，m3e-canvas 的 next 静态导出）。
-     根恒等于打包内 dist/sketch、扩展名走白名单 ⇒ 能读的文件集合就是"随包只读资源"那一圈，
-     面没有扩大（三条为什么不另做他选的论证写在 electron/sketch-protocol.ts 头部）。 */
-  protocol.handle(SKETCH_SCHEME, (request) => sketchResponse(request.url));
-
+     根恒等于打包内 dist/sketch、扩展名白名单 ⇒ 能读的集合就是"随包只读资源"那一圈（论证见 sketch-protocol.ts 头部）。 */
+  protocol.handle(SKETCH_SCHEME, (request) => sketchResponse(request.url)); registerOrencutProtocol(protocol); /* 11-28 按需下载的 OrenCut Studio */
   // 语音通话：授予麦克风权限。此前全项目没有任何权限处理，getUserMedia 会被直接拒绝。
   // 只放行 media，其余权限一律沿用 Electron 默认（不放大授权面）。
   // macOS 上还需要 Info.plist 的 NSMicrophoneUsageDescription（见 build/entitlements 与文档），
