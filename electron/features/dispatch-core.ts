@@ -589,6 +589,22 @@ function dispatchMcpTools(): unknown[] {
         required: ["mode"],
       },
     },
+    /* ── OrenCut 动效工坊（11-28）：33 个可编辑的静音 Remotion 动效组件（OrenFang/orencut，MIT）──
+       与右栏「动效」页共用同一份安装目录；组件目录直接读上游 catalog.json（⛔ 不另存一份）。 */
+    {
+      name: "orencut",
+      description: "OrenCut 动效工坊（右栏「动效」页，按需下载）：33 个可编辑的静音 Remotion 动效组件（缩略图墙/章节落版/滚数环形图/素材缩窗/列表引文 五类，960x540 或竖屏，各 4~7 秒）。action=status 看是否已安装；list 列组件（可按 group 分类或 keyword 关键词过滤，返回编号/标题/时长/可改字段）；open 在右栏打开指定组件（id 可省，省则开 Studio 首页，用户当场可见）；install 下载安装（约 57 MB，纯静态站，装完离线可用）。⛔ 组件是静音画面模板：导出 MP4 由浏览器本地编码，需要用户在 Studio 里点「导出」，工具不能代为导出；⛔ 不改用户已导入的素材。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["status", "list", "open", "install"], description: "要执行的动作" },
+          id: { type: "string", description: "组件编号（如 27；list 里给的编号，两位也可）" },
+          group: { type: "string", description: "list 时按分类过滤（如 滚数、章节、缩略图墙、素材缩窗、列表引文）" },
+          keyword: { type: "string", description: "list 时按关键词过滤（匹配标题与 keywords）" },
+        },
+        required: ["action"],
+      },
+    },
     /* ── 自媒体工作台（11-09）：一个 action 网关，覆盖「灵感 → 成稿 → 排期 → 数据」全流程 ──
        与「工作伙伴 → 自媒体工作台」（独立窗口）共用同一份数据（userData/media-desk/state.json）。 */
     {

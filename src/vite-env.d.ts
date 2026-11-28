@@ -1718,6 +1718,9 @@ interface Window {
     onVoiceCallState(listener: (state: { state: string; active: boolean }) => void): () => void;
 
 
+    /** OrenCut 定位推送（orencut 域，11-28）：手写桥（非 gen 段），模型 orencut(action=open) 触发 */
+    onOrencutOpen(listener: (event: { id: string }) => void): () => void;
+
     /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */
     onModelViewerOpen(listener: (event: { path: string; title: string }) => void): () => void;
 

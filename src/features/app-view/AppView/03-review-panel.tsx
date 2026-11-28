@@ -260,6 +260,8 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
 
   /* 图片页（11-26）：只读查看 —— 记住当前那张图；⛔ 不落盘、不进 bag，重开面板即清空。 */
   const [imagePath, setImagePath] = useState("");
+  /* 11-28：模型调 orencut(action=open) 时带过来的组件 id（右栏「动效」页按它定位）。 */
+  const [orencutTarget, setOrencutTarget] = useState("");
   /* 11-27 用户实测「点图片芯片打开的不是图片标签页」：桥（RightFileBridge）按扩展名分流，
      图片走这里 —— 挂载时取一次排队的，活着时订阅后续请求。 */
   useEffect(() => {
@@ -378,6 +380,16 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   }, [workspaceFile, workspace]);
   /* 10-31 右侧抽屉：关闭时**延迟卸载** 220ms（= --dur-panel），让 [data-state="closed"]
      的 translate 退场真的播出来。⛔ 立刻卸载 = 元素没了，CSS 过渡无从触发 ⇒ 关闭仍是闪现。 */
+  /* ⛔ 11-28：工具 orencut(action=open) → 主进程 sendToWindow("orencut:open") → 这里切页 + 传 id。
+     订阅放在面板层而不是页面里：页面可能还没挂载（右栏关着 / 停在别的页）。 */
+  useEffect(() => {
+    const off = window.codex.onOrencutOpen?.((event: { id?: string }) => {
+      setOrencutTarget(String(event?.id ?? ""));
+      app.openPanelTab("orencut", "动效工坊");
+    });
+    return () => { off?.(); };
+  }, [app]);
+
   const [mounted, setMounted] = useState(rightOpen);
   /* ⛔ 11-28 用户（截图）：「标签页没有左右滚动功能，展示不全，也不触发左右滚动」——
      `.tabstrip-tabs` 早就有 `overflow-x: auto`，但它只响应**横向**滚轮（触摸板横滑 / Shift+滚轮）；
@@ -666,7 +678,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             <div className={`panel-page ${rightTab === "orencut" ? "" : "hidden"}`}>
               {rightTab === "orencut" ? (
                 <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载动效工坊…</div>}>
-                  <OrenCutPage />
+                  <OrenCutPage targetId={orencutTarget} />
                 </Suspense>
               ) : null}
             </div>

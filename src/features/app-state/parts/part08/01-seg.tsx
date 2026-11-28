@@ -655,6 +655,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "moekoe_status / moekoe_search / moekoe_play / moekoe_lyric / moekoe_qualities / moekoe_install（MoeKoe 音乐：状态 / 搜歌（可按专辑/歌手/歌单/MV） / 内播 / 歌词 / 音质权限 / 国内镜像安装）；"
           + "wallpaper_set（壁纸：aurora/ribbon/halo/custom 四类，Codex 可自助做图设壁纸）；"
           + "media_desk（自媒体工作台：灵感 → 一条成稿 → 本地排期 → 数据复盘 → 写作风格；不确定先 name=\"media_desk\" args={action:\"state\"} 看现状）；"
+          + "orencut（OrenCut 动效工坊：33 个可编辑的静音 Remotion 动效组件；status 看装没装 / list 列组件（可按分类或关键词）/ open 在右栏「动效」页打开指定组件 / install 按需下载约 57 MB；⛔ 导出 MP4 要用户在 Studio 里点，工具不代导）；"
           + "memory_recall / memory_write / memory_forget（项目记忆：查 / 记 / 作废；下次会话会自动看到，⛔ 别手写 md 文件）；"
           + "artifact_archive / artifact_list（产物归档：把成品存进 artifacts/日期-任务短名/ 并查清单；⛔ 只复制不删原文件）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"

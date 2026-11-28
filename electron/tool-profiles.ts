@@ -47,6 +47,8 @@ export const CORE_TOOLS: readonly string[] = [
      ⛔ 不能只挂在岗位增量里（那样只有产品/设计专家会话看得见，普通会话既没 schema、
      网关也调不通：它的执行在渲染层，主进程能力表里没有这个名）。 */
   "slide_show",
+  /* 11-28：OrenCut 动效工坊（按需下载；组件目录读上游 catalog.json） */
+  "orencut",
 ];
 
 /** 已知的宿主工具名目录（只裁这些；⛔ MCP 连接器工具名带 `__` 前缀，一律保留）。
@@ -62,6 +64,8 @@ export const HOST_TOOL_CATALOG: readonly string[] = [
   "openfilm_status", "openfilm_make_film", "openfilm_check", "openfilm_render", "openfilm_get", "openfilm_skill",
   /* 11-24：幻灯片推到侧栏实时预览（模型只给内容，版式由宿主渲染）。 */
   "slide_show",
+  /* 11-28：OrenCut 动效工坊（按需下载；组件目录读上游 catalog.json） */
+  "orencut",
 ];
 
 /** 岗位增量：按专家 profession / 团队 category 里的关键词匹配，命中即并入。 */

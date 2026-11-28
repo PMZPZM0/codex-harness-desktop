@@ -1005,8 +1005,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     sendToWindow("wallpaper:apply", { mode, image });
     return { ok: true, output: `壁纸已切换（mode=${mode}${image ? `，image=${image}` : ""}），用户立即可见。` };
   }
-  /* ── 自媒体工作台（11-09）：逻辑在 media-desk/tool.ts（与界面同一份数据/流程）。 */
-  if (name === "media_desk") {
+  /* 11-28 OrenCut 动效工坊（features/orencut/tool.ts，与右栏「动效」页同一安装目录）；下面接自媒体工作台（11-09） */
+  if (name === "orencut") { const { runOrencutTool } = await import("./orencut/tool"); return runOrencutTool(args); } if (name === "media_desk") {
     const { runMediaDeskTool } = await import("./media-desk/tool");
     return runMediaDeskTool(args);
   }

@@ -14,8 +14,9 @@ type Status = { installed: boolean; installedAt: string; files: number; error: s
 
 const STUDIO_URL = "orencut://app/studio.html";
 
-/** 右栏「动效」页：状态条（下载/重装/卸载）+ Studio iframe；未装时给引导与体积说明。 */
-export function OrenCutPage() {
+/** 右栏「动效」页：状态条（下载/重装/卸载）+ Studio iframe；未装时给引导与体积说明。
+ *  targetId 来自模型调 orencut(action=open) 的推送（主进程 orencut:open → 本页 iframe 带 ?id=）。 */
+export function OrenCutPage({ targetId = "" }: { targetId?: string }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -77,7 +78,12 @@ export function OrenCutPage() {
         )}
       </div>
       {installed ? (
-        <iframe className="orencut-frame" src={STUDIO_URL} title="OrenCut Studio" />
+        <iframe
+          className="orencut-frame"
+          src={targetId ? STUDIO_URL + "?id=" + encodeURIComponent(targetId) : STUDIO_URL}
+          key={targetId || "studio"}
+          title="OrenCut Studio"
+        />
       ) : (
         <div className="orencut-empty">
           <strong>33 个可编辑的静音动效组件</strong>

@@ -1266,6 +1266,10 @@ onRuntimeProgress: (listener: (event: unknown) => void) =>
      sendToWindow("model-viewer:open") → 渲染层 ModelViewerBridge 弹窗。推送类手写桥，不在 gen 段。 */
   onModelViewerOpen: (listener: (event: { path: string; title: string }) => void) =>
     __on("model-viewer:open", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { path: string; title: string })),
+  /* OrenCut 定位推送（orencut 域，11-28）：模型调 orencut(action=open) → 主进程 sendToWindow
+     → 渲染层切到右栏「动效」页并定位组件（⛔ 推送类手写桥，不进 gen 段）。 */
+  onOrencutOpen: (listener: (event: { id: string }) => void) =>
+    __on("orencut:open", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { id: string })),
   /* 媒体预览推送（media 域，10-20）：引擎 harness_tools 的 media_source_open（m3u8）→ 主进程
      sendToWindow("media-preview:open") → 渲染层 MediaPreviewBridge。推送类手写桥，不在 gen 段。 */
   onMediaPreviewOpen: (listener: (event: { source: string; kind?: "video" | "audio" | "model"; title?: string; poster?: string; autoPlay?: boolean }) => void) =>
