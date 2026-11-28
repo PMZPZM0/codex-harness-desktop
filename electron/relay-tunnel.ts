@@ -5,7 +5,8 @@
  *
  * 身份：首次运行生成 `relay-device.json`（10 位设备 ID + 64 位令牌，存在 userData）。
  *   ⛔ ID 必须稳定（重启不变），手机靠它找到这台电脑；令牌只用来证明“我是这台”。
- *   ⛔ 网关做 TOFU 绑定：ID 第一次出现时记下令牌哈希，之后不一致就拒（防冒用 ID）。
+ *   ⛔ 网关不再 TOFU：未知 ID 必须同时带 `RELAY_ENROLL_SECRET`（环境变量或
+ *      userData/relay-enroll-secret.txt），否则拒绝首绑；已知 ID 只认原令牌哈希。
  *
  * 状态：offline / connecting / online，供远控设置页显示与二维码生成使用
  *   （离线时二维码退回旧通道/临时隧道，不让用户扫到一个死地址）。
@@ -30,6 +31,18 @@ type Options = {
 };
 
 const DEVICE_FILE = "relay-device.json";
+const ENROLL_FILE = "relay-enroll-secret.txt";
+
+/** 预共享注册密钥：环境变量优先，其次 userData 文件；都没有则无法首绑（fail closed）。 */
+function readEnrollSecret(userData: string): string {
+  const fromEnv = String(process.env.HARNESS_RELAY_ENROLL_SECRET || "").trim();
+  if (fromEnv.length >= 32) return fromEnv;
+  try {
+    const fromFile = fs.readFileSync(path.join(userData, ENROLL_FILE), "utf8").trim();
+    if (fromFile.length >= 32) return fromFile;
+  } catch { /* 没配就不带 */ }
+  return "";
+}
 
 function readIdentity(file: string): { id: string; token: string } {
   try {
@@ -47,6 +60,7 @@ function readIdentity(file: string): { id: string; token: string } {
 export class RelayTunnel {
   private readonly file: string;
   private readonly identity: { id: string; token: string };
+  private readonly enrollSecret: string;
   private ws: any = null;
   private stopped = true;
   private retryTimer: any = null;
@@ -56,6 +70,7 @@ export class RelayTunnel {
   constructor(private readonly options: Options) {
     this.file = path.join(options.userData, DEVICE_FILE);
     this.identity = readIdentity(this.file);
+    this.enrollSecret = readEnrollSecret(options.userData);
     this.status = { state: "offline", id: this.identity.id, base: "", publicBase: "", error: "", since: Date.now() };
   }
 
@@ -104,7 +119,13 @@ export class RelayTunnel {
 
     ws.on("open", () => {
       this.backoff = 2000;
-      try { ws.send(JSON.stringify({ type: "hello", token: this.identity.token })); } catch { /* 忽略 */ }
+      try {
+        ws.send(JSON.stringify({
+          type: "hello",
+          token: this.identity.token,
+          ...(this.enrollSecret ? { enroll: this.enrollSecret } : {}),
+        }));
+      } catch { /* 忽略 */ }
       this.setStatus("connecting", "");
       const ping = setInterval(() => {
         if (!alive) { try { ws.terminate(); } catch { /* 忽略 */ } return; }

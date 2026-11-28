@@ -107,3 +107,13 @@ schannel: SEC_E_ILLEGAL_MESSAGE (0x80090326)   # Windows curl
 - 同一手机连两台电脑时，cookie 由网关改写为 `Path=/t/<设备ID>`，互不覆盖。
 - 中转服务器能看到转发流量（隐私说明需在协议/帮助里写明）；网关有限速、并发上限与体积上限。
 - 未来换域名/换版本：改 `RELAY_DEFAULT_BASE`（remote.ts）、`APK_URL`（网关环境变量）与 APK 内置地址三处。
+
+## iPhone 主屏幕 Web App（无 Apple 开发者账号）
+
+没有付费 Apple Developer 账号时，不能产出可安装的 IPA。远程页本身是 H5，iPhone 直接用 Safari：
+
+1. 打开电脑端/中转给出的手机地址，完成配对并进入对话页；
+2. Safari 分享菜单 →「添加到主屏幕」；
+3. 之后从主屏幕图标打开就是独立窗口（无 Safari 地址栏）。
+
+页面已补 `apple-mobile-web-app-capable`、`apple-mobile-web-app-title`、主屏幕图标 `/r/icon.png`；iPhone 上会隐藏 Android「安装包」入口。`/r/icon.png` 免鉴权，只返回本产品图标。

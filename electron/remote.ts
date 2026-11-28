@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { desktopCapturer, net } from "electron";
+import { desktopCapturer, net, screen } from "electron";
 import { existingToolPath, toolsRoot } from "./toolchain";
 import { mirrorCandidates } from "./gh-mirror";
 import { buildRemotePageHtml } from "./remote/web-page";
@@ -13,11 +13,12 @@ import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 import { isAllowedRemoteRpc } from "./remote-rpc-types";
 import { createEventBuffer } from "./remote-event-buffer";
 import { createScreenLease } from "./remote-screen-lease";
+import { clickRemoteScreen, editRemoteText, pressRemoteKey, scrollRemoteScreen, type RemoteKey, type ScreenBounds } from "./remote-input";
 import { signPairBody } from "./relay-pair-sign";
 import { isPairingLocked, onPairingLockChange } from "./remote-pairing-lock";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
-const REMOTE_APK_RELEASE = "mobile-remote-v0.1.17";
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.18";
 
 /* ⛔ 11-08 审查：手机端的档位白名单不能写死四档 —— 模型规格表已有 minimal/low/medium/high/xhigh/ultra/max，
    写死会把手机选的 max/ultra 直接丢掉（引擎本来会按模型自己夹）。这里只挡未知值。 */
@@ -30,8 +31,8 @@ const remoteEffortOf = (value: unknown): string | undefined => {
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.17.apk": "6c8dd5a013b9bf823a582e59af7838b7acdf948e0b60de3db3b2840d14634d74",
-  "PPcodeRemote-0.1.17.apk": "77dcb349ee0ae3425d5bcd986361b6c0cb2935b0c38e10d1beeb5f70aac7a273",
+  "CodexRemote-0.1.18.apk": "f280085e6b405e91af58c7843b69beb9393998aa70038f7ae9d13e77ba4fa733",
+  "PPcodeRemote-0.1.18.apk": "0025af9ae4264fcfdc51fc19b123da116ce97b81e27cc4cf12bb3d7d160649d2",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
@@ -94,7 +95,7 @@ type RemoteEvents = {
   queueAdd?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
   queueStart?: (threadId: string, id: string) => Promise<{ mode?: string }>;
   queueDelete?: (threadId: string, id: string) => Promise<void>;
-  /** 手机看屏（11-06 P1）：状态变化 ⇒ 桌面挂/收「正在被查看」提示（只读，不收输入） */
+  /** 手机看屏（11-06 P1；11-27 可点击）：状态变化 ⇒ 桌面挂/收「正在被查看并操作」提示 */
   onScreenView?: (state: { active: boolean }) => void;
   /** 手机端回答询问 / 审批（引擎原生请求走 server.respond；agent_ask 转给渲染层 resolve） */
   answer?: (payload: { kind: string; requestId?: string; questionId?: string; choice: string; threadId?: string }) => Promise<void>;
@@ -308,7 +309,9 @@ export class RemoteControlService {
       const onListening = () => { server.removeListener("error", onError); resolve((server.address() as any).port); };
       server.once("error", onError);
       server.once("listening", onListening);
-      server.listen(portToUse, "::");
+      /* 默认只绑回环：所有外部访问都走内置 HTTPS 中转（电脑端主动连出）。
+         ⛔ 不要默认监听 ::：有公网 IPv6 时会把配对页和 HTTP cookie 直接暴露到公网。 */
+      server.listen(portToUse, this.allowLan() ? "::" : "127.0.0.1");
     });
     this.server = http.createServer((req, res) => this.route(req, res));
     try {
@@ -521,9 +524,15 @@ export class RemoteControlService {
     const fixed = this.fixedPublicUrl();
     if (fixed) return fixed;
     if (this.tunnelUrl) return this.tunnelUrl;
+    if (!this.allowLan()) return "";
     const v4 = this.lanV4Address();
     if (v4) return `http://${v4}:${this.port}`;
     return "";
+  }
+
+  /** 默认只监听 127.0.0.1；只有显式设置 HARNESS_REMOTE_ALLOW_LAN=1 才开放局域网/所有网卡。 */
+  private allowLan() {
+    return process.env.HARNESS_REMOTE_ALLOW_LAN === "1";
   }
 
   /** 局域网 IPv4 地址（微信在同一 Wi-Fi 下可访问） */
@@ -576,6 +585,20 @@ export class RemoteControlService {
 
   private route(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = req.url ?? "/";
+    /* iPhone「添加到主屏幕」的图标：必须免鉴权，且走相对路径 icon.png（带 /t/<id> 前缀也能命中）。 */
+    if (url.split("?")[0] === "/r/icon.png") {
+      const match = String(this.events.brandIcon || "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) { res.writeHead(404); res.end(); return; }
+      const icon = Buffer.from(match[1], "base64");
+      res.writeHead(200, {
+        "content-type": "image/png",
+        "content-length": String(icon.length),
+        "cache-control": "public, max-age=86400",
+        "x-content-type-options": "nosniff",
+      });
+      res.end(icon);
+      return;
+    }
     // ★ 控制面鉴权（09-13 审计 P0 + 二次加固，**所有路由的统一入口**）：
     //   - 已配对设备：cookie 里带 accessToken + deviceId，且该 deviceId 在已批准表里 → 放行；
     //   - 未配对设备：/api/pair* 是"投名状"入口（校验 6 位配对码 → 挂起等电脑端审批），
@@ -714,8 +737,8 @@ export class RemoteControlService {
       this.json(res, 200, { ok: true, revoked: this.revokeDevice(device) });
       return;
     }
-    /* 手机看屏（11-06 P1，只读）：start 起采集并让桌面挂提示；frame 取最新 JPEG（每取一次续租）；
-       stop 主动结束。⛔ 全部要求已配对设备（authorizedDevice），否则任意人打开页面就能看屏。 */
+    /* 手机看屏（11-06 P1；11-27 加点击）：start 起采集并让桌面挂提示；frame 取最新 JPEG（每取一次续租）；
+       click 在看屏租约内注入左键；stop 主动结束。⛔ 全部要求已配对设备（authorizedDevice）。 */
     if (url.startsWith("/api/screen/start") && req.method === "POST") {
       if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
       this.screenLease.start();
@@ -737,6 +760,80 @@ export class RemoteControlService {
       res.end(this.screenFrame);
       return;
     }
+    /* 手机点画面：只在看屏租约仍有效、且已配对时注入一次左键；
+       ⛔ 不能绕过 start/frame 单独调用 —— 租约停掉后 click 一律 409。 */
+    if (url.startsWith("/api/screen/click") && req.method === "POST") {
+      if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
+      if (this.screenLease.expired()) {
+        this.stopScreenView();
+        this.json(res, 409, { ok: false, error: "屏幕查看已超时（15 秒没取帧）" });
+        return;
+      }
+      if (!this.screenLease.state().active) { this.json(res, 409, { ok: false, error: "没有进行中的屏幕查看" }); return; }
+      const bounds = this.screenBounds;
+      if (!bounds) { this.json(res, 409, { ok: false, error: "还没有画面" }); return; }
+      void this.readBody(req).then(async (body) => {
+        try {
+          const data = JSON.parse(body) as { x?: unknown; y?: unknown; button?: unknown };
+          if (this.screenLease.expired() || !this.screenLease.state().active) {
+            this.json(res, 409, { ok: false, error: "屏幕查看已结束" });
+            return;
+          }
+          const button = data.button === "right" ? "right" : "left";
+          const result = await clickRemoteScreen(Number(data.x), Number(data.y), bounds, button);
+          this.json(res, result.ok ? 200 : 501, result.ok ? { ok: true } : { ok: false, error: result.error });
+        } catch {
+          this.json(res, 400, { ok: false, error: "点击坐标格式错误" });
+        }
+      });
+      return;
+    }
+    /* 键盘 / 滚轮：与点击共用同一条看屏租约；不要求画面边界。 */
+    if (url.startsWith("/api/screen/input") && req.method === "POST") {
+      if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
+      if (this.screenLease.expired()) {
+        this.stopScreenView();
+        this.json(res, 409, { ok: false, error: "屏幕查看已超时（15 秒没取帧）" });
+        return;
+      }
+      if (!this.screenLease.state().active) { this.json(res, 409, { ok: false, error: "没有进行中的屏幕查看" }); return; }
+      /* 必须是「看得见画面」的会话才能按键/滚轮/输入；否则就是盲控（只 start 不取帧）。 */
+      if (!this.screenFrame || !this.screenBounds) { this.json(res, 409, { ok: false, error: "先取到画面后才能操作" }); return; }
+      void this.readBody(req).then(async (body) => {
+        try {
+          const data = JSON.parse(body) as { kind?: unknown; dy?: unknown; key?: unknown; text?: unknown; remove?: unknown; restore?: unknown };
+          if (this.screenLease.expired() || !this.screenLease.state().active) {
+            this.json(res, 409, { ok: false, error: "屏幕查看已结束" });
+            return;
+          }
+          const kind = String(data.kind ?? "");
+          if (kind === "scroll") {
+            const dy = Number(data.dy);
+            if (!Number.isInteger(dy) || dy === 0 || Math.abs(dy) > 20) { this.json(res, 400, { ok: false, error: "滚动幅度无效" }); return; }
+            const result = await scrollRemoteScreen(dy);
+            this.json(res, result.ok ? 200 : 501, result.ok ? { ok: true } : { ok: false, error: result.error });
+            return;
+          }
+          if (kind === "key") {
+            const keys: RemoteKey[] = ["enter", "esc", "tab", "backspace", "delete", "left", "up", "right", "down", "space", "home", "end", "pageup", "pagedown"];
+            const key = String(data.key ?? "") as RemoteKey;
+            if (!keys.includes(key)) { this.json(res, 400, { ok: false, error: "不支持的按键" }); return; }
+            const result = await pressRemoteKey(key);
+            this.json(res, result.ok ? 200 : 501, result.ok ? { ok: true } : { ok: false, error: result.error });
+            return;
+          }
+          if (kind === "text") {
+            const result = await editRemoteText(Number(data.remove ?? 0), String(data.text ?? ""), data.restore !== false);
+            this.json(res, result.ok ? 200 : 501, result.ok ? { ok: true } : { ok: false, error: result.error });
+            return;
+          }
+          this.json(res, 400, { ok: false, error: "不支持的输入类型" });
+        } catch {
+          this.json(res, 400, { ok: false, error: "输入格式错误" });
+        }
+      });
+      return;
+    }
     if (url.startsWith("/api/screen/stop") && req.method === "POST") {
       if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
       this.stopScreenView();
@@ -753,10 +850,17 @@ export class RemoteControlService {
           const buffer = Buffer.from(match[2], "base64");
           if (!buffer.length) { this.json(res, 200, { ok: false, error: "图片是空的" }); return; }
           if (buffer.length > 8 * 1024 * 1024) { this.json(res, 200, { ok: false, error: "图片太大（上限 8MB）" }); return; }
+          /* 不只看 dataURL 的 MIME：再验文件头，挡「改后缀的任意字节」。 */
+          const png = buffer.length > 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+          const jpeg = buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+          const gif = buffer.length > 6 && buffer.subarray(0, 4).toString("ascii") === "GIF8";
+          const webp = buffer.length > 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+          const ext = match[1] === "jpeg" ? "jpg" : match[1];
+          const valid = (ext === "png" && png) || (ext === "jpg" && jpeg) || (ext === "gif" && gif) || (ext === "webp" && webp);
+          if (!valid) { this.json(res, 200, { ok: false, error: "图片内容和后缀不匹配" }); return; }
           const dir = this.uploadsDir();
           if (!dir) { this.json(res, 200, { ok: false, error: "服务未就绪" }); return; }
           fs.mkdirSync(dir, { recursive: true });
-          const ext = match[1] === "jpeg" ? "jpg" : match[1];
           const file = path.join(dir, `${crypto.randomBytes(8).toString("hex")}.${ext}`);
           fs.writeFileSync(file, buffer);
           this.json(res, 200, { ok: true, path: file });
@@ -859,7 +963,14 @@ export class RemoteControlService {
       const params = new URL(url, "http://x").searchParams;
       const botId = params.get("bot") ?? undefined;
       const botName = params.get("name") ?? undefined;
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "x-frame-options": "DENY",
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+      });
       res.end(this.html(code, botId, botName));
       return;
     }
@@ -1007,24 +1118,35 @@ export class RemoteControlService {
   }
   private pollBuffer = createEventBuffer(400);
 
-  /* ── 手机看屏（11-06 P1，只读）────────────────────────────────────────────
-     ⛔ 只出画面、不收输入。租约语义见 remote-screen-lease.ts：手机每取一帧续租，
-        15 秒没有取帧就自动停采并通知桌面（手机切后台/断网/锁屏时不会一直采集）。 */
+  /* ── 手机看屏（11-06 P1；11-27 可点击）────────────────────────────────────
+     画面出方向是 JPEG；输入只允许在租约有效期内点击当前截图的显示器（见 /api/screen/click）。
+     租约语义见 remote-screen-lease.ts：手机每取一帧续租，15 秒没有取帧就自动停采并通知桌面。 */
   private screenLease = createScreenLease(15_000);
   private screenTimer: ReturnType<typeof setInterval> | null = null;
   private screenFrame: Buffer | null = null;
+  private screenBounds: ScreenBounds | null = null;
   private screenError = "";
+  private screenCapturing = false;
 
   private async captureScreenFrame() {
+    if (this.screenCapturing) return;
+    this.screenCapturing = true;
     try {
-      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1280, height: 800 } });
+      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1152, height: 720 } });
+      if (!this.screenLease.state().active) return;
       const source = sources[0];
-      if (!source) { this.screenError = "没有可采集的屏幕"; return; }
-      this.screenFrame = source.thumbnail.toJPEG(60);
+      if (!source) { this.screenError = "没有可采集的屏幕"; this.screenBounds = null; return; }
+      const displays = screen.getAllDisplays();
+      const display = (source.display_id && displays.find((item) => String(item.id) === String(source.display_id))) || displays[0] || screen.getPrimaryDisplay();
+      this.screenFrame = source.thumbnail.toJPEG(55);
+      this.screenBounds = display.bounds;
       this.screenError = "";
     } catch (error: any) {
+      this.screenBounds = null;
       // macOS 未授权「屏幕录制」会走到这里：把原因带给手机，别只给空白
       this.screenError = String(error?.message ?? error ?? "采集失败");
+    } finally {
+      this.screenCapturing = false;
     }
   }
 
@@ -1034,7 +1156,7 @@ export class RemoteControlService {
     this.screenTimer = setInterval(() => {
       if (this.screenLease.expired()) { this.stopScreenView(); return; }
       void this.captureScreenFrame();
-    }, 1000);
+    }, 80);
   }
 
   /** 停采 + 撤租 + 通知桌面收起「正在被查看」提示（幂等） */
@@ -1042,6 +1164,7 @@ export class RemoteControlService {
   stopScreenView() {
     if (this.screenTimer) { clearInterval(this.screenTimer); this.screenTimer = null; }
     this.screenFrame = null;
+    this.screenBounds = null;
     const was = this.screenLease.state().active;
     this.screenLease.stop();
     if (was) this.events.onScreenView?.({ active: false });
@@ -1293,7 +1416,14 @@ export class RemoteControlService {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: "unauthorized", hint: "请从应用里重新扫码配对" }));
     } else {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "x-frame-options": "DENY",
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+      });
       res.end(this.pairHtml());
     }
     return false;

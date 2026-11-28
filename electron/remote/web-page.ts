@@ -66,6 +66,12 @@ async function doBind(){
     }
     const pageHtml = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="theme-color" content="#f7f7f5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="${escapeHtmlText(brandName)}">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="icon.png">
 <title>Codex 对话</title><style>
 *{box-sizing:border-box}
 html,body{max-width:100%;overflow-x:hidden}
@@ -134,9 +140,25 @@ html[data-theme="dark"] .run-steps .step-wait{color:#f3c879;background:#3a2f18;b
 #queuebar .qtext{flex:1 1 auto;min-width:0;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #queuebar .qhead{font-size:11.5px;color:var(--muted)}
 #queuebar .qbtn{flex:0 0 auto;height:26px;padding:0 12px;font-size:12px;font-weight:600;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px}
-.screen-wrap{display:flex;flex-direction:column;gap:8px}
-.screen-img{width:100%;height:auto;border-radius:12px;background:#000;border:1px solid var(--line)}
-.screen-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
+.screen-wrap{display:flex;flex-direction:column;gap:8px;position:relative}
+.screen-viewport{position:relative;width:100%;height:min(70vh,560px);overflow:hidden;border-radius:12px;background:#000;border:1px solid var(--line);touch-action:none;cursor:crosshair}
+.screen-img{display:block;width:100%;height:100%;object-fit:contain;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-select:none;pointer-events:none;background:#000}
+.screen-zoom-reset{position:absolute;top:8px;right:8px;z-index:2;width:auto;margin:0;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.4);background:rgba(0,0,0,.55);color:#fff;font-size:11px;backdrop-filter:blur(6px)}
+.screen-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);padding:6px 8px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb, var(--card) 92%, transparent);box-shadow:0 4px 14px rgb(0 0 0 / 6%)}
+.screen-bar span{flex:1 1 auto;min-width:86px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.screen-bar .qbtn{flex:0 0 auto;width:auto;height:30px;margin:0;padding:0 11px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;font-weight:600}
+.screen-bar .qbtn.primary{background:#e5484d;border-color:#e5484d;color:#fff;box-shadow:0 4px 10px rgb(229 72 77 / 28%)}
+.screen-bar .qbtn.on{background:#2f6bdd;border-color:#2f6bdd;color:#fff}
+.screen-ime{position:fixed;left:0;top:0;width:1px;height:1px;opacity:.01;border:0;padding:0;z-index:1;pointer-events:none}
+.screen-tap{position:fixed;z-index:60;width:30px;height:30px;margin:-15px 0 0 -15px;border:2px solid rgba(255,255,255,.95);border-radius:50%;pointer-events:none;animation:screen-tap .45s ease-out forwards}
+@keyframes screen-tap{from{opacity:.95;transform:scale(.45)}to{opacity:0;transform:scale(1.7)}}
+body.screen-landscape #panel-head{display:none}
+body.screen-landscape #panel-body{padding:0;overflow:hidden}
+body.screen-landscape .screen-wrap{position:fixed;inset:0;z-index:41;background:#000;gap:0}
+body.screen-landscape .screen-viewport{width:100vw;height:100dvh;border:0;border-radius:0}
+body.screen-landscape .screen-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:42;padding:6px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(15,17,21,.8);color:#fff;box-shadow:0 14px 34px rgb(0 0 0 / 38%);backdrop-filter:blur(16px)}
+body.screen-landscape .screen-bar .qbtn{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.22)}
+body.screen-landscape .screen-bar .qbtn.primary{background:#e5484d;border-color:#e5484d;color:#fff;box-shadow:0 4px 12px rgb(229 72 77 / 35%)}
 #queuebar .qbtn.primary{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 35%, #fff)}
 #queue{flex:0 0 auto;width:auto;margin:0;height:44px;padding:0 14px;font-size:13px;font-weight:600;color:var(--muted);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 html[data-theme="dark"] #queuebar{background:#161b22}
@@ -364,7 +386,7 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
     <div class="menu-group">
       <button type="button" onclick="toggleTopMenu(false);openHome()"><i>🏠</i><span><b>首页</b><small>回到首页，直接开始</small></span></button>
       <button type="button" onclick="toggleTopMenu(false);toggleThreads()"><i>🗂️</i><span><b>选择会话</b><small>最近会话与中枢</small></span></button>
-      <button type="button" onclick="toggleTopMenu(false);openScreen()"><i>🖥️</i><span><b>看屏幕</b><small>只读查看电脑画面</small></span></button>
+      <button type="button" onclick="toggleTopMenu(false);openScreen()"><i>🖥️</i><span><b>看屏幕</b><small>查看并操作电脑画面</small></span></button>
       <button type="button" onclick="toggleTopMenu(false);toggleTheme()"><i id="menu-theme-icon">🌙</i><span><b id="menu-theme-label">夜间模式</b><small>也可以跟随系统</small></span></button>
     </div>
     <button type="button" class="danger" id="menu-disconnect" hidden onclick="topMenuDisconnect()"><i>⏏️</i><span><b>断开连接</b><small>同时移除电脑端这台设备</small></span></button>
@@ -392,7 +414,7 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
   <button onclick="openFiles()"><b>📄</b>文件</button>
   <button onclick="openSkills()"><b>#</b>技能</button>
   <button onclick="openCommands()"><b>/</b>指令</button>
-  <button onclick="openApk()"><b>⬇</b>安装包</button>
+  <button id="apk-button" onclick="openApk()"><b>⬇</b>安装包</button>
 </div></div>
 <div id="panel" class="panel">
   <div class="panel-head"><button onclick="closePanel()">← 返回</button><b id="panel-title"></b><span style="width:64px"></span></div>
@@ -404,6 +426,12 @@ const code = ${JSON.stringify(code)};
 const BRAND = ${JSON.stringify(brandName)};
 /* 首页图标：本仓自己的应用图标（data URI）。⛔ 各仓图标不许互相串（品牌面差异，见 AGENTS.md） */
 const BRAND_ICON = ${JSON.stringify(brandIcon)};
+/* iPhone/iPad 走 Safari「添加到主屏幕」的独立窗口；Android APK 入口在 iOS 上隐藏。 */
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+if (IS_IOS) {
+  const apkButton = document.getElementById("apk-button");
+  if (apkButton) apkButton.style.display = "none";
+}
 /* 10-30 用户：首页 / 会话 / 断开连接收进左上角一个「☰」选项，品牌 logo 居中。
    ⛔ 断开连接只有 App 里可用（安卓注入 AndroidRemote 才显示）。 */
 function toggleTopMenu(force) {
@@ -1486,6 +1514,7 @@ function showPanel(title, node, back) {
   document.getElementById("panel").classList.add("open");
 }
 function closePanel() {
+  resetScreenLandscape();
   if (screenActive) void stopScreen();   // 关面板即停采（租约那头也会在 15 秒没取帧后自动停）
   if (panelBack) { const back = panelBack; panelBack = null; back(); return; }
   document.getElementById("panel").classList.remove("open");
@@ -1587,39 +1616,410 @@ function openTurnDiff(path) {
     node.appendChild(pre);
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("读取失败：" + error.message)); });
 }
-/* 手机看屏（11-06 P1，只读）：每 ~900ms 取一帧 JPEG 贴在面板里。
-   ⛔ 只出画面、不收输入；关面板/点停止/断线都会停采，服务端还有 15 秒租约兜底
-      （手机切后台不再取帧 ⇒ 桌面自动停采并收提示）。 */
+/* 手机看屏（11-06 P1；11-27 加横屏 + 点击操作）：每 ~80ms 取一帧 JPEG；
+   点击画面把 0–1 坐标发给电脑注入左键。⛔ 只在屏幕租约有效期间允许操作。
+   关面板/点停止/断线都会停采，服务端还有 15 秒租约兜底。 */
 let screenActive = false;
 let screenTimer = null;
 let screenObjectUrl = "";
+let screenLandscape = false;
+let screenClickBusy = false;
+let screenInputBusy = false;
+
+function resetScreenLandscape() {
+  if (!screenLandscape && !document.body.classList.contains("screen-landscape")) return;
+  screenLandscape = false;
+  document.body.classList.remove("screen-landscape");
+  try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch {}
+  if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
+}
+
+async function toggleScreenLandscape(button) {
+  screenLandscape = !screenLandscape;
+  document.body.classList.toggle("screen-landscape", screenLandscape);
+  if (button) button.textContent = screenLandscape ? "⛶ 竖屏" : "⛶ 横屏";
+  try {
+    const panel = document.getElementById("panel");
+    if (screenLandscape) {
+      if (panel && panel.requestFullscreen) { try { await panel.requestFullscreen(); } catch {} }
+      if (screen.orientation && screen.orientation.lock) { try { await screen.orientation.lock("landscape"); } catch {} }
+    } else {
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch {}
+      if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch {} }
+    }
+  } catch {}
+  setTimeout(function () { clampScreenTransform(); applyScreenTransform(); }, 160);
+}
+
+let screenView = null;
+
+/* 视口固定，图片在视口里用 translate + scale 变换；object-fit: contain 的黑边单独算。 */
+function screenLayout() {
+  const view = screenView;
+  if (!view) return null;
+  const vw = view.viewport.clientWidth;
+  const vh = view.viewport.clientHeight;
+  const nw = view.img.naturalWidth || vw;
+  const nh = view.img.naturalHeight || vh;
+  if (!vw || !vh || !nw || !nh) return null;
+  const fit = Math.min(vw / nw, vh / nh);
+  const contentW = nw * fit;
+  const contentH = nh * fit;
+  return { vw, vh, contentW, contentH, offsetX: (vw - contentW) / 2, offsetY: (vh - contentH) / 2 };
+}
+
+function applyScreenTransform() {
+  const view = screenView;
+  if (!view) return;
+  view.img.style.transform = "translate(" + view.tx + "px," + view.ty + "px) scale(" + view.scale + ")";
+  view.reset.hidden = view.scale <= 1.01;
+}
+
+function clampScreenTransform() {
+  const view = screenView;
+  const layout = screenLayout();
+  if (!view || !layout) return;
+  view.scale = Math.max(1, Math.min(5, view.scale));
+  const scaledW = layout.contentW * view.scale;
+  const scaledH = layout.contentH * view.scale;
+  const left = layout.offsetX * view.scale;
+  const top = layout.offsetY * view.scale;
+  if (scaledW <= layout.vw) view.tx = (layout.vw - scaledW) / 2 - left;
+  else view.tx = Math.min(Math.max(view.tx, layout.vw - left - scaledW), -left);
+  if (scaledH <= layout.vh) view.ty = (layout.vh - scaledH) / 2 - top;
+  else view.ty = Math.min(Math.max(view.ty, layout.vh - top - scaledH), -top);
+}
+
+function zoomScreenAt(clientX, clientY, nextScale) {
+  const view = screenView;
+  if (!view) return;
+  const rect = view.viewport.getBoundingClientRect();
+  const mx = clientX - rect.left;
+  const my = clientY - rect.top;
+  const ratio = Math.max(1, Math.min(5, nextScale)) / view.scale;
+  view.tx = mx - (mx - view.tx) * ratio;
+  view.ty = my - (my - view.ty) * ratio;
+  view.scale = view.scale * ratio;
+  clampScreenTransform();
+  applyScreenTransform();
+}
+
+function resetScreenZoom() {
+  const view = screenView;
+  if (!view) return;
+  if (view.longPressTimer) { clearTimeout(view.longPressTimer); view.longPressTimer = 0; }
+  view.scale = 1;
+  view.tx = 0;
+  view.ty = 0;
+  applyScreenTransform();
+}
+
+/* 把点击位置反算成 0–1 画面坐标；黑边、缩放和拖动都要算进去。 */
+function screenPointFromEvent(event) {
+  const view = screenView;
+  const layout = screenLayout();
+  if (!view || !layout) return null;
+  const rect = view.viewport.getBoundingClientRect();
+  const x = ((event.clientX - rect.left - view.tx) / view.scale - layout.offsetX) / layout.contentW;
+  const y = ((event.clientY - rect.top - view.ty) / view.scale - layout.offsetY) / layout.contentH;
+  if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) return null;
+  return { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 };
+}
+
+function screenRipple(x, y) {
+  const dot = document.createElement("span");
+  dot.className = "screen-tap";
+  dot.style.left = x + "px";
+  dot.style.top = y + "px";
+  (document.fullscreenElement || document.body).appendChild(dot);
+  setTimeout(function () { dot.remove(); }, 480);
+}
+
 async function openScreen() {
   closeSheet();
+  resetScreenLandscape();
+  screenLandscape = false;
+  resetScreenZoom();
+  screenView = null;
   const node = document.createElement("div");
   node.className = "screen-wrap";
+  const viewport = document.createElement("div");
+  viewport.className = "screen-viewport";
   const img = document.createElement("img");
   img.className = "screen-img";
-  img.alt = "电脑屏幕（只读）";
+  img.alt = "电脑屏幕";
+  img.draggable = false;
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.className = "screen-zoom-reset";
+  reset.textContent = "复位";
+  reset.hidden = true;
+  reset.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+  reset.addEventListener("click", function (event) { event.stopPropagation(); resetScreenZoom(); });
+  viewport.appendChild(img);
+  viewport.appendChild(reset);
   const bar = document.createElement("div");
   bar.className = "screen-bar";
   const tip = document.createElement("span");
-  tip.textContent = "只读画面，不含操作";
+  tip.textContent = "点按 / 长按 / 拖动";
+  const keyboard = document.createElement("button");
+  keyboard.type = "button";
+  keyboard.className = "qbtn";
+  keyboard.textContent = "⌨ 键盘";
+  const landscape = document.createElement("button");
+  landscape.type = "button";
+  landscape.className = "qbtn";
+  landscape.textContent = "⛶ 横屏";
+  landscape.onclick = function () { void toggleScreenLandscape(landscape); };
   const stop = document.createElement("button");
   stop.type = "button";
   stop.className = "qbtn primary";
-  stop.textContent = "停止";
-  stop.onclick = () => { void stopScreen(); closePanel(); };
+  stop.textContent = "■ 停止";
+  stop.onclick = function () { void stopScreen(); closePanel(); };
   bar.appendChild(tip);
+  bar.appendChild(keyboard);
+  bar.appendChild(landscape);
   bar.appendChild(stop);
-  node.appendChild(img);
+
+  /* 不画输入框：用一个 1px 的隐藏 input 唤起手机系统键盘；输入按增量同步到电脑。 */
+  const ime = document.createElement("input");
+  ime.type = "text";
+  ime.className = "screen-ime";
+  ime.autocomplete = "off";
+  ime.autocapitalize = "off";
+  ime.spellcheck = false;
+  ime.setAttribute("inputmode", "text");
+  ime.setAttribute("enterkeyhint", "enter");
+  ime.setAttribute("aria-hidden", "true");
+  ime.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+  let kbdTimer = 0;
+  function sendKeyboardDiff() {
+    if (!screenActive || !view) return;
+    const current = ime.value;
+    const last = view.kbdLast || "";
+    let prefix = 0;
+    while (prefix < last.length && prefix < current.length && last.charAt(prefix) === current.charAt(prefix)) prefix += 1;
+    const remove = last.length - prefix;
+    const add = current.slice(prefix);
+    if (!remove && !add) return;
+    view.kbdLast = current;
+    queueScreenEdit(remove, add, false);
+  }
+  function flushKeyboard(restore) {
+    if (kbdTimer) { clearTimeout(kbdTimer); kbdTimer = 0; }
+    sendKeyboardDiff();
+    if (restore) queueScreenEdit(0, "", true);
+  }
+  ime.addEventListener("input", function () {
+    if (kbdTimer) clearTimeout(kbdTimer);
+    kbdTimer = setTimeout(function () { kbdTimer = 0; sendKeyboardDiff(); }, 90);
+  });
+  ime.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    sendKeyboardDiff();
+    setTimeout(function () { sendScreenInput({ kind: "key", key: "enter" }); }, 120);
+  });
+  ime.addEventListener("blur", function () {
+    flushKeyboard(true);
+    keyboard.classList.remove("on");
+    ime.value = "";
+    view.kbdLast = "";
+  });
+  keyboard.onclick = function () {
+    if (document.activeElement === ime) { ime.blur(); return; }
+    ime.value = "";
+    view.kbdLast = "";
+    ime.focus({ preventScroll: true });
+    keyboard.classList.add("on");
+  };
+
+  node.appendChild(viewport);
+  node.appendChild(ime);
   node.appendChild(bar);
-  showPanel("电脑屏幕（只读）", node, null);
+  const view = { viewport: viewport, img: img, reset: reset, ime: ime, scale: 1, tx: 0, ty: 0, pointers: new Map(), moved: false, multi: false, startX: 0, startY: 0, startTx: 0, startTy: 0, downAt: 0, lastDist: 0, longPress: false, longPressTimer: 0, scrollSent: false, kbdLast: "" };
+  screenView = view;
+  showPanel("电脑屏幕", node, null);
   screenActive = true;
+  screenLandscape = false;
+
+  function showScreenError(message) {
+    tip.textContent = message || "操作失败";
+    setTimeout(function () { if (screenActive) tip.textContent = "点按 / 长按 / 拖动"; }, 2200);
+  }
+
+  function sendClick(clientX, clientY, button) {
+    if (!screenActive || screenClickBusy || screenInputBusy) return;
+    const point = screenPointFromEvent({ clientX: clientX, clientY: clientY });
+    if (!point) return;
+    screenClickBusy = true;
+    screenRipple(clientX, clientY);
+    fetch(apiUrl("/api/screen/click"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ x: point.x, y: point.y, button: button === "right" ? "right" : "left" }),
+    }).then(function (res) { return res.json().catch(function () { return {}; }); }).then(function (data) {
+      if (data && data.ok === false) showScreenError(data.error);
+    }).catch(function () {}).finally(function () { screenClickBusy = false; });
+  }
+
+  function sendScreenInput(payload) {
+    if (!screenActive || screenClickBusy || screenInputBusy) return;
+    screenInputBusy = true;
+    fetch(apiUrl("/api/screen/input"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(function (res) { return res.json().catch(function () { return {}; }); }).then(function (data) {
+      if (data && data.ok === false) showScreenError(data.error);
+    }).catch(function () {}).finally(function () { screenInputBusy = false; });
+  }
+
+  let screenEditQueue = Promise.resolve();
+  function queueScreenEdit(remove, text, restore) {
+    if (!screenActive) return screenEditQueue;
+    const payload = { kind: "text", remove: remove, text: text, restore: restore };
+    screenEditQueue = screenEditQueue.then(function () {
+      return fetch(apiUrl("/api/screen/input"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(function (res) { return res.json().catch(function () { return {}; }); }).then(function (data) {
+        if (data && data.ok === false) showScreenError(data.error);
+      }).catch(function () {});
+    });
+    return screenEditQueue;
+  }
+
+  viewport.addEventListener("pointerdown", function (event) {
+    if (!screenActive) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (view.pointers.size >= 2) return;
+    try { viewport.setPointerCapture(event.pointerId); } catch {}
+    view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (view.pointers.size === 1) {
+      view.startX = event.clientX;
+      view.startY = event.clientY;
+      view.startTx = view.tx;
+      view.startTy = view.ty;
+      view.downAt = Date.now();
+      view.moved = false;
+      view.multi = false;
+      view.lastDist = 0;
+      view.longPress = false;
+      view.scrollSent = false;
+      if (view.longPressTimer) clearTimeout(view.longPressTimer);
+      view.longPressTimer = setTimeout(function () {
+        if (!screenActive || view.pointers.size !== 1 || view.moved || view.multi) return;
+        const current = Array.from(view.pointers.values())[0];
+        view.longPress = true;
+        sendClick(current.x, current.y, "right");
+      }, 480);
+    } else {
+      view.multi = true;
+      view.moved = true;
+      if (view.longPressTimer) { clearTimeout(view.longPressTimer); view.longPressTimer = 0; }
+      const points = Array.from(view.pointers.values());
+      view.lastDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    }
+    event.preventDefault();
+  });
+
+  viewport.addEventListener("pointermove", function (event) {
+    const point = view.pointers.get(event.pointerId);
+    if (!point) return;
+    point.x = event.clientX;
+    point.y = event.clientY;
+    if (view.pointers.size >= 2) {
+      if (view.longPressTimer) { clearTimeout(view.longPressTimer); view.longPressTimer = 0; }
+      const points = Array.from(view.pointers.values());
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      if (view.lastDist > 0 && distance > 0) {
+        const ratio = distance / view.lastDist;
+        const next = Math.max(1, Math.min(5, view.scale * ratio));
+        const applied = next / view.scale;
+        const rect = viewport.getBoundingClientRect();
+        const midX = (points[0].x + points[1].x) / 2 - rect.left;
+        const midY = (points[0].y + points[1].y) / 2 - rect.top;
+        view.tx = midX - (midX - view.tx) * applied;
+        view.ty = midY - (midY - view.ty) * applied;
+        view.scale = next;
+        clampScreenTransform();
+        applyScreenTransform();
+        view.moved = true;
+      }
+      view.lastDist = distance;
+      event.preventDefault();
+      return;
+    }
+    if (view.pointers.size === 1) {
+      const dx = event.clientX - view.startX;
+      const dy = event.clientY - view.startY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        view.moved = true;
+        if (view.longPressTimer) { clearTimeout(view.longPressTimer); view.longPressTimer = 0; }
+      }
+      if (view.scale > 1.01) {
+        view.tx = view.startTx + dx;
+        view.ty = view.startTy + dy;
+        clampScreenTransform();
+        applyScreenTransform();
+      }
+    }
+  });
+
+  viewport.addEventListener("pointerup", function (event) {
+    const point = view.pointers.get(event.pointerId);
+    if (!point) return;
+    if (view.longPressTimer) { clearTimeout(view.longPressTimer); view.longPressTimer = 0; }
+    view.pointers.delete(event.pointerId);
+    try { viewport.releasePointerCapture(event.pointerId); } catch {}
+    if (view.pointers.size === 0) {
+      const wasTap = !view.longPress && !view.multi && !view.moved && Date.now() - view.downAt < 700;
+      const scrollDy = !view.longPress && !view.multi && view.scale <= 1.01 && view.moved && Math.abs(point.y - view.startY) > 24
+        ? (point.y > view.startY ? 1 : -1)
+        : 0;
+      view.longPress = false;
+      view.lastDist = 0;
+      view.moved = false;
+      view.multi = false;
+      if (wasTap) sendClick(point.x, point.y);
+      else if (scrollDy) sendScreenInput({ kind: "scroll", dy: scrollDy });
+    } else if (view.pointers.size === 1) {
+      const rest = Array.from(view.pointers.values())[0];
+      view.startX = rest.x;
+      view.startY = rest.y;
+      view.startTx = view.tx;
+      view.startTy = view.ty;
+      view.lastDist = 0;
+    }
+  });
+
+  viewport.addEventListener("pointercancel", function (event) {
+    if (view.longPressTimer) { clearTimeout(view.longPressTimer); view.longPressTimer = 0; }
+    view.pointers.delete(event.pointerId);
+    if (view.pointers.size === 0) {
+      view.lastDist = 0;
+      view.moved = false;
+      view.multi = false;
+      view.longPress = false;
+    }
+  });
+
+  viewport.addEventListener("wheel", function (event) {
+    if (!screenActive) return;
+    event.preventDefault();
+    zoomScreenAt(event.clientX, event.clientY, view.scale * (event.deltaY < 0 ? 1.15 : 0.87));
+  }, { passive: false });
+
   try {
     const res = await fetch(apiUrl("/api/screen/start"), { method: "POST" });
     if (!res.ok) throw new Error("HTTP " + res.status);
   } catch (error) {
     screenActive = false;
+    resetScreenLandscape();
+    resetScreenZoom();
+    screenView = null;
     node.innerHTML = "";
     node.appendChild(panelMessage("无法开始看屏：" + error.message));
     return;
@@ -1628,11 +2028,15 @@ async function openScreen() {
 }
 async function screenTick(img, node) {
   if (!screenActive) return;
+  const startedAt = Date.now();
   try {
     const res = await fetch(apiUrl("/api/screen/frame"), { cache: "no-store" });
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(function () { return {}; });
       screenActive = false;
+      resetScreenLandscape();
+      resetScreenZoom();
+      screenView = null;
       node.innerHTML = "";
       node.appendChild(panelMessage("看屏已结束：" + (data.error || ("HTTP " + res.status))));
       return;
@@ -1643,10 +2047,21 @@ async function screenTick(img, node) {
     if (screenObjectUrl) URL.revokeObjectURL(screenObjectUrl);
     screenObjectUrl = url;
   } catch { /* 网络抖动：下一帧再试（租约没断就还能续上） */ }
-  if (screenActive) screenTimer = setTimeout(() => void screenTick(img, node), 900);
+  if (screenActive) {
+    const delay = Math.max(0, 80 - (Date.now() - startedAt));
+    screenTimer = setTimeout(function () { void screenTick(img, node); }, delay);
+  }
 }
 async function stopScreen() {
+  if (screenView && screenView.ime && document.activeElement === screenView.ime) {
+    try { screenView.ime.blur(); } catch {}
+  }
   screenActive = false;
+  screenClickBusy = false;
+  screenInputBusy = false;
+  resetScreenLandscape();
+  resetScreenZoom();
+  screenView = null;
   if (screenTimer) { clearTimeout(screenTimer); screenTimer = null; }
   if (screenObjectUrl) { URL.revokeObjectURL(screenObjectUrl); screenObjectUrl = ""; }
   try { await fetch(apiUrl("/api/screen/stop"), { method: "POST" }); } catch { /* 已断开也无妨 */ }

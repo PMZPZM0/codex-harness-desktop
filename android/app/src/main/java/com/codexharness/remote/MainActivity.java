@@ -125,10 +125,11 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setAllowFileAccess(false);
         settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/" + BuildConfig.VERSION_NAME);
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
-        cookies.setAcceptThirdPartyCookies(web, true);
+        cookies.setAcceptThirdPartyCookies(web, false);
 
         // 页面导航到 /apk 这类下载地址时交给系统下载管理器（带 cookie 走中转），装完通知栏点开即装
         web.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
@@ -140,6 +141,8 @@ public class MainActivity extends AppCompatActivity {
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                 String name = (contentDisposition != null && contentDisposition.contains("filename=\""))
                         ? contentDisposition.split("filename=\"")[1].split("\"")[0] : "CodexRemote.apk";
+                name = name.replaceAll("[^A-Za-z0-9._-]", "_");
+                if (name.isEmpty()) name = "CodexRemote.apk";
                 request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, name);
                 DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                 if (manager != null) manager.enqueue(request);
@@ -176,9 +179,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                String host = Uri.parse(baseUrl).getHost();
+                Uri base = Uri.parse(baseUrl);
+                String host = base.getHost();
                 String target = uri.getHost();
-                if (target != null && host != null && target.equalsIgnoreCase(host)) return false;
+                boolean sameOrigin = target != null && host != null && target.equalsIgnoreCase(host)
+                        && String.valueOf(uri.getScheme()).equalsIgnoreCase(String.valueOf(base.getScheme()))
+                        && uri.getPort() == base.getPort();
+                if (sameOrigin) return false;
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, uri));
                 } catch (Exception ignored) {

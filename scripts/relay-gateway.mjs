@@ -9,7 +9,8 @@
  *   ⛔ 不依赖 frp / cloudflared；一台 App 装完就能用，重启后 ID 不变。
  *
  * 安全：
- *   · TOFU 绑定：设备 ID 第一次出现时把令牌哈希记下来，之后令牌不一致直接拒（防冒用 ID）；
+ *   · 未知设备首绑必须带 RELAY_ENROLL_SECRET（预共享注册密钥）；没有/不对直接拒，
+ *     不再 TOFU 认领；已登记设备只认原令牌哈希；
  *   · 只允许 `/t/<id>/` 前缀路由，不能借网关访问别处；
  *   · 每设备并发/每分钟请求数都有上限，body 有上限（手机只读、上传最多 8MB）。
  *
@@ -44,7 +45,9 @@ const PAIR_STATUSES = new Set(["pending", "approved", "denied", "expired"]);
 const PAIR_SIGN_SALT = ":pair-response:v1";
 /* 根地址配对限流（按来源 IP）：挡 6 位码暴力尝试与批量探测。 */
 const PAIR_RATE_PER_MINUTE = 20;
-const MAX_BODY = 32 * 1024 * 1024;
+const MAX_BODY = 14 * 1024 * 1024;
+/* 首绑注册密钥：必须由服务器环境提供（≥32 位随机串）。未配置 = 拒绝一切未知设备。 */
+const ENROLL_SECRET = String(process.env.RELAY_ENROLL_SECRET || "").trim();
 const REQ_TIMEOUT_MS = 20_000;   // 隧道半死时别让手机干等 35s
 const MAX_INFLIGHT = 32;
 const MAX_PER_MINUTE = 900;
@@ -157,6 +160,13 @@ function saveState() {
 }
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] || ch));
 const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+/** 首绑注册密钥校验：固定时间比较；服务器未配置/长度不足时一律拒绝。 */
+function enrollOk(value) {
+  if (ENROLL_SECRET.length < 32) return false;
+  const got = String(value ?? "");
+  if (got.length !== ENROLL_SECRET.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(ENROLL_SECRET)); } catch { return false; }
+}
 /** 设备令牌 → 配对应答签名键（与电脑端同盐同算法）。 */
 const pairSignKeyOf = (token) => sha256(String(token) + PAIR_SIGN_SALT);
 /** 校验电脑端配对应答的 HMAC 签名。假隧道没有令牌、伪造不出 64 位 hex 的有效签名。 */
@@ -571,7 +581,7 @@ wss.on("connection", (ws, req) => {
     if (!tunnel) {
       /* 第一帧必须是 hello：令牌只存哈希，TOFU 绑定（首次认领后 ID 不可被他人冒用） */
       const token = String(frame?.token ?? "");
-      if (frame?.type !== "hello" || !DEVICE_RE.test(id) || token.length < 16) { ws.close(4001, "bad hello"); return; }
+      if (frame?.type !== "hello" || !DEVICE_RE.test(id) || token.length < 32) { ws.close(4001, "bad hello"); return; }
       const tokenHash = sha256(token);
       const signKey = pairSignKeyOf(token);
       const known = devices.get(id);
@@ -581,9 +591,15 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (!known) {
+        /* 不再 TOFU：未知 ID 必须出示服务器预共享注册密钥，否则谁先连谁认领。 */
+        if (!enrollOk(frame?.enroll)) {
+          console.warn(`[relay] 未知设备 ${id} 首绑被拒（缺少/错误注册密钥）`);
+          ws.close(4005, "enrollment required");
+          return;
+        }
         devices.set(id, { tokenHash, signKey, connectedAt: Date.now(), lastSeen: Date.now() });
         saveState();
-        console.log(`[relay] 新设备 ${id} 首次绑定`);
+        console.log(`[relay] 新设备 ${id} 首次绑定（注册密钥校验通过）`);
       } else if (known.signKey !== signKey) {
         /* 旧记录没有签名键（11-14 之前注册的）：令牌已验证过，补上并落盘。 */
         known.signKey = signKey;

@@ -1809,8 +1809,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     );
     (apkOk(() => androidSrc.includes("^/t/([A-Za-z0-9_-]{8,24})(?:/|$)") && androidSrc.includes("adoptRelayPrefix")
       && androidSrc.includes("chm_dev") && androidSrc.includes("VERSION_NAME") && androidSrc.includes('"offline".equals')
-      && readFileSync(join(ROOT, "android", "app", "build.gradle"), "utf8").includes('versionName "0.1.17"')) ? ok : fail)(
-      "【139e】APK 0.1.17：扫码保留 /t/<设备ID> 前缀 + 配对后从 chm_dev 补前缀（重启直接走 /t 自动登录）"
+      && readFileSync(join(ROOT, "android", "app", "build.gradle"), "utf8").includes('versionName "0.1.18"')) ? ok : fail)(
+      "【139e】APK 0.1.18：扫码保留 /t/<设备ID> 前缀 + 配对后从 chm_dev 补前缀（重启直接走 /t 自动登录）"
     );
     /* ⛔ 11-14 用户令「堵死加固」：根配对不能再广播 —— 假隧道收不到码，也就抢不走配对。 */
     (tunnelSrc.includes("setPairCode") && tunnelSrc.includes('"pair-code"') && relaySrc.includes("setPairCode(") ? ok : fail)(
@@ -1873,8 +1873,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
       "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
     );
-    (gwSrc.includes("tokenHash") && gwSrc.includes('type !== "hello"') && !gwSrc.includes('searchParams.get("token")') ? ok : fail)(
-      "【139e】设备身份：hello 帧校验令牌（TOFU 绑定）；⛔ 令牌不许放查询串（会进访问日志）"
+    (gwSrc.includes("tokenHash") && gwSrc.includes('type !== "hello"') && gwSrc.includes("enrollOk") && !gwSrc.includes('searchParams.get("token")') ? ok : fail)(
+      "【139e】设备身份：hello 帧校验令牌；未知设备首绑必须带注册密钥（不再是 TOFU）；⛔ 令牌不许放查询串"
     );
     /* ⛔ 11-14 用户实测「手机连远控，电脑不弹允许框」根因：中转上挂着测试/收集器假隧道（wrk2428remote 等），
        根地址配对逐台问码时它不校验直接回 ok:true ⇒ 手机被秒批、真电脑端收不到配对请求。 */
@@ -1909,7 +1909,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelSrc.includes("relay-device.json") && tunnelSrc.includes("randomBytes(32)") && tunnelSrc.includes("scheduleRetry") ? ok : fail)(
       "【139e】内置隧道身份稳定（设备 ID + 令牌落 userData）、断线退避重连"
     );
-    (tunnelSrc.includes('type: "hello", token: this.identity.token') ? ok : fail)(
+    (/type:\s*"hello",\s*token:\s*this\.identity\.token/.test(tunnelSrc) ? ok : fail)(
       "【139e】隧道连上先发 hello 帧（令牌不进 URL）"
     );
     (tunnelSrc.includes('state === "online" ? this.status.publicBase : ""') ? ok : fail)(
@@ -2150,8 +2150,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("prefers-reduced-motion") && tunnelPage.includes("@keyframes fade-up") && tunnelPage.includes("@keyframes home-in") && tunnelPage.includes(".ripple") && tunnelPage.includes("menu-group") ? ok : fail)(
       "【139e】手机页动效体系：入场/切换/涟漪/菜单弹出 + 跟随系统减弱动效；☰ 菜单带图标与说明"
     );
-    (relaySrc.includes("mobile-remote-v0.1.17") && relaySrc.includes("relayBase ? [`${relayBase}/apk`]") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.17）+ 中转在线时优先从网关 /apk 取（GitHub 兜底）"
+    (relaySrc.includes("mobile-remote-v0.1.18") && relaySrc.includes("relayBase ? [`${relayBase}/apk`]") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.18）+ 中转在线时优先从网关 /apk 取（GitHub 兜底）"
     );
   }
 }
