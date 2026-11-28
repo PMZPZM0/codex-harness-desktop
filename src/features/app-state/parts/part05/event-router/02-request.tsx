@@ -1061,7 +1061,7 @@ ${st.hint}`);
                    ⛔ 等的是"attach + ready"两件事（会话单例判据），不是单看 bag 开关：
                       开关 true 而 iframe 还没挂上时发请求 = 消息发进空气。
                    ⛔ 空画布是**合法结果**（success:true + 指引），不是错误。 */
-                if (!bag.uiSketchOpen) bag.setUiSketchOpen(true);
+                /* 11-28：前端开发已并入右栏 —— 模型动前端工具时直接切到那一页（联动，不再开浮层） */ bag.openPanelTab?.("sketch", "前端开发");
                 await waitSketchReady();
                 const readback = await requestSketchDoc();
                 if (!readback.doc) {
@@ -1083,7 +1083,7 @@ ${st.hint}`);
                 if (!verdict.ok) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `设计文档没通过校验：${verdict.reason}。改正后重新调用（建议先 frontend_get_doc 拿现状，在它的基础上改）。` }], success: false });
                 } else {
-                  if (!bag.uiSketchOpen) bag.setUiSketchOpen(true);
+                  /* 11-28：前端开发已并入右栏 —— 模型动前端工具时直接切到那一页（联动，不再开浮层） */ bag.openPanelTab?.("sketch", "前端开发");
                   await waitSketchReady();
                   const applied = await applySketchDoc(nextDoc);
                   const summary = summarizeDoc(applied.doc ?? nextDoc);

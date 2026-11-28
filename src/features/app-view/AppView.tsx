@@ -175,7 +175,6 @@ import { subscribeCanvasImage } from "../../lib/canvas-open.mjs";
 import { RemoteAskBridge } from "./RemoteAskBridge";
 import { CanvasActivityBridge } from "../drama-canvas/CanvasActivityBridge";
 import { SettingsDialog } from "../../components/SettingsDialog";
-import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
 import { ProfileOnboardingWizard } from "../profile-onboarding/ProfileOnboardingWizard";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
@@ -441,7 +440,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setSshExecTarget, setSshFilter, setSshQuery, setSshTerminal,
     setSubAgentDraft, setSubAgentEditorOpen, setTaskList, setTeamHistoryMember,
     setTeamPopupRunId, setTheme, setThreadFileQuery, setUiFont,
-    setUiLang, setUiSketchOpen, setUiZoom, setUsageStats,
+    setUiLang, setUiZoom, setUsageStats,
     setUserAvatar, setUsername, setViewTab, setWelcomeCwdMenuOpen,
     setWelcomeScratchDir, settingsContentReady, settingsOpen, settingsPage,
     settingsResources, shellRef, shortcutsOpen, showApiKey,
@@ -470,7 +469,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     toggleSubAgentEnabled, toggleTreeDir, tokenUsage, toolsStatus,
     topbarActionsNode, treeChildren, treeExpanded, treeLoading,
     treePath, trustAllHooks, turnWindow, turnsCursorRef,
-    uiFont, uiLang, uiSketchOpen, uiZoom, uninstallDevRuntime,
+    uiFont, uiLang, uiZoom, uninstallDevRuntime,
     updateBotStream, updateMemoryMode, upstreamRetries, usage, useCommand,
     userAvatar, userDataPath, username, viewTab,
     voiceDictating, waitingForApproval, waitingForInput, welcomeCwdMenuOpen,
@@ -895,22 +894,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 前端开发（10-05，嵌 m3e-canvas；两轮改名：界面草图 → 手机前端UI → 前端开发）：与画布同档的整屏浮层，从侧栏「···更多」开。
           「交给 Codex 实现」走的是画布那条已验证的通路 —— 关浮层 → 塞 pendingCommandTextRef
           （⛔ 它是 ref，不受 setPrompt 状态滞后影响）→ 直接发送；发送失败兜底成填输入框。 */}
-      {uiSketchOpen && (
-        <UiSketchModal
-          onClose={() => setUiSketchOpen(false)}
-          onAskAgent={(text) => {
-            setUiSketchOpen(false);
-            pendingCommandTextRef.current = text;
-            void (async () => {
-              try {
-                await send();
-              } catch {
-                setPrompt(text);
-              }
-            })();
-          }}
-        />
-      )}
+      {/* ⛔ 11-28 用户令：前端开发不再有整屏浮层 —— 已并入右栏「前端开发」标签页
+         （03-review-panel 里 variant="inline"，展示与联动跟画布同一套）。 */}
       {shortcutsOpen && <ShortcutsDialog open onClose={() => setShortcutsOpen(false)} />}
       <VaultWriteConfirm />
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}

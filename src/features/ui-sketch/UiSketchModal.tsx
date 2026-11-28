@@ -31,7 +31,10 @@ import type { SketchDiag, SketchDoc } from "./sketch-doc.mjs";
 const BRIDGE_TIMEOUT_MS = 8000;
 
 /** 前端开发画布弹窗：iframe 里跑画布，桥接消息与「交给 agent」的动作。 */
-export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; onAskAgent: (text: string) => void }) {
+/* ⛔ 11-28 用户令：「把前端开发那个也接过来，不需要再单独界面了，跟这个画布一样的展示效果&联动效果」。
+   ⇒ 两种形态：overlay（老的整屏浮层，保留兼容）/ inline（右栏标签页，填满父容器、无遮罩、点空白不关）。
+   ⛔ 只改外壳，画布本体（iframe、桥、动作）完全同一条代码路径。 */
+export function UiSketchModal({ onClose, onAskAgent, variant = "overlay", compact = false }: { onClose: () => void; onAskAgent: (text: string) => void; variant?: "overlay" | "inline"; compact?: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const readyRef = useRef(false);
   const [doc, setDoc] = useState<SketchDoc | null>(null);
@@ -46,6 +49,7 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
      ⛔ 焦点在 iframe 里时按键不会冒泡到宿主文档 —— 所以 ESC 只在光标不在画布内时生效，
      这是跨源 iframe 的固有行为，不是这里的 bug；标题栏的关闭键始终可用。 */
   useEffect(() => {
+    if (variant === "inline") return; /* 内嵌在右栏：ESC 不关（切标签即离开），免得打字时误关 */
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -150,8 +154,8 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
   };
 
   return (
-    <div className="ui-sketch-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="ui-sketch-shell" role="dialog" aria-modal="true" aria-label="前端开发" data-bridge={bridgeError ? "timeout" : bridgeReady ? "ready" : "pending"}>
+    <div className={`ui-sketch-backdrop${variant === 'inline' ? ' is-inline' : ''}`} data-density={compact ? 'compact' : 'full'} onClick={variant === "inline" ? undefined : (event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="ui-sketch-shell" role="dialog" aria-modal={variant === "overlay" ? true : undefined} aria-label="前端开发" data-bridge={bridgeError ? "timeout" : bridgeReady ? "ready" : "pending"}>
         {/* 标题与动作**同一行**（10-05 用户反馈「上面按键遮住了」）：两行会把高度吃掉 ~80px，
             内嵌站自己的浮动工具栏就顶到可视区上沿、和它右上角的控件挤在一起。 */}
         <header className="ui-sketch-head">

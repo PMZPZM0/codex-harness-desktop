@@ -417,7 +417,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     setAccountMenuSub,
     setMobileNav,
     openPanelTab,
-    setUiSketchOpen,
     setMobileRemoteOpen,
     setPaletteOpen,
     setPaletteQuery,
@@ -738,7 +737,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const navigateGuideTarget = (target: SidebarGuideTarget) => {
     switch (target) {
       case "component-library": setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); break;
-      case "ui-sketch": setUiSketchOpen(true); setMobileNav(false); break;
+      /* ⛔ 11-28：前端开发不再开浮层 —— 与画布同落点（右栏标签页）。 */
+      case "ui-sketch": openPanelTab("sketch", "前端开发"); setMobileNav(false); break;
       /* ⛔ 11-28 用户令：「两个画布不再保留独立界面，全部统一在侧边栏中展示」——
          原来这里开的是整屏浮层；现在统一成「开右栏 + 切到画布页」，与右栏标签条同一个落点。 */
       case "drama-canvas": openPanelTab("canvas", "画布"); setMobileNav(false); break;

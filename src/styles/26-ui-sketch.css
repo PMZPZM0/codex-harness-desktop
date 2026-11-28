@@ -23,6 +23,42 @@
   padding: clamp(40px, 4.5vmin, 56px) clamp(14px, 3vmin, 40px) clamp(14px, 3vmin, 40px);
 }
 
+/* ── 内嵌形态（11-28 用户令：「不需要再单独界面，跟画布一样的展示效果」）─────────
+   挂到右栏 `.panel-page` 里当标签页：不定位、不遮罩、不动画、填满父容器。
+   ⛔ 与 `.drama-canvas-backdrop.is-inline` 同一套口径，改一边记得看另一边。 */
+.ui-sketch-backdrop.is-inline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.ui-sketch-backdrop.is-inline .ui-sketch-shell {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+/* 内嵌时没有「ESC 关窗」这回事（切标签即离开），提示条别留着误导 */
+.ui-sketch-backdrop.is-inline .esc-hint { display: none; }
+
+/* ── 精简态（11-28 用户令）────────────────────────────────────────────────
+   「小屏的时候，这里可以只展示手机 UI 界面，其他按键都不展示，这样简洁展示，
+     方便看 codex 调用工具的实时进度」。
+   ⛔ 只做减法：把头部整条（标题 / 取回 / 预览 / 复制 / 存成组件 / 交给 Codex / 关闭）
+   藏掉，画面只剩 iframe —— 小屏那点宽度全给画布本体。完整态一个像素都不改。 */
+.ui-sketch-backdrop[data-density="compact"] .ui-sketch-head { display: none; }
+.ui-sketch-backdrop[data-density="compact"] .ui-sketch-shell { border: 0; border-radius: 0; }
+
 .ui-sketch-shell {
   display: flex;
   flex-direction: column;

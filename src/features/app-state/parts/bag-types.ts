@@ -679,8 +679,6 @@ export interface Bag {
   settingsOpen: boolean;
   setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   /* ⛔ 11-28：`dramaCanvasOpen` 已删 —— 画布不再有独立整屏浮层，只在右栏「画布」页渲染。 */
-  uiSketchOpen: boolean;
-  setUiSketchOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pptokenCardOff: boolean;
   setPptokenCardOff: React.Dispatch<React.SetStateAction<boolean>>;
   settingsPage: import("../../app-view/types.ts").SettingsPage;

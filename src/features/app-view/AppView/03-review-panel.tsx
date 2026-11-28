@@ -158,6 +158,8 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 /* ⛔ 11-28：组件库（Uiverse 3,802 条，catalog.gen 约 375KB）**必须懒加载** ——
    静态 import 会把它塞进主包，首屏白等一份没人看的目录。 */
 const ComponentLibraryPage = lazy(() => import("../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
+/* ⛔ 11-28：前端开发（iframe 画布 + 桥）同样懒加载 —— 不进主包，点开才拉。 */
+const UiSketchModal = lazy(() => import("../../ui-sketch").then((m) => ({ default: m.UiSketchModal })));
 
 /** 右侧面板的可开关标签（11-26 用户令：右栏改成浏览器式标签条）。数组顺序 = 标签顺序。 */
 const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: string; title: string }> = [
@@ -173,6 +175,8 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
   /* ⛔ 11-28 用户令：「把 3000 多个组件一并接入……全部统一在侧边栏中展示」——
      组件库（Uiverse 3,802 条，11 个分类）从设置页搬到这里，设置页那条入口改成跳本页。 */
   { key: "library", name: "组件库", Icon: Store, ic: "ic-violet", title: "组件库：3,800+ 现成组件（按钮 / 卡片 / 表单 / 加载器…），点「交给 Codex」把代码用到项目里" },
+  /* ⛔ 11-28 用户令：「把前端开发那个也接过来，不需要再单独界面了，跟这个画布一样的展示效果&联动效果」。 */
+  { key: "sketch", name: "前端开发", Icon: PenTool, ic: "ic-pink", title: "前端开发：拖拽摆界面 → 预览 → 交给 Codex 实现（原整屏浮层，现并入右栏）" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
 
@@ -516,6 +520,25 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
               {rightTab === "library" ? (
                 <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载组件库…</div>}>
                   <ComponentLibraryPage onHandoff={(text) => app.setPrompt(text)} />
+                </Suspense>
+              ) : null}
+            </div>
+            {/* 前端开发页（11-28 用户令「不需要再单独界面了，跟画布一样」）：
+                原整屏浮层改成右栏标签页；「交给 Codex 实现」= 切回监控页 + 直接发送
+                （与画布 onAskAgent 同口径：`sendPrefilled`，⛔ 不靠 setPrompt 滞后）。 */}
+            <div className={`panel-page ${rightTab === "sketch" ? "" : "hidden"}`}>
+              {rightTab === "sketch" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载前端开发…</div>}>
+                  {/* ⛔ 11-28 用户令（截图）：「小屏的时候，这里可以只展示手机 UI 界面，其他按键都不展示，
+                      这样简洁，方便看 codex 调用工具的实时进度」——
+                      ⇒ 精简态**照样渲染画布本体**（iframe 里就是手机 UI），只把头部按键藏掉；
+                      ⛔ 不再用「点放大才能用」的提示替代内容（那样小屏看不到进度）。 */}
+                  <UiSketchModal
+                    variant="inline"
+                    compact={!(panelMax || panelWidth >= 480)}
+                    onClose={() => setRightTab("monitor")}
+                    onAskAgent={(text) => { setRightTab("monitor"); void app.sendPrefilled({ text }); }}
+                  />
                 </Suspense>
               ) : null}
             </div>

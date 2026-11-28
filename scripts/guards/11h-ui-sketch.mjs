@@ -49,7 +49,7 @@ ok(!/moreHubOpen/.test(side) && !side.includes("<span>更多</span>"), "「更�
 /* 11-28 用户令：「两个画布不再保留独立界面，全部统一在侧边栏中展示」——
    侧栏入口的落点从「整屏浮层」改成「开右栏 + 切到画布页」；判据同步成新写法，⛔ 别删这条断言。 */
 ok(/openPanelTab\("canvas",\s*"画布"\)|setDramaCanvasOpen\(true\)/.test(side), "AI 画布工作流仍可从侧栏进入（11-28 起落点 = 右栏「画布」页）");
-ok(/setUiSketchOpen\(true\)/.test(side), "前端开发画布仍可从侧栏进入（同一个能力入口的教程/直达按钮）");
+ok(/(openPanelTab\("sketch"|setUiSketchOpen\(true\))/.test(side), "前端开发画布仍可从侧栏进入（11-28 起落点 = 右栏「前端开发」页）");
 ok(/setSettingsPage\("knowledge-base"\)/.test(side), "知识库仍可从侧栏进入（人格市场 / 记忆中心 / 知识库入口）");
 /* 10-24 并行线把入口抽成了 function-menu 板块：文案与行样式跟着搬走，判据允许两处之一，
    但仍要求 `sidebar-cap-row`（⛔ 不是放宽成「随便有没有」）。 */
@@ -63,17 +63,17 @@ ok(!/setSettingsPage\("backup"\)/.test(side), "负向：也不许把「会话备
 
 /* ───────────────────────── 二、板块接线四处 ───────────────────────── */
 
-const part02 = codeOnly(read("src/features/app-state/parts/part02/03-thread-switch-update/02-update-ui-settings.tsx"));
-ok(/const \[uiSketchOpen, setUiSketchOpen\] = useState\(false\);/.test(part02), "bag 里声明了「开没开」这一位（与 dramaCanvasOpen 同档）");
-ok(/bag\.uiSketchOpen = uiSketchOpen as typeof bag\.uiSketchOpen/.test(part02) && /return \{[^}]*uiSketchOpen, setUiSketchOpen/.test(part02), "part02 既写 bag 又在 return 面导出（漏一个 = 别人拿不到）");
-
-const bagTypes = read("src/features/app-state/parts/bag-types.ts");
-ok(bagTypes.includes("uiSketchOpen: boolean;") && /setUiSketchOpen: React\.Dispatch<React\.SetStateAction<boolean>>;/.test(bagTypes), "bag-types 登记了这一位与它的 setter（漏了 tsc 会红，但顺序/类型写错是静默的）");
-
-const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
-ok(/\{uiSketchOpen \&& \(/.test(appView) || appView.includes("{uiSketchOpen && ("), "AppView 按开关渲染草图浮层");
-ok(appView.includes("<UiSketchModal") && appView.includes("onClose={() => setUiSketchOpen(false)}"), "浮层接了 onClose（关不掉的模态是回归）");
-ok(appView.includes("pendingCommandTextRef.current = text;"), "「交给 Codex」走 ref 塞任务（与画布同一条已验证通路，不受 setPrompt 滞后影响）");
+/* ⛔ 11-28 用户令：「把前端开发那个也接过来，不需要再单独界面了，跟这个画布一样的展示效果&联动效果」。
+   接线口径从「bag 布尔 + AppView 整屏浮层」改成「右栏标签页」：
+   PANEL_TABS 有 sketch + 03-review-panel 渲染 inline 实例 + 侧栏入口开这一页。
+   ⛔ 语义不变：入口还在、能关（onClose）、能交给 Codex（sendPrefilled）—— 只是落点换成标签页。 */
+const panelSrc = codeOnly(read("src/features/app-view/AppView/03-review-panel.tsx"));
+ok(/key: "sketch"/.test(panelSrc) && /variant="inline"/.test(panelSrc), "右栏有「前端开发」标签页并以内嵌形态渲染");
+ok(panelSrc.includes("sendPrefilled") && panelSrc.includes("onClose"), "前端开发：交给 Codex 走 sendPrefilled、实例接了 onClose");
+/* 两态（11-28 用户令：小屏只留手机 UI 本体、按键都不展示） */
+ok(/compact=\{/.test(panelSrc) && /data-density=\{compact/.test(codeOnly(read("src/features/ui-sketch/UiSketchModal.tsx"))), "两态：精简态只留画布本体（头部藏），完整态全功能");
+/* 浮层开关必须彻底没有（残留 = 又冒出第二个入口） */
+ok(!/uiSketchOpen/.test(codeOnly(read("src/features/app-view/AppView.tsx"))) && !/uiSketchOpen: boolean/.test(read("src/features/app-state/parts/bag-types.ts")), "整屏浮层的开关已删除（AppView / bag-types 均无 uiSketchOpen）");
 
 const modal = codeOnly(read("src/features/ui-sketch/UiSketchModal.tsx"));
 ok(!/\bbag\./.test(modal), "板块自包含：不直接读 bag（状态只从 props 进、开关只有那一位）");
@@ -313,7 +313,7 @@ ok(!/ui-sketch\//.test(part05Code), "负向：part05 不深链 ui-sketch 内部�
 /* 分发分支的行为窗口：锚在 else-if 的 tool 比较上（稳定），窗口内钉关键动作序列。 */
 const getBranchAt = part05Code.indexOf('event.params?.tool === "frontend_get_doc"');
 const getBranch = getBranchAt >= 0 ? part05Code.slice(getBranchAt, getBranchAt + 1600) : "";
-ok(getBranchAt >= 0 && getBranch.includes("setUiSketchOpen(true)") && getBranch.includes("waitSketchReady()") && getBranch.includes("requestSketchDoc()"), "读分支：自动开窗 → 等桥就绪 → 发请求（三步缺一就发进空气）");
+ok(getBranchAt >= 0 && (getBranch.includes("openPanelTab") || getBranch.includes("setUiSketchOpen(true)")) && getBranch.includes("waitSketchReady()") && getBranch.includes("requestSketchDoc()"), "读分支：自动开窗 → 等桥就绪 → 发请求（三步缺一就发进空气）");
 ok(getBranch.includes("readback.doc") && getBranch.includes("success: true"), "读分支：空画布给 success + 指引（空画布是合法结果，不是错误）");
 
 const applyBranchAt = part05Code.indexOf('event.params?.tool === "frontend_apply_doc"');

@@ -335,8 +335,8 @@ export async function run() {
   );
   /* 11-28 用户令：两个画布统一进侧栏 ⇒ AI 画布的落点改成「开右栏 + 切画布页」，
      判据同步成新写法（⛔ 语义不变：入口必须还在，只是不再开整屏浮层）。 */
-  (/(openPanelTab\("canvas",\s*"画布"\)|setDramaCanvasOpen\(true\))/.test(side180) && /setUiSketchOpen\(true\)/.test(side180) ? ok : fail)(
-    "【180】AI 画布 / 前端开发画布入口没有随「更多」一起消失（11-28 起 AI 画布落点 = 右栏「画布」页）"
+  (/(openPanelTab\("canvas",\s*"画布"\)|setDramaCanvasOpen\(true\))/.test(side180) && /(openPanelTab\("sketch"|setUiSketchOpen\(true\))/.test(side180) ? ok : fail)(
+    "【180】AI 画布 / 前端开发画布入口没有随「更多」一起消失（11-28 起两者落点都是右栏标签页）"
   );
   (/\.sidebar-guide\s*\{/.test(sideStyles180) ? ok : fail)(
     "【180】能力入口弹窗样式存在（缺了弹窗会是一堆裸按钮）"
