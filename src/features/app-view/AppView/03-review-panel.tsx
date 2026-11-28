@@ -162,6 +162,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
    静态 import 会把它塞进主包，首屏白等一份没人看的目录。 */
 const ComponentLibraryPage = lazy(() => import("../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 /* ⛔ 11-28：前端开发（iframe 画布 + 桥）同样懒加载 —— 不进主包，点开才拉。 */
+const MediaDeskPage = lazy(() => import("../../media-desk").then((m) => ({ default: m.MediaDeskPage })));
 const MediaPanel = lazy(() => import("../../media").then((m) => ({ default: m.MediaPanel })));
 const OpenfilmPanel = lazy(() => import("../../openfilm").then((m) => ({ default: m.OpenfilmPanel })));
 const ImageLabBridge = lazy(() => import("../../image-lab").then((m) => ({ default: m.ImageLabBridge })));
@@ -192,6 +193,10 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
   { key: "media", name: "媒体", Icon: Film, ic: "ic-amber", title: "媒体：视频 / 音频 / 3D 文件的预览（Codex 放一次就自动切到这页）" },
   /* ⛔ 11-28 用户令：「影片剪辑接一下」—— 原独立弹窗改右栏页（页内仍可拆成独立窗口）。 */
   { key: "film", name: "影片剪辑", Icon: Clapperboard, ic: "ic-cyan", title: "影片剪辑：OpenFilm Studio 内嵌在这里（也可点页内按钮拆成独立窗口）" },
+  /* ⛔ 11-28 用户令：「把自媒体工作台也接到右侧边栏里面」。
+     它本来就是 iframe 页面（外部本地服务，见 media-desk/index.tsx），直接搬进来即可；
+     功能入口里的「独立窗口」入口保留不动。 */
+  { key: "desk", name: "自媒体", Icon: Megaphone, ic: "ic-accent", title: "自媒体工作台：灵感 → 成稿 → 排期 → 复盘（同一份本地数据，独立窗口仍可用）" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
 
@@ -652,6 +657,16 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             {/* 3D 预览页（11-28 用户令「3D 建模展示接到侧边栏新标签页」）：
                 模型调 preview_3d / openModelViewer 时桥会写 store 并请宿主切到本页；
                 没有目标时给引导文案（见 ModelViewerPanel 空态）。 */}
+            {/* 自媒体工作台页（11-28 用户令「把自媒体工作台也接到右侧边栏里面」）：
+                它本身是 iframe 页面（本地服务 + 版本检查/更新都在页内），搬进来即可。
+                ⛔ 数据与「功能入口 → 独立窗口」共用同一份，两边可以同时开。 */}
+            <div className={`panel-page ${rightTab === "desk" ? "" : "hidden"}`}>
+              {rightTab === "desk" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在打开自媒体工作台…</div>}>
+                  <MediaDeskPage />
+                </Suspense>
+              ) : null}
+            </div>
             {/* 媒体页（11-28 用户令「媒体预览接一下」）：桥（headless）收到预览请求会把目标写进
                 store 并切到本页；本页只渲染当前目标，没有目标时给引导。 */}
             <div className={`panel-page ${rightTab === "media" ? "" : "hidden"}`}>
