@@ -698,10 +698,13 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             只包 ReactFlow 的话，一打开就 "useDramaActions 必须在 Provider 内使用" ——
             整屏 ErrorBoundary（实测踩过）。 */}
         <DramaActionsProvider value={actions}>
-        {/* ⛔ 11-26 用户令（右栏内嵌形态）：「顶上那些按键可以不要，就一块画布」。
-            inline 时整块头部（工作流切换 / 画布与分镜表选择 / 进度 / 新建 / 批量生成 / 保存 /
-            退出）一律不渲染 —— 内嵌就只留画布本体与图片编辑；整窗浮层形态行为不变。 */}
-        {variant === "overlay" ? (
+        {/* ⛔⛔ 11-28 用户令（截图）：「画布应包含较多的功能按键……当前实际呈现的原生按键数量明显偏少。
+            请完整梳理原有按键清单，逐一确认接线，补齐后确保全部可用」——
+            ⇒ **完整态必须有整块头部**（工作流切换 / 画布与分镜表选择 / 进度 / 新建 / 批量生成 / 保存 / 退出）。
+            11-26 的「inline 就打一块画布、顶上按键都不要」只管**精简态**（侧栏窄 / 未放大）；
+            完整态（放大 / 宽于 480px）一律显示 —— 否则右栏成了唯一载体，这些按键就彻底没了。
+            ⛔ 判据是 `compact`（密度）而不是 `variant`（形态）：形态只剩 inline，按形态藏 = 永远藏。 */}
+        {compact ? null : (
         <header className="drama-canvas-head">
           <div className="drama-canvas-head-left">
             <span className="drama-canvas-head-icon"><Clapperboard size={17} /></span>
@@ -854,14 +857,13 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
               else if (!workspace) pushNotice("已保存到本机（分镜表只在本机）—— 给会话选个工作文件夹后，Codex 会话才读得到它", "");
               else pushNotice(`已保存到本机，但工作区文件写失败：${saved.error || "未知原因"} —— 确认那个工作文件夹还在，再保存一次`, "err");
             }}><Save size={13} />保存</button>
-            {/* ⛔ 内嵌在右栏时不显示「退出」：那一栏本身就是标签页，切标签即离开，
-                再摆一个退出按钮会让人以为点了会关掉别的东西。 */}
-            {variant === "overlay" ? (
-              <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
-            ) : null}
+            {/* ⛔ 11-28：完整态给「退出」（inline 下 = 切回监控页）；精简态不占地方（切标签即离开）。 */}
+            {compact ? null : (
+              <button className="drama-canvas-head-btn" onClick={onClose} title={variant === "inline" ? "关闭画布（回到监控页）" : "退出画布"}><X size={13} />退出</button>
+            )}
           </div>
         </header>
-        ) : null}
+        )}
 
         {/* 「待生成 N」的明细展开条（09-29）：点数字才展开，列清是哪几张卡 + 一个明确的生成按钮。
             ⛔ 刻意不是浮层：浮层会被 .drama-canvas-shell 的 overflow:hidden（圆角裁切）切掉
@@ -888,9 +890,12 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
           </div>
         ) : null}
 
-        {/* ⛔ 11-26 用户令（内嵌形态）：「上面还有这么按键……全部去掉，纯画布跟图片右键功能就行了」。
-            左侧竖条工具栏（添加节点 / 框选 / 平移 / 缩放 / 适配 / 清空）内嵌时不渲染；浮层形态不变。 */}
-        {variant === "overlay" ? (
+        {/* ⛔⛔ 11-28 用户令（截图）：「按键数量明显偏少，要完整梳理原有按键清单并补齐」——
+            左侧竖条工具栏（添加节点 / 框选 / 平移 / 缩放 / 适配 / 清空）**完整态一律显示**。
+            11-26 的「内嵌就把这些全部去掉、纯画布」现在只适用**精简态**（侧栏窄 / 未放大），
+            那时改用右下角缩放胶囊（DramaZoomDock）。
+            ⛔ 判据必须用 `compact` 而不是 `variant`：形态只剩 inline，按形态藏 = 永远藏。 */}
+        {compact ? null : (
         <div className="drama-canvas-toolbar">
           <div className="drama-canvas-addmenu">
             <button className="drama-canvas-tool" aria-expanded={addMenuOpen} title="添加节点" onClick={() => setAddMenuOpen((v) => !v)}><Plus size={14} /><span>添加节点</span></button>
@@ -953,7 +958,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             }}><Trash2 size={14} />清空</button>
           </div>
         </div>
-        ) : null}
+        )}
 
         <div className={`drama-canvas-layout ${inspectorOpen ? "" : "is-inspector-hidden"}`}>
           <div
@@ -1018,15 +1023,13 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--line)" />
               </ReactFlow>
             {variant === "overlay" ? <div className="drama-canvas-vp-hint" aria-hidden>滚轮缩放 · 空白拖动平移 · Shift 框选 · 空格拖拽平移</div> : null}
-            {/* ⛔ 11-26 用户：「放大缩小也看不见」—— 内嵌形态收掉了整条工具栏，比例与缩放按钮也跟着没了。
-                ⇒ 右下角常驻一颗缩放胶囊（− / 比例 / +），见 DramaCanvasOverlays。 */}
-            {variant === "inline" ? (
-              <DramaZoomDock zoomText={zoomText} onZoomOut={() => zoomBy(1 / 1.15)} onZoomIn={() => zoomBy(1.15)} onFit={fitAll} />
-            ) : null}
+            {/* ⛔ 11-26 用户：「放大缩小也看不见」—— 内嵌形态曾收掉整条工具栏，比例与缩放按钮也跟着没了。
+                11-28 起**两态都常驻**这颗缩放胶囊（完整态另有竖条工具栏，多一条不冲突）。 */}
+            <DramaZoomDock zoomText={zoomText} onZoomOut={() => zoomBy(1 / 1.15)} onZoomIn={() => zoomBy(1.15)} onFit={fitAll} />
             {/* 空画布引导（09-28 用户反馈「新建了然后呢，有什么用，完全看不懂」）：
                 原来空画布就是一片白，没人说明这块板干什么、两个起手按钮区别在哪。
                 ⛔ 只在真的空时显示（有节点就不该挡视野），纯提示不拦点击（pointer-events:none）。 */}
-            {variant === "overlay" && board.nodes.length === 0 ? <DramaBlankGuide /> : null}
+            {!compact && board.nodes.length === 0 ? <DramaBlankGuide /> : null}
           </div>
           {/* 连线恢复了，属性面板里的「连线」块也要一起回来（能连却看不到连了谁＝半套功能）。 */}
           {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} /> : null}
