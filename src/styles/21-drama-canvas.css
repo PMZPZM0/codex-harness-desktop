@@ -1626,7 +1626,12 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   overflow: hidden;
   border: 1px solid var(--line-soft);
   background: var(--panel-2);
+  /* 11-28 用户令：缩略图就是预览入口（点击开灯箱），所以指针要明确"可放大" */
+  cursor: zoom-in;
+  outline: none;
 }
+.drama-ref-cell:hover { border-color: var(--accent); }
+.drama-ref-cell:focus-visible { box-shadow: 0 0 0 2px var(--accent-soft); border-color: var(--accent); }
 .drama-ref-thumb {
   display: block;
   width: 100%;

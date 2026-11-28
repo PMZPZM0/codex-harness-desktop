@@ -34,6 +34,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
+import { openImageLightbox } from "../../lib/ui-channels";
 import { detailPanelsOf, dramaIsKnownKind, dramaNodeDef, dramaNodeLabel, imageKindMeta } from "../../lib/drama-canvas-model.mjs";
 import { useDramaActions } from "./drama-actions";
 /* ⛔ 按钮本体共享（卡面 + 检查器同一颗）—— 见 DramaChannelButton.tsx 顶部注释。 */
@@ -61,7 +62,18 @@ export function DramaRefGrid({ refs, onRemove, title }: { refs: string[]; onRemo
       <span className="drama-canvas-card-ref-tag">参考图 · {refs.length}</span>
       <div className="drama-ref-grid">
         {refs.map((ref) => (
-          <span className="drama-ref-cell" key={ref} title={String(ref).split(/[\\/]/).pop()}>
+          /* 11-28 用户令：「下面这个小图支持点击预览不就行了」——
+             缩略图本身就是预览入口（灯箱复用全局那一个：滚轮缩放 / 拖动 / 复制），
+             ⛔ 别点 × 之外还触发别的东西：× 自己 stopPropagation。 */
+          <span
+            className="drama-ref-cell"
+            key={ref}
+            title={`${String(ref).split(/[\\/]/).pop()}（点击预览）`}
+            role="button"
+            tabIndex={0}
+            onClick={(event) => { event.stopPropagation(); openImageLightbox(ref, String(ref).split(/[\\/]/).pop() || "参考图"); }}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openImageLightbox(ref, String(ref).split(/[\\/]/).pop() || "参考图"); } }}
+          >
             <img className="drama-ref-thumb" src={imageDisplaySrc(ref)} alt="参考图" loading="lazy" />
             {onRemove ? <button type="button" className="drama-ref-remove" title="移除这张参考图" onClick={(event) => { event.stopPropagation(); onRemove(ref); }}><X size={10} /></button> : null}
           </span>
@@ -170,6 +182,11 @@ function PromptInput({ nodeId, value, placeholder, field = "prompt" }: { nodeId:
       placeholder={placeholder}
       spellCheck={false}
       onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      /* ⛔ 11-28 用户实测「提示词都输入不了」：画布是 React Flow 节点，库的拖动监听 + 外层
+         `onPointerDown` 里那句 `shellRef.focus()` 都可能把这一次按下的默认聚焦吃掉
+         ⇒ 点进去没反应、打不了字。这里在 click 里**显式把焦点抢回来**（最直接、不依赖库行为）。 */
+      onClick={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
       onChange={(e) => actions.board.updatePayload(nodeId, { [field]: e.target.value })}
       onBlur={() => void actions.story.writeBack(nodeId)}
     />
@@ -326,6 +343,9 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
           suppressContentEditableWarning
           spellCheck={false}
           onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          /* ⛔ 与提示词 textarea 同因（11-28「提示词都输入不了」）：显式抢回焦点 */
+          onClick={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
           onBlur={(e) => update({ text: e.currentTarget.textContent || "" })}
         >
           {payload.text || "在这里记录想法、任务或素材线索…"}
@@ -485,15 +505,15 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
       /* ⛔ 参考图（payload.ref）与生成产物（payload.path）**分开显示**（09-29 用户：上传的参考图
          会把已生成的图顶掉）。规则：有产物时主位给产物、参考图退到下方缩略条；只有参考图还没出图时，
          主位显示参考图并在标题里写明是它（免得用户以为已经出图了）。 */
-      const refPath = String(payload.ref || "");
       const imageRefs = refsOf(payload);
       return (
         <>
-          {/* ⛔ 参考图统一走九宫格（10-01 用户：多张 + 九宫格 + 可删；「参考图太大了」——
-              原先是整张大图直接铺满卡片）。产物位（path）仍用大预览。 */}
-          {kind === "image" && refPath && !path && imageRefs.length === 1 ? <MediaPreview path={refPath} alt="参考图" kind="image" title="参考图（还没出图）" nodeId={id} fields={["ref"]} channel="image" /> : null}
+          {/* ⛔⛔ 11-28 用户令（截图）：「上传的参考图上面要这么大？下面这个小图支持点击预览不就行了，
+              不需要上面再一个这么大图，上面输入框啊」——
+              原来「单张参考图 + 还没出图」会**同时**渲染一张大图 + 九宫格（同一张图出现两遍），
+              把提示词输入框挤到最下面。⇒ 参考图**只走九宫格**（缩略图点击即灯箱预览），
+              大预览只留给**产物位**（`path`，那是成图，值得占地方）。 */}
           {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "出图")} kind="image" title={String(payload.title || "出图")} nodeId={id} fields={["path", "url"]} channel="image" /> : null}
-          {kind === "image" && imageRefs.length ? <DramaRefGrid refs={imageRefs} onRemove={(refItem) => void actions.story.removeRef(id, refItem)} /> : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
           {/* ⛔ 空态文案要让人**照做**（09-29 用户要新手向）：说清"在这写什么 + 写完点哪 + 图去哪"。 */}
           {/* ⛔ 11-26 用户（截图）：「第一张图没法输入」—— 这里原来是一段**只读** div，
@@ -515,6 +535,10 @@ function DramaNodeCardInner({ id, data, selected, isConnectable, onResize }: Nod
                 : (kind === "audio" ? "写这一句要念的台词，写完点下面的「配音」。" : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。")}
             />
           )}
+          {/* ⛔ 11-28 用户令：「上面输入框啊」—— 参考图缩略图排到提示词**下面**，
+              卡片上部先给输入区（原来参考图占一大块、输入框被挤到最底）。
+              缩略图本身点开就是灯箱预览，所以不必再占一张大图的位置。 */}
+          {kind === "image" && imageRefs.length ? <DramaRefGrid refs={imageRefs} onRemove={(refItem) => void actions.story.removeRef(id, refItem)} /> : null}
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
         </>
       );

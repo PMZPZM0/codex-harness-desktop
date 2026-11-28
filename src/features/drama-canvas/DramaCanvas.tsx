@@ -956,7 +956,15 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             ref={viewportRef}
             onDragOver={(e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
             onDrop={(e) => void dropFiles(e)}
-            onPointerDown={(e) => { shellRef.current?.focus({ preventScroll: true }); const el = e.target as HTMLElement; if (!el.closest?.("input,textarea,select,button,a,[contenteditable=true]")) setMenu(null); }}
+            onPointerDown={(e) => {
+              const el = e.target as HTMLElement;
+              /* ⛔⛔ 11-28 用户实测「提示词都输入不了」：这里原来**无条件** `shellRef.focus()` ——
+                 在卡片输入框（textarea / 笔记卡 contentEditable）里点一下，焦点会被画布外壳抢走，
+                 表现为「点进去打不了字」。⇒ 只在非输入控件上把焦点收回画布（键盘快捷键仍需它）。 */
+              const typing = el.closest?.("input,textarea,select,[contenteditable=true]");
+              if (!typing) shellRef.current?.focus({ preventScroll: true });
+              if (!el.closest?.("input,textarea,select,button,a,[contenteditable=true]")) setMenu(null);
+            }}
           >
             <ReactFlow
                 nodes={board.nodes}
