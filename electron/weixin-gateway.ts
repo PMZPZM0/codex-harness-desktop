@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readSecretJson, writeSecretJson } from "./secure-state";
 import { guardedFetch } from "./net-guard";
 
 const ILINK_BASE = "https://ilinkai.weixin.qq.com";
@@ -315,13 +316,13 @@ export class WeixinGateway {
 
   private async saveAccount(account: { token: string; botId: string; userId: string; baseUrl: string }) {
     await fs.mkdir(this.stateDir, { recursive: true });
-    await fs.writeFile(this.accountFile(), JSON.stringify({ ...account, updatesBuf: this.updatesBuf }, null, 2), "utf8");
+    writeSecretJson(this.accountFile(), { ...account, updatesBuf: this.updatesBuf });
   }
 
   /** 重启恢复：有持久化凭据则免扫码直接续跑 */
   async resume() {
     try {
-      const raw = JSON.parse(await fs.readFile(this.accountFile(), "utf8"));
+      const raw = readSecretJson<any>(this.accountFile());
       if (raw.token) {
         this.token = raw.token;
         // 兼容早期持久化的双重前缀坏数据
@@ -357,7 +358,7 @@ export class WeixinGateway {
 
   private async localTokens(): Promise<string[]> {
     try {
-      const raw = JSON.parse(await fs.readFile(this.accountFile(), "utf8"));
+      const raw = readSecretJson<any>(this.accountFile());
       return raw.token ? [raw.token] : [];
     } catch { return []; }
   }

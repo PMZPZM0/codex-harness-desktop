@@ -326,8 +326,13 @@ ok(/this\.lastCloseCode = code;/.test(code),
   "close 记下官方关闭码（没有它，用户与我们都分不清凭据错、权限没开还是频控）");
 ok(/return this\.socketReady && this\.sessionReady;/.test(code),
   "hasSession = socket open **且** 收到过事件（鉴权没过时后台不下发任何事件）");
+/* 11-28：落盘改用 secure-state 的 writeSecretJson（凭据加密，F-04）⇒ 判据认这两个写入点之一，
+   顺序仍然必须「先 waitSessionReady 再落盘」。 */
 ok(/await this\.waitSessionReady\(/.test(code)
-  && connectBody.indexOf("waitSessionReady") < connectBody.indexOf("fs.writeFileSync(stateFile()"),
+  && connectBody.indexOf("waitSessionReady") < Math.max(
+    connectBody.indexOf("writeSecretJson(stateFile()"),
+    connectBody.indexOf("fs.writeFileSync(stateFile()"),
+  ),
   "connect 先等 READY 再落盘再报成功（顺序反了会把连不上的账号写进自动恢复）");
 ok(/if \(error\?\.code === "ENOENT"\) return false;/.test(code),
   "没绑过 QQ 的自动恢复静默返回（不刷 channel-log 错误）");

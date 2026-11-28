@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readSecretJson, writeSecretJson } from "../secure-state";
 import fs from "node:fs";
 import { app } from "electron";
 
@@ -120,7 +121,7 @@ export class DingtalkGateway {
       this.log("error", "钉钉凭据有效，但 Stream 长连接 8s 内没建立（SDK 会在后台自动重试；请确认应用已开通「机器人」能力、消息接收模式为 Stream，且本机网络可达）");
       throw new Error("钉钉长连接未建立：凭据没问题，但连不上服务端（详见机器人日志）");
     }
-    try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); fs.writeFileSync(stateFilePath(), JSON.stringify({ clientId: id, clientSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); writeSecretJson(stateFilePath(), { clientId: id, clientSecret: secret }); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", "钉钉机器人已连接（Stream 模式）");
     return { ok: true, name: "钉钉机器人" };
   }
@@ -187,7 +188,7 @@ export class DingtalkGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFilePath(), "utf8"));
+      const raw = readSecretJson<any>(stateFilePath());
       if (raw.clientId && raw.clientSecret) {
         await this.connect(String(raw.clientId), String(raw.clientSecret));
         return true;

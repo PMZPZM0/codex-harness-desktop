@@ -163,6 +163,11 @@ export const browserFeature = defineFeature<null>({
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
+          /* ⛔⛔ 11-28 安全审计 F-05：原来不指定 partition ⇒ 落**默认 session**，
+             而默认 session 对麦克风权限是**无条件放行**的（boot.ts 的 setPermissionRequestHandler），
+             且默认 session 挂着 harness-image / harness-media（任意本机媒体流）两个协议。
+             ⇒ 与内置浏览器同一个分区，弹窗里的页面拿不到这些。 */
+          partition: BROWSER_PARTITION,
         },
       });
       pop.setMenuBarVisibility(false);

@@ -206,7 +206,15 @@ export const dataAccessFeature = defineFeature<null>({
 
     ipcHost.handle("dataaccess:vault-copy", async (_event, input: Record<string, unknown>) => {
       const threadId = threadOf(input?.threadId);
-      assertGranted(threadId, "vault", "read");
+      /* ⛔⛔ 11-28 安全审计 F-07：原来只要 `vault/read` 就能复制 —— 而复制=把明文交到系统剪贴板，
+         模型随后可用 shell（Get-Clipboard / xclip -o）读回上下文，风险等同「写入」。
+         ⇒ 提到 write 档，并给一条说清原因的错误（别让用户以为"我明明开了读权限"是 bug）。 */
+      if (!isGranted(threadId, "vault", "write")) {
+        throw new Error(
+          "未授权：复制密码会把明文交给模型，风险等同写入 —— 请在「输入框左侧快捷条 →『数据授权』」里"
+          + "为本会话打开 vault 的**写入**权限，再重试。",
+        );
+      }
       const id = String(input?.id ?? "").trim();
       if (!id) throw new Error("需要传入条目 id（先用 vault 的 find 动作查 id）");
       const result = await copyVaultSecret(userData(), secure, id);

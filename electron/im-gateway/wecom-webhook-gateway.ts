@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readSecretJson, writeSecretJson } from "../secure-state";
 import fs from "node:fs";
 import { app } from "electron";
 import { guardedFetch } from "../net-guard";
@@ -46,7 +47,7 @@ export class WecomWebhookGateway {
     if (res.errcode !== 0) throw new Error(`Webhook 无效：${res.errmsg ?? JSON.stringify(res).slice(0, 120)}`);
     this.webhookUrl = clean;
     this.lastGoodAt = Date.now();
-    try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); fs.writeFileSync(stateFilePath(), JSON.stringify({ webhookUrl: clean }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); writeSecretJson(stateFilePath(), { webhookUrl: clean }); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", "企业微信群机器人 Webhook 已接入（测试消息已送达）");
     return { ok: true, name: "企业微信群" };
   }
@@ -94,7 +95,7 @@ export class WecomWebhookGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFilePath(), "utf8"));
+      const raw = readSecretJson<any>(stateFilePath());
       if (raw.webhookUrl && /^https:\/\/qyapi\.weixin\.qq\.com/i.test(String(raw.webhookUrl))) {
         this.webhookUrl = String(raw.webhookUrl);
         this.lastGoodAt = 0; // 重启后还没真发过，别拿上一轮的送达当证据

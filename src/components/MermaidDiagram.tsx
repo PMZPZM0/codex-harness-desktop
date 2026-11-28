@@ -20,7 +20,12 @@ function loadMermaid() {
     const mm = m.default ?? m;
     mm.initialize({
       startOnLoad: false,
-      securityLevel: "loose",
+      /* ⛔⛔ 11-28 安全审计 F-02：原为 "loose" —— loose 下 mermaid **跳过 URL 净化**，
+         模型输出/粘贴内容里的 ```mermaid 块可带 `click A "javascript:…"`，
+         渲染进 innerHTML 后即可执行脚本，而脚本能直调 window.codex.*（+ CSP 的 unsafe-inline 放行）。
+         ⇒ 改 strict：mermaid 自己做 DOMPurify 净化、禁 click 回调与 javascript: 链接。
+         ⛔ 代价：带 click 交互的流程图不再可点（产品上极少用；安全优先）。 */
+      securityLevel: "strict",
       theme: document.documentElement.classList.contains("dark") ? "dark" : "neutral",
       fontFamily: "inherit",
     });

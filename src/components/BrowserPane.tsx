@@ -371,7 +371,11 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
               ref={wvRef}
               src={active.url}
               className="browser-pane-webview"
-              allowpopups="true"
+              /* ⛔⛔ 11-28 安全审计 F-05：原为 allowpopups="true"，而 guest **没有**
+                 setWindowOpenHandler（全仓零注册）⇒ 远程页面可无限 window.open 出无人管控的窗口
+                 （无导航守卫、无法关、可钓鱼）。⇒ 直接去掉：Electron 默认 deny，
+                 站点自己弹不出来；要外链就点页面里的普通链接（我们走 openExternal 白名单）。
+                 ⛔ 产品影响仅限「站点自己弹的窗」（OAuth 多走主流程，不依赖它）。 */
               /* 10-29 用户：「加一个 cookie 登录态保存功能」—— 用**持久分区**，登录态落盘、重启仍在；
                  ⛔ 别去掉 partition（默认 session 与主应用共用 cookie 域，清数据会误伤账号登录态）。 */
               partition="persist:harness-browser"

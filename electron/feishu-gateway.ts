@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readSecretJson, writeSecretJson } from "./secure-state";
 import os from "node:os";
 import fs from "node:fs";
 import { app } from "electron";
@@ -142,7 +143,7 @@ export class FeishuGateway {
       const me = await this.client.bot.info.get();
       this.botName = String(me?.data?.bot?.app_name ?? "");
     } catch { this.botName = ""; }
-    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify({ appId: id, appSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); writeSecretJson(stateFile(), { appId: id, appSecret: secret }); } catch { /* 持久化失败不阻塞 */ }
     // 措辞如实：SDK 连不上时 start() 也不会 reject ⇒ 这里只报「已启动」，
     // 「到底活着没有」由 hasSession() 读 getConnectionStatus（⛔ 别写「已连接」骗人）
     this.log("info", `飞书机器人${this.botName ? `「${this.botName}」` : ""}长连接已启动（凭据校验通过）`);
@@ -217,7 +218,7 @@ export class FeishuGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
+      const raw = readSecretJson<any>(stateFile());
       if (raw.appId && raw.appSecret) {
         await this.connect(String(raw.appId), String(raw.appSecret));
         return true;

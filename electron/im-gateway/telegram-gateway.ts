@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readSecretJson, writeSecretJson } from "../secure-state";
 import fs from "node:fs";
 import { app } from "electron";
 import { guardedFetch } from "../net-guard";
@@ -72,7 +73,7 @@ export class TelegramGateway {
     this.running = true;
     this.lastPollOkAt = Date.now();
     this.log("info", `Telegram 机器人 @${me.result.username} 已连接`);
-    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify({ token: clean, username: me.result.username }, null, 2)); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); writeSecretJson(stateFile(), { token: clean, username: me.result.username }); } catch { /* 持久化失败不阻塞 */ }
     void this.pollLoop();
     return { username: me.result.username as string };
   }
@@ -138,8 +139,8 @@ export class TelegramGateway {
   /** 重启恢复：有持久化 token 自动重连 */
   async resume() {
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
-      if (raw.token) return await this.connect(raw.token);
+      const raw = readSecretJson<{ token?: string; username?: string }>(stateFile());
+      if (raw?.token) return await this.connect(raw.token);
     } catch { /* 未配置 */ }
     return false;
   }

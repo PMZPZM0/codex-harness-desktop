@@ -15,6 +15,7 @@
 //      （msg_id 被动回复，5 分钟内有效；需开放平台开通「发送消息」权限）
 // 仅依赖 node 原生 ws 不内置——用官方 ws 包（Electron 主进程可用）。
 import { app } from "electron";
+import { readSecretJson, writeSecretJson } from "./secure-state";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -145,7 +146,7 @@ export class QqGateway {
     // ⛔ 「先返回成功、状态页再变未连接」是这个板块最难自查的形态（用户看到的是「连不上但没说为什么」）
     await this.waitSessionReady(12_000);
     // 落盘放在连通之后：凭据有问题就不该让下次启动继续自动恢复它（只会刷一屏同样的失败）
-    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify({ appId: id, appSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); writeSecretJson(stateFile(), { appId: id, appSecret: secret }); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", `QQ 机器人（AppID ${id.slice(0, 8)}…）已连接`);
     return { ok: true, name: "QQ 机器人" };
   }
@@ -389,7 +390,7 @@ export class QqGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
+      const raw = readSecretJson<any>(stateFile());
       if (raw.appId && raw.appSecret) {
         await this.connect(String(raw.appId), String(raw.appSecret));
         return true;

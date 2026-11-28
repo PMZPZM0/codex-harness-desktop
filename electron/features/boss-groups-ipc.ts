@@ -64,6 +64,24 @@ const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v7"} -->
 
 const TICK_MS = 5000;
 
+/**
+ * 校验群成员的 CLI 命令模板（安全审计 F-01）。
+ * 为什么必须有：`cliCommand` 是暴露给模型的工具参数，runner 会把它原样交给 cmd /c（或 sh -c）
+ * 执行 —— 没有这道校验，模型就等于拿到一条绕过审批的任意命令通道。
+ * 规则：必须含 `{prompt}` 占位符；去掉 `{prompt}` 后不得含能改变命令结构的元字符。
+ * ⛔ 只拒不改：猜元字符意图去"净化"必然猜错，宁可直接报错让调用方写规范模板。
+ */
+export function assertSafeCliTemplate(template: string): void {
+  const command = String(template ?? "").trim();
+  if (!command) return;
+  if (!command.includes("{prompt}")) {
+    throw new Error("cliCommand 必须包含 {prompt} 占位符（它接收任务全文）；不写这个参数就会走宿主的标准模板");
+  }
+  if (/[;&|`$()<>\n\r]/.test(command.split("{prompt}").join(""))) {
+    throw new Error("cliCommand 只能是「程序 + 参数」形式的模板：不能含 ; & | ` $ ( ) < > 或换行（这些能改变命令结构）");
+  }
+}
+
 /** 指挥中枢自己的目录（`<userData>/boss-home`）：建好目录并把角色提示写进 AGENTS.md。
  *  ⛔ 单一真相源：桌面侧建会话走这个 cwd，**手机端建中枢会话**也调它 —— 别各写一份 AGENTS。 */
 export function ensureBossHomeDir(): string {
@@ -302,6 +320,14 @@ export const bossGroupsFeature = defineFeature<null>({
       const st = await bossStore.load();
       const action = input?.action === "add" ? "add" : "remove";
       assertGroupOwned(Object.values(st.groups ?? {}).find((g: any) => g.id === String(input?.groupId ?? "")), input?.callerThreadId);
+      /* ⛔⛔ 11-28 安全审计 F-01：`cliCommand` 是 `group_add_member` 暴露给**模型**的工具参数
+         （05-boss-group-tools.tsx:135），而 runner 最终是
+         `execFile(cmd|sh, ["/c"|"-c", command], { windowsVerbatimArguments: true })` 原样执行
+         ⇒ 等于给模型一条**绕过审批**的命令通道（shell 工具要走审批，这条不走）。
+         ⇒ 只接受「规范模板」：必须含 {prompt}（规范模板都含），且不得含能改变命令结构的 shell 元字符。
+         ⛔ 不做"净化改造"（猜元字符意图必错）—— 直接拒绝，并把原因写进错误消息。 */
+      const rawCli = input?.cliCommand ? String(input.cliCommand) : undefined;
+      if (rawCli) assertSafeCliTemplate(rawCli);
       return memberForBoss({
         groupId: String(input?.groupId ?? ""),
         action,
@@ -315,7 +341,7 @@ export const bossGroupsFeature = defineFeature<null>({
         expertTeamId: input?.expertTeamId ? String(input.expertTeamId) : undefined,
         expertMemberId: input?.expertMemberId ? String(input.expertMemberId) : undefined,
         cliName: input?.cliName ? String(input.cliName) : undefined,
-        cliCommand: input?.cliCommand ? String(input.cliCommand) : undefined,
+        cliCommand: rawCli,
       });
     });
 
