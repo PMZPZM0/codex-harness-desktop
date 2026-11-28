@@ -45,6 +45,7 @@ import { Box, Clapperboard,
   Save,
   SquareDashed,
   MousePointerSquareDashed,
+  MoreHorizontal,
   Trash2,
   Undo2,
   X,
@@ -220,6 +221,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [batchMenuOpen, setBatchMenuOpen] = useState(false);
+  /* ⛔ 11-28 用户：「按键太多的，统一放到三个点更多里面」—— 项目 / 结果 / 保存 / 退出收进 ⋯ */
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [pendingMenuOpen, setPendingMenuOpen] = useState(false);   // 「待生成 N」的明细浮层（只看，不动手）
   /* 产物查看器（09-29 用户：「卡片里的图片没有预览功能」）—— 卡片缩略图与结果面板共用同一个 */
   const [viewer, setViewer] = useState<ViewerTarget | null>(null);
@@ -434,7 +437,14 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       /* ⛔ 新增节点类型必须在这里登记（09-29 实测：漏了 imagegen ⇒ 电商工作流顶栏「待生成」只显示 1，
          其余五张没出图的生图卡根本没被计数 —— 数字说少了比不显示更误导）。 */
       if (kind === "image" || kind === "imagegen" || kind === "character" || kind === "location") {
-        if (hasImage) images++; else pendingCards.push(label);
+        if (hasImage) images++;
+        /* ⛔⛔ 11-28 用户（截图）：「这个队列为啥不能清空呢」——
+           根因：提示词卡（`act: "prompt"`）和参考图位（`hint: "ref"`）**永远不会有自己的产物**
+           （产物落在配对的「出图」卡上），但这里把所有"没图"的图类卡都算进待生成 ⇒
+           数字永远挂着 2，点「批量生成」也跑不掉，还等于拿空提示词去烧钱出图。
+           ⇒ 只统计**真正会产出产物**的卡：产物位 / 生成位，以及没有角色标记的老画布卡。 */
+        else if (String(p.act || "") === "prompt" || String(p.hint || "") === "ref") { /* 等写提示词 / 等上传参考图，不算待生成 */ }
+        else pendingCards.push(label);
       } else if (kind === "shot") {
         if (p.video) videos++;
         else if (p.audio) audios++;
@@ -445,6 +455,16 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     }
     return { images, videos, audios, pending: pendingCards.length, pendingCards };
   }, [board.nodes]);
+  /* ⛔ 11-28：保存原来内联在头部按钮里；收进「⋯」菜单后要复用 ⇒ 抽一处
+     （⛔ 不写第二份三态提示：09-29 用户就因为"提示自相矛盾"返工过）。 */
+  const saveAll = useCallback(async () => {
+    board.saveNow();
+    const saved = await story.saveNow();
+    if (saved.path) pushNotice("已保存：本机 + 工作区文件（Codex 会话读得到这份分镜表）", "ok");
+    else if (!workspace) pushNotice("已保存到本机（分镜表只在本机）—— 给会话选个工作文件夹后，Codex 会话才读得到它", "");
+    else pushNotice(`已保存到本机，但工作区文件写失败：${saved.error || "未知原因"} —— 确认那个工作文件夹还在，再保存一次`, "err");
+  }, [board, story, pushNotice, workspace]);
+
   const actions = useMemo<DramaActions>(() => ({
     board,
     story,
@@ -846,21 +866,34 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 ) : null}
               </div>
             )}
-            <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目</button>
-            <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />结果</button>
-            <button className="drama-canvas-head-btn" onClick={async () => {
-              board.saveNow();
-              /* ⛔ 三态、一条提示（09-29 用户：「我点击保存，提示这个，啥意思」——
-                 此前按钮盲目乐观说"分镜表同时写到工作区"，写失败时再弹一条红错，两条自相矛盾）。 */
-              const saved = await story.saveNow();
-              if (saved.path) pushNotice("已保存：本机 + 工作区文件（Codex 会话读得到这份分镜表）", "ok");
-              else if (!workspace) pushNotice("已保存到本机（分镜表只在本机）—— 给会话选个工作文件夹后，Codex 会话才读得到它", "");
-              else pushNotice(`已保存到本机，但工作区文件写失败：${saved.error || "未知原因"} —— 确认那个工作文件夹还在，再保存一次`, "err");
-            }}><Save size={13} />保存</button>
-            {/* ⛔ 11-28：完整态给「退出」（inline 下 = 切回监控页）；精简态不占地方（切标签即离开）。 */}
-            {compact ? null : (
-              <button className="drama-canvas-head-btn" onClick={onClose} title={variant === "inline" ? "关闭画布（回到监控页）" : "退出画布"}><X size={13} />退出</button>
-            )}
+            {/* ⛔ 11-28 用户：「按键太多的，统一放到三个点更多里面」——
+                头部原来一排是「新建 / 批量生成 / 项目 / 结果 / 保存 / 退出」六颗，窄一点的窗口必然挤。
+                ⇒ 低频四颗（项目 / 结果 / 保存 / 退出）全部收进「⋯」；
+                「新建」与「批量生成」留在外面 —— 批量生成跑批时要看得见进度并能中止，藏进菜单等于看不见。 */}
+            <div className="drama-canvas-headmenu-wrap">
+              <button className="drama-canvas-head-btn" aria-expanded={moreMenuOpen} title="更多：项目 / 结果 / 保存 / 退出" onClick={() => setMoreMenuOpen((v) => !v)}>
+                <MoreHorizontal size={14} />
+              </button>
+              {moreMenuOpen ? (
+                <>
+                  <div className="drama-canvas-headmenu-backdrop" onClick={() => setMoreMenuOpen(false)} />
+                  <div className="drama-canvas-headmenu" role="menu">
+                    <button role="menuitem" onClick={() => { setMoreMenuOpen(false); setProjectsOpen(true); setResultsOpen(false); }}>
+                      <FolderOpen size={13} /><span>项目<small>切换 / 重命名 / 删除画布，打开数据文件夹</small></span>
+                    </button>
+                    <button role="menuitem" onClick={() => { setMoreMenuOpen(false); setResultsOpen(true); setInspectorOpen(false); }}>
+                      <Images size={13} /><span>结果<small>集中查看这张画布生成的图 / 视频 / 配音</small></span>
+                    </button>
+                    <button role="menuitem" onClick={() => { setMoreMenuOpen(false); void saveAll(); }}>
+                      <Save size={13} /><span>保存<small>本机 + 工作区（工作区那份 Codex 会话读得到）</small></span>
+                    </button>
+                    <button role="menuitem" onClick={() => { setMoreMenuOpen(false); onClose(); }}>
+                      <X size={13} /><span>退出<small>{variant === "inline" ? "关闭画布（回到监控页）" : "退出画布"}</small></span>
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
           </div>
         </header>
         )}

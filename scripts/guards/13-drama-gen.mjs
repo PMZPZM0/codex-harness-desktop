@@ -284,6 +284,14 @@ export async function run() {
     (/progress\.images > 0 \?/.test(canvasSrc2) && /progress\.videos > 0 \?/.test(canvasSrc2) ? ok : fail)(
       "【201】进度芯片 0 值不渲染（有内容才显示计数，宽度随内容自适应）"
     );
+    /* 11-28 用户（截图）：「这个队列为啥不能清空呢」——
+       提示词卡（act=prompt）与参考图位（hint=ref）永远不会有自己的产物，
+       若被算进「待生成」⇒ 数字永久挂着、批量生成还会拿空提示词去出图（烧钱）。
+       判据：pendingCards 的分支里必须显式排除这两种角色。 */
+    (/=== "prompt"/.test(canvasSrc2) && /=== "ref"/.test(canvasSrc2)
+      && !/if \(hasImage\) images\+\+; else pendingCards\.push/.test(canvasSrc2) ? ok : fail)(
+      "「待生成」不含提示词卡与参考图位（否则计数永远清不掉，批量生成还会拿空提示词烧钱）"
+    );
     // ⑤ 按钮组不折行（内部折行 = 一排按钮断成两截，最难看）
     (/\.drama-canvas-head-actions \{[^}]*flex-wrap: nowrap/.test(css) ? ok : fail)(
       "【201】按钮组内部不折行（整体换行由顶栏兜底）"
@@ -1035,7 +1043,9 @@ export async function run() {
     (/materialSlot \? "" : \(POLISH_FIELD\[kind\] \|\| ""\)/.test(chSrc219) ? ok : fail)(
       "【219】负向：素材位（上传参考图 / 参考图槽）不挂「AI 润色」—— 那里没有提示词可润色"
     );
-    (/kind === "image" \|\| kind === "imagegen"[\s\S]{0,140}pendingCards\.push\(label\)/.test(canvasSrc219) ? ok : fail)(
+    /* 11-28：pending 分支里多了「提示词卡 / 参考图位除外」的判断，push 位置后移
+       ⇒ 窗口从 140 放宽到 900（语义不变：这两个 kind 必须仍走进待生成统计）。 */
+    (/kind === "image" \|\| kind === "imagegen"[\s\S]{0,900}pendingCards\.push\(label\)/.test(canvasSrc219) ? ok : fail)(
       "【219】新节点计入「待生成」进度（漏登记 ⇒ 顶栏数字永远说少，比不显示更误导）"
     );
   }

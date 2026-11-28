@@ -1225,6 +1225,12 @@
   align-items: center;
   gap: 6px;
   margin-left: 8px;
+  /* ⛔⛔ 11-28 用户（截图）：「重叠了」——
+     头部是 `flex-wrap: nowrap`，空间不足时只有**没有 flex 声明**的子项会被压缩。
+     这个芯片原来就属于"可压缩"的那一类：被压到 0 宽后，它的 padding + border（4px 10px + 1px）
+     照样绘制 ⇒ 一圈空框叠在左右邻居（「（尚无）」与「＋新建」）身上。
+     ⇒ 与其它子项一致 `flex: none`：放不下交给 `.drama-canvas-head` 的横向滚动，绝不压叠。 */
+  flex: none;
   padding: 4px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
