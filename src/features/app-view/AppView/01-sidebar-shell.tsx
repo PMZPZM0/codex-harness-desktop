@@ -42,12 +42,10 @@ import {
   EyeOff,
   Edit3,
   FileCode2,
-  FileText,
   FileWarning,
   Folder,
   FolderOpen,
   FolderPlus,
-  FolderTree,
   ImagePlus,
   Image,
   GitBranch,
@@ -390,7 +388,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const {
     setWorkspace,
     workspaceRef,
-    chooseWorkspace,
     accountDraft,
     accountEditing,
     accountMenuOpen,
@@ -465,24 +462,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     userAvatar,
     username,
     viewTab,
-    treeEntries,
-    treePath,
-    openFile,
     workspace,
   } = app;
 
   /* 分类视图已撤（10-25）：旧偏好 "source" 落到 projects（⛔ 副作用走 effect，不写在 JSX 里）。 */
   useEffect(() => { if (viewTab === "source") setViewTab("projects"); }, [viewTab]);
 
-  /* 11-26 侧栏标签导航：项目 / 任务 / 文件 三页。
-     ⛔ 不把 "files" 塞进 bag.viewTab —— 那个值参与持久化与折叠/菜单逻辑，只认 projects/tasks 两态；
-        这里单独管"当前看哪一页"，切回项目/任务时原行为完全不变。 */
-  const [sidebarPane, setSidebarPane] = useState<"projects" | "tasks" | "files">(
-    viewTab === "tasks" ? "tasks" : "projects",
-  );
-  useEffect(() => {
-    if (viewTab === "projects" || viewTab === "tasks") setSidebarPane(viewTab);
-  }, [viewTab]);
+  /* ⛔ 11-28 用户令（截图「这怎么多出来一个这个按键」+「去掉」）：撤掉 11-26 并行线接力进来的
+     侧栏第三页「文件」—— 它和右栏「文件」面板高度重叠（点开还是回右栏），还挤占标签条宽度。
+     ⇒ `sidebarPane` 这一层镜像状态一并删掉，直接用 `viewTab`（两态：projects / tasks）。 */
 
   // ⛔ 10-21 用户要求：侧栏能力入口按用途分行（前端 UI / 技能插件 MCP / 智能体 / 人格记忆知识库），
   //   点击弹窗看教程；纯局部 UI 状态，不跨组件共享、不进 bag。
@@ -949,10 +937,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ 分类视图（09-25）入口撤下：本地存过 "source" 的旧偏好由 useEffect 一次性回落 projects，
                 口径与渲染仍保留在 lib/thread-source.mjs（守卫【156】仍在用其数据）。 */}
             <div className="view-tabs" role="tablist" aria-label="侧栏视图">
-              <button className={`view-tab ${sidebarPane === "projects" ? "active" : ""}`} onClick={() => { setViewTab("projects"); setSidebarPane("projects"); }} title="按项目分组查看" role="tab" aria-selected={sidebarPane === "projects"}><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
-              <button className={`view-tab ${sidebarPane === "tasks" ? "active" : ""}`} onClick={() => { setViewTab("tasks"); setSidebarPane("tasks"); }} title="平铺全部任务（不分组）" role="tab" aria-selected={sidebarPane === "tasks"}><ListChecks size={14} className="ic-blue" /><span>任务</span></button>
-              {/* 11-26：侧栏改成标签导航 —— 「文件」页直接列当前工作区，点开走 openFile（与右栏文件树同一道可信根闸） */}
-              <button className={`view-tab ${sidebarPane === "files" ? "active" : ""}`} onClick={() => setSidebarPane("files")} title="当前工作区的文件" role="tab" aria-selected={sidebarPane === "files"}><FolderTree size={14} className="ic-green" /><span>文件</span></button>
+              <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组查看" role="tab" aria-selected={viewTab === "projects"}><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
+              <button className={`view-tab ${viewTab === "tasks" ? "active" : ""}`} onClick={() => setViewTab("tasks")} title="平铺全部任务（不分组）" role="tab" aria-selected={viewTab === "tasks"}><ListChecks size={14} className="ic-blue" /><span>任务</span></button>
               <button
                 ref={moreBtnRef}
                 type="button"
@@ -972,7 +958,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   <button className="view-more-item" role="menuitem" title="搜索任务" onClick={() => { setMoreMenu(null); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
                     <span className="view-toolbar-btn ic-cyan"><Search size={14} /></span><span>搜索任务</span>
                   </button>
-                  <button className="view-more-item" role="menuitem" disabled={sidebarPane !== "projects" || !projectGroups.length} title={sidebarPane === "files" ? "文件页没有项目分组，切到「项目」才能折叠" : sidebarPane === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={() => { setMoreMenu(null); toggleAllSidebarSections(); }}>
+                  <button className="view-more-item" role="menuitem" disabled={viewTab !== "projects" || !projectGroups.length} title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={() => { setMoreMenu(null); toggleAllSidebarSections(); }}>
                     <span className="view-toolbar-btn ic-violet">{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</span><span>{sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"}</span>
                   </button>
                   <button className="view-more-item" role="menuitem" title={hideSidebarTags ? "显示会话 / 项目标签" : "隐藏会话 / 项目标签"} aria-pressed={hideSidebarTags} onClick={() => { setMoreMenu(null); toggleHideSidebarTags(); }}>
@@ -995,47 +981,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ DOM 顺序是**契约的一部分**（守卫【268】钉死已登记插槽位不许被删），
                    所以只允许追加在既有插槽之后，不许插到既有按钮之间。*/}
             <Slot id="sidebar.middle" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
-            <div className={`thread-list${viewTab === "tasks" ? " is-tasks" : ""}${sidebarPane === "files" ? " is-files" : ""}${listScrolling ? " is-scrolling" : ""}`} onScroll={markListScrolling}>
-              {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : sidebarPane === "files" ? (
-                /* 「文件」页：列当前会话工作区的**这一层**条目。
-                   ⛔ 只读一层（treeEntries 就是当前目录列表），不假装是完整树；
-                      要看层级用右栏「文件」面板。 */
-                <div className="sidebar-files">
-                  {!(treePath || workspace) ? (
-                    <div className="sidebar-files-empty">
-                      <span>还没有工作区目录</span>
-                      <button type="button" className="btn-mini" onClick={() => void chooseWorkspace()}>选择目录</button>
-                    </div>
-                  ) : treeEntries.length === 0 ? (
-                    <div className="sidebar-files-empty">
-                      <span>这个目录下没有可显示的文件</span>
-                    </div>
-                  ) : (
-                    treeEntries.map((entry) => {
-                      const base = treePath || workspace || "";
-                      const sep = base.includes("\\") ? "\\" : "/";
-                      const full = base ? `${base}${base.endsWith(sep) ? "" : sep}${entry.fileName}` : entry.fileName;
-                      return (
-                        <button
-                          key={entry.fileName}
-                          type="button"
-                          className="sidebar-file-row"
-                          title={full}
-                          onClick={() => {
-                            if (entry.isDirectory) { showToast("目录", "展开层级请用右侧「文件」面板"); return; }
-                            void openFile(full);
-                          }}
-                        >
-                          {entry.isDirectory
-                            ? <Folder size={13} className="ic-amber" />
-                            : <FileText size={13} className="ic-blue" />}
-                          <span>{entry.fileName}</span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              ) : viewTab === "tasks" ? (
+            <div className={`thread-list${viewTab === "tasks" ? " is-tasks" : ""}${listScrolling ? " is-scrolling" : ""}`} onScroll={markListScrolling}>
+              {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "tasks" ? (
                 /* 10-25 用户令：「项目选项旁边加一个任务选项」= 平铺全部会话（置顶优先、按最近活动排；
                    与项目视图共用 renderDispatchedList 同一渲染器）。
                    10-27 用户令（截图）：「已经显示调度会话，任务列表外面又全部显示一次」
