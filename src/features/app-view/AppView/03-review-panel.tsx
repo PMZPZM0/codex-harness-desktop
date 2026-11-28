@@ -27,6 +27,7 @@ import {
   Edit3,
   FileCode2,
   FileText,
+  Film,
   FileWarning,
   FolderOpen,
   FolderPlus,
@@ -84,6 +85,7 @@ import {
   Wifi,
   X,
   ChevronUp,
+  Clapperboard,
   FileUp,
   Zap,
   MonitorUp,
@@ -160,6 +162,8 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
    静态 import 会把它塞进主包，首屏白等一份没人看的目录。 */
 const ComponentLibraryPage = lazy(() => import("../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 /* ⛔ 11-28：前端开发（iframe 画布 + 桥）同样懒加载 —— 不进主包，点开才拉。 */
+const MediaPanel = lazy(() => import("../../media").then((m) => ({ default: m.MediaPanel })));
+const OpenfilmPanel = lazy(() => import("../../openfilm").then((m) => ({ default: m.OpenfilmPanel })));
 const ImageLabBridge = lazy(() => import("../../image-lab").then((m) => ({ default: m.ImageLabBridge })));
 const ModelViewerPanel = lazy(() => import("../../model-viewer").then((m) => ({ default: m.ModelViewerPanel })));
 const UiSketchModal = lazy(() => import("../../ui-sketch").then((m) => ({ default: m.UiSketchModal })));
@@ -184,6 +188,10 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
   { key: "3d", name: "3D", Icon: Box, ic: "ic-cyan", title: "3D 预览：模型调 preview_3d 或点模型文件时，在这里旋转查看" },
   /* ⛔ 11-28 用户令：「图像工坊接到侧边栏展示」—— 原浮动小窗改右栏页（进度与结果都在这里）。 */
   { key: "lab", name: "图像工坊", Icon: ImagePlus, ic: "ic-pink", title: "图像工坊：Codex 生图 / 改图的实时进度与结果" },
+  /* ⛔ 11-28 用户令：「媒体预览接一下」—— 原整屏对话框改右栏页（视频 / 音频 / 3D 都在这看）。 */
+  { key: "media", name: "媒体", Icon: Film, ic: "ic-amber", title: "媒体：视频 / 音频 / 3D 文件的预览（Codex 放一次就自动切到这页）" },
+  /* ⛔ 11-28 用户令：「影片剪辑接一下」—— 原独立弹窗改右栏页（页内仍可拆成独立窗口）。 */
+  { key: "film", name: "影片剪辑", Icon: Clapperboard, ic: "ic-cyan", title: "影片剪辑：OpenFilm Studio 内嵌在这里（也可点页内按钮拆成独立窗口）" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
 
@@ -644,6 +652,24 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             {/* 3D 预览页（11-28 用户令「3D 建模展示接到侧边栏新标签页」）：
                 模型调 preview_3d / openModelViewer 时桥会写 store 并请宿主切到本页；
                 没有目标时给引导文案（见 ModelViewerPanel 空态）。 */}
+            {/* 媒体页（11-28 用户令「媒体预览接一下」）：桥（headless）收到预览请求会把目标写进
+                store 并切到本页；本页只渲染当前目标，没有目标时给引导。 */}
+            <div className={`panel-page ${rightTab === "media" ? "" : "hidden"}`}>
+              {rightTab === "media" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载媒体预览…</div>}>
+                  <MediaPanel />
+                </Suspense>
+              ) : null}
+            </div>
+            {/* 影片剪辑页（11-28 用户令「影片剪辑接一下」）：OpenFilm Studio 以 iframe 内嵌，
+                ⛔ 这覆盖了 11-21 的「只用独立弹窗」—— 页内仍保留「独立窗口打开」按钮。 */}
+            <div className={`panel-page ${rightTab === "film" ? "" : "hidden"}`}>
+              {rightTab === "film" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载影片剪辑…</div>}>
+                  <OpenfilmPanel />
+                </Suspense>
+              ) : null}
+            </div>
             {/* 图像工坊页（11-28 用户令「图像工坊接到侧边栏展示」）：
                 生图 / 改图的进度与结果就在这里；「最小化」在页内无意义（切标签即离开），已由组件忽略。 */}
             <div className={`panel-page ${rightTab === "lab" ? "" : "hidden"}`}>

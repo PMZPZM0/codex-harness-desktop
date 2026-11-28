@@ -171,8 +171,10 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
   ok(studio.includes("fs.existsSync(cwd)") && studio.includes("mkdirSync(cwd, { recursive: true })") && studio.includes("OF_E_STUDIO"),
     "Studio cwd 不存在时先创建，失败回可读错误（⛔ 不再 spawn ENOENT）");
   const bridge = code("src/features/openfilm/OpenfilmBridge.tsx");
-  ok(/phase .*!== "studio"/.test(bridge) && /browserPopout\?\.\(url\)/.test(bridge),
-    "渲染层把 studio 事件开在独立预览窗口（OpenfilmBridge → browser:popout，⛔ 不再占右栏）");
+  /* 11-28 用户令「影片剪辑接一下」—— 覆盖 11-21 的「只开独立弹窗」：studio 事件改为写 store + 切右栏
+     「影片剪辑」页；独立窗口能力保留在页内按钮（OpenfilmPanel → browserPopout）。 */
+  ok(/phase .*!== "studio"/.test(bridge) && /setOpenfilmUrl\(url\)/.test(bridge) && /OpenfilmPanel/.test(bridge) && /browserPopout\?\.\(url\)/.test(bridge),
+    "渲染层把 studio 事件落到右栏「影片剪辑」页（store + 切页；独立窗口仍可从页内拆）");
   ok(/<OpenfilmBridge app=\{\{ openInBrowserPane: app\.openInBrowserPane/.test(code("src/features/app-view/AppView.tsx")),
     "OpenfilmBridge 已在 AppView 挂载（不挂 = 事件没人接）");
 }
@@ -295,7 +297,9 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
   const bridge = code("src/features/openfilm/OpenfilmBridge.tsx");
   ok(/const lastOpenRef = useRef<\{ url: string; at: number \} \| null>/.test(bridge) && /Date\.now\(\) - last\.at < 1500/.test(bridge),
     "Studio 事件 1.5s 时间去重（同 URL 立即重放只开一个窗口；关掉后再点是新事件 ⇒ 能重开）");
-  ok(/<OpenfilmBridge app=\{\{ openInBrowserPane: app\.openInBrowserPane, setNotice: app\.setNotice \}\} \/>/.test(code("src/features/app-view/AppView.tsx")),
+  /* 11-28：桥多了 onOpen（收到 studio 事件后请宿主切到右栏「影片剪辑」页）⇒ 判据允许 props。
+     ⛔ 用 [\s\S]*? 而不是 [^>]* —— onOpen={() => …} 里就有 `>`，[^>]* 会在这里停住。 */
+  ok(/<OpenfilmBridge app=\{\{ openInBrowserPane: app\.openInBrowserPane, setNotice: app\.setNotice \}\}[\s\S]*?\/>/.test(code("src/features/app-view/AppView.tsx")),
     "OpenfilmBridge 已在 AppView 挂载（只传通知 + 右栏兜底，不再需要右栏状态）");
 
 /* ── 10. 技能：内置一份手册，正文与工具实现一致 ───────────────────────── */

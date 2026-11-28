@@ -965,3 +965,59 @@
 .turn-media-image-wrap:hover .turn-media-edit,
 .turn-media-edit:focus-visible { opacity: 1; }
 .turn-media-edit:hover { border-color: var(--accent); }
+
+/* ── 内嵌态（右栏「媒体」页，11-28 用户令「媒体预览接一下」）────────────────
+   与 `.drama-canvas-backdrop.is-inline` / `.ui-sketch-backdrop.is-inline` /
+   `.model-viewer-backdrop.is-inline` 同一套口径：不定位、不遮罩、填满父容器。
+   ⛔ 改一边记得看另三处（四处都是「浮层 → 右栏页」的同一种改造）。 */
+.media-preview-backdrop.is-inline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.media-preview-backdrop.is-inline .media-preview-dialog {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* 右栏页外壳 + 空态 */
+.media-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.media-panel-empty {
+  margin: auto;
+  padding: 18px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.media-panel-empty strong { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.media-panel-empty p { margin: 0; font-size: 11.5px; line-height: 1.6; }
+
+/* ── 影片剪辑页（11-28）────────────────────────────────────────────────────
+   Studio 用 iframe 内嵌：顶栏一行（标题 + 独立窗口按钮），下面 iframe 吃满剩余高度。 */
+.openfilm-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.openfilm-panel-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.openfilm-panel-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted); }
+.openfilm-panel-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }

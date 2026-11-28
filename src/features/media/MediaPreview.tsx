@@ -10,13 +10,14 @@
  * 音频：自绘播放条（播放/暂停/进度/音量），单文件。
  * 3D：复用既有 ModelViewerModal（本地 glb/gltf）。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Box, ExternalLink, FolderOpen, Loader2, Maximize, Maximize2, Minimize2, Music2, Pause, PictureInPicture2, Play, Repeat, RotateCcw, RotateCw, Volume2, VolumeX, X } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
 import { collectMediaPaths, isHlsSource, isRemoteMediaSource, mediaDisplaySrc, mediaKindOf, type MediaKind } from "../../lib/media-kind.mjs";
 import { openMediaPreview, registerMediaPreview, resolveFilePath, type MediaPreviewTarget } from "../../lib/ui-channels";
 import { recordMediaPlayback } from "../../lib/media-playback-store.mjs";
+import { getMediaPanelTarget, setMediaPanelTarget, subscribeMediaPanelTarget } from "./panel-store.mjs";
 import { openModelViewer } from "../model-viewer";
 
 type Kind = Exclude<MediaKind, "">;
@@ -399,7 +400,7 @@ function ModelStage({ source, title }: { source: string; title: string }) {
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({ value: String(value), label: `${value}×` }));
 
 /** 媒体预览弹窗：图片/视频/音频统一播放，本地与远程来源都接。 */
-export function MediaPreviewModal({ target, onClose }: { target: MediaPreviewTarget; onClose: () => void }) {
+export function MediaPreviewModal({ target, onClose, variant = "overlay" }: { target: MediaPreviewTarget; onClose: () => void; variant?: "overlay" | "inline" }) {
   const source = target.source;
   const kind = (target.kind || mediaKindOf(source)) as Kind | "";
   const title = target.title || basenameOf(source) || "媒体预览";
@@ -452,17 +453,17 @@ export function MediaPreviewModal({ target, onClose }: { target: MediaPreviewTar
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose, mini]);
+  }, [onClose, mini, variant]);
 
   return (
     <div
       ref={backdropRef}
-      className={`media-preview-backdrop${mini ? " is-mini" : ""}`}
+      className={`media-preview-backdrop${mini ? " is-mini" : ""}${variant === "inline" ? " is-inline" : ""}`}
       style={mini && miniPos ? { left: `${miniPos.left}px`, top: `${miniPos.top}px`, right: "auto", bottom: "auto" } : undefined}
       role="dialog"
       aria-modal={mini ? "false" : "true"}
       aria-label={title}
-      onMouseDown={(event) => { if (!mini && event.target === event.currentTarget) onClose(); }}
+      onMouseDown={variant === "inline" ? undefined : (event) => { if (!mini && event.target === event.currentTarget) onClose(); }}
     >
       <div className={`media-preview-dialog is-${kind || "unknown"}${mini ? " is-mini" : ""}`} onMouseDown={(event) => event.stopPropagation()}>
         <header className="media-preview-head" onPointerDown={startMiniDrag} style={mini ? { cursor: "move" } : undefined}>
@@ -498,8 +499,11 @@ type MediaBridgeApi = {
 };
 
 /** 媒体预览桥：⛔ 只有**引擎**发起的预览才记成卡片（用户自己点附件不算）。 */
-export function MediaPreviewBridge({ threadId = "", runningTurnIdsRef }: { threadId?: string; runningTurnIdsRef?: { current: Map<string, string> | null } }) {
+export function MediaPreviewBridge({ threadId = "", runningTurnIdsRef, variant = "overlay", onOpen }: { threadId?: string; runningTurnIdsRef?: { current: Map<string, string> | null }; variant?: "overlay" | "inline" | "headless"; onOpen?: () => void }) {
   const [target, setTarget] = useState<MediaPreviewTarget | null>(null);
+  /* 事件 effect 依赖 []，onOpen 用 ref 取最新值（⛔ 直接进依赖会反复重建订阅） */
+  const onOpenRef = useRef<(() => void) | null>(null);
+  onOpenRef.current = onOpen ?? null;
 
   useEffect(() => {
     /* 打开预览：来自**引擎**（`media-preview:open` = Codex 调了视频/音乐工具）才记卡片；
@@ -569,6 +573,27 @@ export function MediaResultCards({ text, limit = 8 }: { text: string; limit?: nu
           <span className="media-result-action">{item.kind === "model" ? "预览" : "播放"}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+/** 右栏「媒体」页（11-28 用户令「媒体预览接一下」）：只渲染 store 里的当前目标。
+ *  ⛔ 没有目标时给引导（页是常驻的，不能留白板）。 */
+export function MediaPanel() {
+  const target = useSyncExternalStore(subscribeMediaPanelTarget, getMediaPanelTarget, getMediaPanelTarget);
+  if (!target) {
+    return (
+      <div className="media-panel">
+        <div className="media-panel-empty">
+          <strong>还没有要预览的媒体</strong>
+          <p>视频 / 音频 / 3D 文件，让 Codex 放一次（或点附件、产物卡），就会出现在这里。</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="media-panel">
+      <MediaPreviewModal target={target} onClose={() => setMediaPanelTarget(null)} variant="inline" />
     </div>
   );
 }

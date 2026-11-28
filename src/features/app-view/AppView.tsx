@@ -625,7 +625,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       )}
       {/* 本机测试端口（10-29）：当前会话命令输出里出现带端口的 localhost ⇒ 自动开右栏浏览器 + 加宽 */}
       {!popoutThreadId && <DevPortBridge app={app} threadId={thread?.id ?? ""} />}
-      <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} />
+      {/* 11-28：影片剪辑改右栏「影片剪辑」页 —— 桥只写 store + 请宿主切页，不再自动弹独立窗口 */}
+      <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} onOpen={() => app.openPanelTab("film", "影片剪辑")} />
       {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <RightFileBridge app={app} />}
       <FileContextMenuHost openCanvas={() => { app.setRightTab("canvas"); app.setRightOpen(true); }} />
@@ -904,7 +905,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {pluginInstall && <PluginInstallModal state={pluginInstall} onClose={() => setPluginInstall(null)} />}
       <AppViewFilePreviewEditor app={app} />
       {/* 视频 / 音频 / 3D 统一预览（media 域，10-20）：自挂载，监听 ui-channels 与 media-preview:open */}
-      <MediaPreviewBridge threadId={thread?.id ?? ""} runningTurnIdsRef={app.runningTurnIdsRef} />
+      {/* 11-28：媒体预览改右栏「媒体」页 —— 这份 headless，只收事件并切页 */}
+      <MediaPreviewBridge threadId={thread?.id ?? ""} runningTurnIdsRef={app.runningTurnIdsRef} variant="headless" onOpen={() => app.openPanelTab("media", "媒体")} />
       {/* 3D 预览弹窗（model-viewer 域）：自挂载，监听 model-viewer:open 推送（引擎 preview_3d） */}
       {/* 11-28：3D 预览改成右栏「3D」标签页 —— 桥只剩「收事件 + 请宿主切页」，不再渲染浮层 */}
       <ModelViewerBridge onOpen={() => app.openPanelTab("3d", "3D 预览")} />
