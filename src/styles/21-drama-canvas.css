@@ -34,15 +34,26 @@
   box-shadow: none;
   background: var(--bg);
 }
-/* 右栏窄：顶栏允许横向滚动，不换行 —— 换行会把画布正文挤掉半屏 */
+/* ⛔⛔ 11-28 用户（截图）：「三个点的弹窗，都弹幕展示到下面去了，没看见吗」——
+   根因：头部原来是 `overflow-x: auto; overflow-y: hidden` 的滚动容器，
+   而「新建 / 批量生成 / ⋯」三个下拉都是 `position: absolute; top: 100%` 往下弹
+   ⇒ **全部被 overflow-y: hidden 裁掉**（点开像没反应）。
+   ⇒ 头部不再当滚动容器（overflow: visible，菜单可正常溢出）；
+      横向滚动改由左半段 `.drama-canvas-head-left` 自己承担（它内部没有菜单）。
+   ⛔ 代价：放不下时左半段内部可滚，右侧按钮组始终可见 —— 比"菜单点开是空的"好得多。 */
 .drama-canvas-backdrop.is-inline .drama-canvas-head {
+  overflow: visible;
+  flex-wrap: nowrap;
+}
+.drama-canvas-backdrop.is-inline .drama-canvas-head-left {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   scrollbar-width: none;
   flex-wrap: nowrap;
 }
-.drama-canvas-backdrop.is-inline .drama-canvas-head::-webkit-scrollbar { display: none; }
-.drama-canvas-backdrop.is-inline .drama-canvas-head-left { flex-wrap: nowrap; }
+.drama-canvas-backdrop.is-inline .drama-canvas-head-left::-webkit-scrollbar { display: none; }
 
 .drama-canvas-backdrop {
   position: fixed;
@@ -1250,7 +1261,9 @@
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  z-index: 2;
+  /* 11-28：从 2 抬到 30 —— 头部不再是滚动容器后，菜单会真正溢出到画布上方，
+     必须压过 React Flow 的节点层（画布内弹层层级带上限 90，见 DESIGN.md）。 */
+  z-index: 30;
   width: 272px;
   padding: 5px;
   display: flex;
