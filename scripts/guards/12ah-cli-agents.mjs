@@ -605,9 +605,9 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "没有规范模板的自定义 CLI 不硬改");
   /* 11-07：模板外面多了一层 applyCliPermissionTier（按目录档位追加参数）——
      判据仍是「先 heal 再整体加引号」，且**不许**退回裸 replace。 */
-  ok(/fillCliPromptTemplate\(\s*applyCliPermissionTier\(healCliCommand\(member\.cliCommand[^)]*\),[\s\S]{0,240}?memberPrompt\(/.test(runnerSrc)
+  ok(/fillCliPromptTemplate\(\s*applyCliPermissionTier\((?:safeCliTemplate|healCliCommand)\(member\.cliCommand[^)]*\),[\s\S]{0,240}?memberPrompt\(/.test(runnerSrc)
     && !/\.replace\("\{prompt\}", promptForCli/.test(runnerSrc),
-    "⛔ 派活执行端走「先 heal → 按档位追加参数 → 整体加引号」，不再裸 replace");
+    "⛔ 派活执行端走「先 heal（11-28 起换成 safeCliTemplate = heal + 模板安全校验）→ 按档位追加参数 → 整体加引号」，不再裸 replace");
   ok(/readUsableCliAgents\(\)/.test(runnerSrc) && /cliAgentRegistry/.test(runnerSrc) && /if \(!command\) continue;/.test(runnerSrc),
     "中枢可拉名单合并「CLI 智能体目录」：有规范单轮命令的都能拉，未核实的不进群（宿主没法替它探用法）");
   ok(/healCliCommand\(member\.cliCommand\)/.test(storeSrc),
@@ -713,8 +713,8 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/cliPromptCommandFor\(bin, tier\)/.test(agentsSrc), "派活提示（@ 调度路径）用带档位的命令");
 
   const bossRunnerSrc = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
-  ok(/cliPermissionTierFor\(member\.name\)/.test(bossRunnerSrc) && /applyCliPermissionTier\(healCliCommand/.test(bossRunnerSrc),
-    "群成员 CLI 派活（子进程路径）按目录里的档位追加参数");
+  ok(/cliPermissionTierFor\(member\.name\)/.test(bossRunnerSrc) && /applyCliPermissionTier\((?:safeCliTemplate|healCliCommand)\(/.test(bossRunnerSrc),
+    "群成员 CLI 派活（子进程路径）按目录里的档位追加参数（11-28 起模板经 safeCliTemplate 校验）");
 
   const ipcManifest = JSON.parse(readFileSync(join(ROOT, "electron/ipc-channels.manifest.json"), "utf8"));
   const saveChannel = (ipcManifest.channels ?? []).find((entry) => entry.channel === "cliagents:save");

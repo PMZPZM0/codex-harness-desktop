@@ -10,6 +10,7 @@
  */
 import { hostQueueMessageId, isWatchdogSpamText, queueItemText } from "../../src/lib/host-queue.mjs";
 import { execFile } from "node:child_process";
+import { safeCliTemplate } from "./cli-template-guard";
 import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -830,8 +831,9 @@ async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTa
   /* ⛔ 11-07：权限档在 CLI 目录里（不是成员上）—— 群成员只存命令模板。
      档位决定模板尾部追加哪组无头参数（safe/standard/full，见 cli-command.mjs）。 */
   const tier = await cliPermissionTierFor(member.name);
+  /* ⛔⛔ 11-28 安全审计 F-01：模板两处可写（IPC / from=cli 分支）且旧存档可能不合规 ⇒ 执行前用 safeCliTemplate（heal + 校验）。 */
   const command = fillCliPromptTemplate(
-    applyCliPermissionTier(healCliCommand(member.cliCommand ?? ""), tier),
+    applyCliPermissionTier(safeCliTemplate(member.cliCommand ?? ""), tier),
     memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1, "", norms),
   );
   try {
@@ -1305,8 +1307,8 @@ export async function memberForBoss(input: {
         const reg = findCliAgent(await cliAgentRegistry(), key);
         /* ⛔ 11-06：模型给的老模板（如 `qwenpaw task {prompt}`）会被 heal 成规范模板；
            模板里的 {prompt} 在派活时整体加引号，任务正文不会再被拆成命令行开关。 */
-        const command = healCliCommand(String(input.cliCommand ?? reg?.command ?? "").trim());
-        if (!command) return { ok: false, error: `拉 CLI agent 需要命令模板（cliCommand，{prompt} 会替换成任务全文）；登记表里没有「${input.cliName ?? ""}」` };
+        /* ⛔ 11-28 安全审计 F-01：这条分支是模型调 group_add_member 的主路径（不经 IPC 校验），同样走 safeCliTemplate。 */
+        const command = safeCliTemplate(String(input.cliCommand ?? reg?.command ?? "").trim());
         /* ⛔⛔ 10-26 用户令：「cli成员就让Codex添加就行，帮cli成员配置好模型等等，最后能干活和派遣」
            ⛔ 原来 CLI 成员的 model / effort / sandbox / approvalPolicy **全空** ⇒
               界面显示不出配置、派活时只能吃默认值，而且"配置"这件事压根不存在。

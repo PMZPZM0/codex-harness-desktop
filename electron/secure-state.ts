@@ -57,8 +57,10 @@ export function readSecretJson<T = any>(file: string): T | null {
   if (raw.startsWith(PREFIX)) {
     try {
       return JSON.parse(safeStorage.decryptString(Buffer.from(raw.slice(PREFIX.length), "base64"))) as T;
-    } catch {
-      /* 密文解不开（换了机器 / 密钥库重置）⇒ 当未配置，让用户重连一次即可 */
+    } catch (error) {
+      /* ⛔ 密文解不开（换机器 / 密钥库重置 / DPAPI 换了用户）⇒ 当未配置处理，但**必须留日志**：
+         否则症状是「明明连过、重启就没了」，没有任何线索。 */
+      console.warn(`[secure-state] 加密状态解不开（按未配置处理，需重连一次）：${file} — ${String((error as Error)?.message ?? error).slice(0, 120)}`);
       return null;
     }
   }

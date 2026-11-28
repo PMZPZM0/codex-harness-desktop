@@ -64,23 +64,10 @@ const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v7"} -->
 
 const TICK_MS = 5000;
 
-/**
- * 校验群成员的 CLI 命令模板（安全审计 F-01）。
- * 为什么必须有：`cliCommand` 是暴露给模型的工具参数，runner 会把它原样交给 cmd /c（或 sh -c）
- * 执行 —— 没有这道校验，模型就等于拿到一条绕过审批的任意命令通道。
- * 规则：必须含 `{prompt}` 占位符；去掉 `{prompt}` 后不得含能改变命令结构的元字符。
- * ⛔ 只拒不改：猜元字符意图去"净化"必然猜错，宁可直接报错让调用方写规范模板。
- */
-export function assertSafeCliTemplate(template: string): void {
-  const command = String(template ?? "").trim();
-  if (!command) return;
-  if (!command.includes("{prompt}")) {
-    throw new Error("cliCommand 必须包含 {prompt} 占位符（它接收任务全文）；不写这个参数就会走宿主的标准模板");
-  }
-  if (/[;&|`$()<>\n\r]/.test(command.split("{prompt}").join(""))) {
-    throw new Error("cliCommand 只能是「程序 + 参数」形式的模板：不能含 ; & | ` $ ( ) < > 或换行（这些能改变命令结构）");
-  }
-}
+/* ⛔ 11-28 安全审计 F-01：校验函数放在 `boss-groups/cli-template-guard.ts`（共用）——
+   `cliCommand` 有两条写入路径（本 IPC 与 runner 的 from=cli 分支）和执行点，三处必须同一套规则。 */
+import { assertSafeCliTemplate } from "../boss-groups/cli-template-guard";
+export { assertSafeCliTemplate };
 
 /** 指挥中枢自己的目录（`<userData>/boss-home`）：建好目录并把角色提示写进 AGENTS.md。
  *  ⛔ 单一真相源：桌面侧建会话走这个 cwd，**手机端建中枢会话**也调它 —— 别各写一份 AGENTS。 */
