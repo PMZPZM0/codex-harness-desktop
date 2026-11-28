@@ -107,7 +107,12 @@
   color: var(--accent);
   flex: none;
 }
-.drama-canvas-head-left > div:first-of-type { display: flex; flex-direction: column; min-width: 160px; }
+/* ⛔ 11-28 用户（截图细节）：「标签页没有左右滚动…」同轮报的头部裁切 ——
+   实测 `.drama-canvas-head-left > div:first-of-type`（flowtabs + 副标题的列容器）
+   被 flex 压到 34px（内容 165px）⇒「生图工作流」只剩「生图」、副标题只剩「剧本 …」。
+   ⛔ 精简态两态共用：**列容器不许收缩**（flex:none），空间不够时宁可靠 head 的横向滚动条。 */
+.drama-canvas-head-left > div:first-of-type { display: flex; flex-direction: column; min-width: 160px; flex: none; }
+.drama-canvas-head-left > div:first-of-type small { white-space: nowrap; }
 .drama-canvas-head-left b { font-size: 13px; }
 .drama-canvas-head-left small { font-size: 11px; color: var(--muted); }
 .drama-canvas-head-actions { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }

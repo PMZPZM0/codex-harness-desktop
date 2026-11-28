@@ -356,6 +356,25 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   /* 10-31 右侧抽屉：关闭时**延迟卸载** 220ms（= --dur-panel），让 [data-state="closed"]
      的 translate 退场真的播出来。⛔ 立刻卸载 = 元素没了，CSS 过渡无从触发 ⇒ 关闭仍是闪现。 */
   const [mounted, setMounted] = useState(rightOpen);
+  /* ⛔ 11-28 用户（截图）：「标签页没有左右滚动功能，展示不全，也不触发左右滚动」——
+     `.tabstrip-tabs` 早就有 `overflow-x: auto`，但它只响应**横向**滚轮（触摸板横滑 / Shift+滚轮）；
+     鼠标竖向滚轮在标签条上会被页面吞掉、什么都不发生 ⇒ 用户视角就是"不能滚"。
+     修：原生非被动监听把 `deltaY` 转成 `scrollLeft`（与画布滚轮分流同一套路；
+     ⛔ 不能用 React 的 onWheel —— 它注册在 root 且这里要 preventDefault，必须原生挂）。
+     依赖 `[mounted]`：面板「先以关闭态挂上」，首次 effect 时 ref 还没接上 DOM。 */
+  useEffect(() => {
+    if (!mounted) return;
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.deltaY || strip.scrollWidth <= strip.clientWidth) return;
+      event.preventDefault();
+      strip.scrollLeft += event.deltaY;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, [mounted]);
+
   /* 进场要「先以关闭态挂上、下一帧再切 open」：元素插入那一拍若已是最终态，
      CSS 过渡不会触发（实测打开时 translate 恒为 none、只有列宽在动）。
      ⛔ 两次 rAF：单次可能仍在同一个布局批次里，切了也播不动。 */
@@ -634,3 +653,4 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
           </aside>
   );
 }
+
