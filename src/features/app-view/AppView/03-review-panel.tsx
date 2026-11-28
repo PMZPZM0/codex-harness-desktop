@@ -2,7 +2,7 @@
  * AppViewReviewPanel —— AppView 的 JSX 第 3 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Fragment, Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
   Archive,
@@ -155,6 +155,10 @@ import { StorageSection, ReviewPanel } from "../../storage-settings";
 import { DramaCanvas } from "../../drama-canvas";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 
+/* ⛔ 11-28：组件库（Uiverse 3,802 条，catalog.gen 约 375KB）**必须懒加载** ——
+   静态 import 会把它塞进主包，首屏白等一份没人看的目录。 */
+const ComponentLibraryPage = lazy(() => import("../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
+
 /** 右侧面板的可开关标签（11-26 用户令：右栏改成浏览器式标签条）。数组顺序 = 标签顺序。 */
 const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: string; title: string }> = [
   { key: "monitor", name: "监控", Icon: ActivityIcon, ic: "ic-violet", title: "监控：本会话的技能 / MCP / 插件、每轮产物，以及由本会话 Codex 产出的自我改进建议" },
@@ -166,6 +170,9 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
      ⇒ 图片页 = **只读查看**（打开本地图 / 看尺寸与路径 / 放大缩小），改图仍去「画布」页。 */
   { key: "image", name: "图片", Icon: Image, ic: "ic-pink", title: "图片：打开并查看图片（只读预览；改图请用「画布」）" },
   { key: "canvas", name: "画布", Icon: LayoutGrid, ic: "ic-cyan", title: "无限画布：卡片连线的工作流（电商出图 / 生图 / 短剧 / 3D 建模）" },
+  /* ⛔ 11-28 用户令：「把 3000 多个组件一并接入……全部统一在侧边栏中展示」——
+     组件库（Uiverse 3,802 条，11 个分类）从设置页搬到这里，设置页那条入口改成跳本页。 */
+  { key: "library", name: "组件库", Icon: Store, ic: "ic-violet", title: "组件库：3,800+ 现成组件（按钮 / 卡片 / 表单 / 加载器…），点「交给 Codex」把代码用到项目里" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
 
@@ -500,6 +507,16 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                       .catch((error: unknown) => setNotice(`召唤专家失败：${String((error as Error)?.message ?? error).slice(0, 120)}`));
                   }}
                 />
+              ) : null}
+            </div>
+            {/* 组件库页（11-28 用户令「把 3000 多个组件一并接入侧边栏」）：
+                Uiverse 3,802 条，懒加载（catalog 约 375KB，⛔ 不进主包）；
+                「交给 Codex」= 把提示词填进主输入框（与设置页那条通路同口径，不自动发送）。 */}
+            <div className={`panel-page ${rightTab === "library" ? "" : "hidden"}`}>
+              {rightTab === "library" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载组件库…</div>}>
+                  <ComponentLibraryPage onHandoff={(text) => app.setPrompt(text)} />
+                </Suspense>
               ) : null}
             </div>
             {/* 图片页（11-26 用户令）：「加一个标签页打开图片功能，不是在画布 —— 画布是编辑图的」。

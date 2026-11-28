@@ -62,6 +62,9 @@ function imageOutputPaths(output: unknown): string[] {
     .filter(Boolean);
 }
 
+/** 自动切右栏的节流状态（11-28）：模块级变量，跨工具调用保留；⛔ 不进 React state，免得每次调用都重渲染。 */
+const lastAutoPanelTab = { key: "", at: 0 };
+
 /** 事件路由第 2 段：模型工具调用（item/tool/call）的分发与执行；返回 true = 已处理并从回调返回。 */
 export function handleEventRouter2(bag: Bag, event: any): boolean {
         if (event.method === "currentTime/read") {
@@ -89,6 +92,22 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 const inner = args?.args && typeof args.args === "object" && !Array.isArray(args.args) ? args.args : {};
                 event = { ...event, params: { ...event.params, tool: String(args.name) } };
                 args = inner;
+              }
+              /* ⛔ 11-28 用户令：「后续 Codex 调用对应工具时能直接在侧边栏看到实时效果」。
+                 模型一动画布 / 组件库，右栏就自动开对应页（标签同时亮灯）——
+                 ⛔ 同一页 30 秒内只自动切一次：连续几次工具调用不该把用户正在看的页反复顶掉。 */
+              {
+                const tabOf: Record<string, string> = {
+                  workflow_read: "canvas", workflow_writeback: "canvas",
+                  image_edit: "canvas", image_info: "canvas", photocraft: "canvas",
+                  ui_component_search: "library", ui_component_get: "library",
+                };
+                const toolName = String(event.params?.tool ?? "");
+                const hit = tabOf[toolName];
+                if (hit && (lastAutoPanelTab.key !== hit || Date.now() - lastAutoPanelTab.at > 30_000)) {
+                  lastAutoPanelTab.key = hit; lastAutoPanelTab.at = Date.now();
+                  try { bag.openPanelTab?.(hit, hit === "canvas" ? "画布" : "组件库"); } catch { /* 面板没挂载就算了 */ }
+                }
               }
               /* 10-29：收藏夹 / 开发日记 / 密码本（用户定的权限模型：会话级授权、默认关、
                  只读 + 只追加、密码本写入先弹一次性确认）。执行端在 data-access/tool-handler，
