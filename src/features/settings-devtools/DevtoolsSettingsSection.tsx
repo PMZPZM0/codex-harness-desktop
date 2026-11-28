@@ -72,7 +72,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, Copy, Files, Film, Gamepad2, GraduationCap, LayoutTemplate, Music2, PackageOpen, Palette, Puzzle, Smartphone, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, Copy, Files, Film, Gamepad2, GraduationCap, LayoutTemplate, Music2, PackageOpen, Palette, Puzzle, Smartphone, Trash2, X, Sparkles } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -83,6 +83,7 @@ import { LayaCard } from "./LayaCard";
 import { OpenfilmCard } from "../openfilm";
 import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
+import { OrenCutCard } from "./OrenCutCard";
 import { FrontendDesignCard } from "./FrontendDesignCard";
 import { FileeCard } from "./FileeCard";
 import { ApkStartCard } from "./ApkStartCard";
@@ -98,7 +99,7 @@ export type DevtoolsSettingsSectionProps = {
   onOpenExperts?: (expert: string, tool: string) => void; downloadSource?: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "phone" | "laya" | "feishu-cli" | "frontend-design" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
+type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "phone" | "laya" | "feishu-cli" | "frontend-design" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "orencut" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
 
@@ -228,6 +229,8 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     { key: "openmaic", icon: <GraduationCap size={15} />, title: "OpenMAIC 互动课堂", desc: "多智能体互动课堂：一句话生成带 AI 老师/同学、幻灯片、测验与互动模拟的课程", stat: "按需安装 · 本机构建 · 约 5GB" },
     { key: "husk", icon: <Smartphone size={15} />, title: "Husk（iPhone 跑 Android）", desc: "在 iPhone 上跑 Android 应用/游戏：下载官方 IPA，侧载后导入 APK 全屏运行", stat: "按需下载 · iOS 15.5+ · 约 142 MB" },
     { key: "openfilm", icon: <Film size={15} />, title: "OpenFilm 视频剪辑", desc: "第三方开源（MIT）：让 Codex 直接剪片，Studio 里手改", stat: "按需下载 · 国内镜像加速 · 可卸载" },
+    /* 11-28 用户令：「跟开发工具里面的飞书 cli 界面一样」⇒ 开发工具里必须有这张卡（用户实测看不到入口）。 */
+    { key: "orencut", icon: <Sparkles size={15} />, title: "OrenCut 动效组件库", desc: "第三方开源（MIT）：33 个可编辑的静音动效组件，右栏「动效」页预览", stat: "按需下载 · 纯静态站 · 可卸载" },
     { key: "domains", icon: <Boxes size={15} />, title: "功能域", desc: "启用 / 停用功能板块（停用下次启动生效）", stat: "声明式插槽 · 可被插件替换" },
     { key: "plugins", icon: <Puzzle size={15} />, title: "声明式插件", desc: "只用 JSON 往插槽挂内容、调已有通道，无代码", stat: "放好即生效 · 无需重启" },
   ];
@@ -354,6 +357,11 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeOtherCard.title} icon={<Smartphone size={15} />} hint="电脑准备 IPA · iPhone 上侧载 · iOS 15.5+" size="md" onClose={() => setOpenCard(null)}>
           {/* Husk（11-14，Leviidev/Husk，GPL-2.0）：安装走 runtime:install 的 GitHub release 直下型（只下 IPA）。 */}
           <HuskCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
+        </SettingsDialog>
+      )}
+      {openCard === "orencut" && activeOtherCard && (
+        <SettingsDialog title={activeOtherCard.title} icon={<Sparkles size={15} />} hint="第三方开源项目 · 按需下载 · 不随包分发" size="md" onClose={() => setOpenCard(null)}>
+          <OrenCutCard setNotice={setNotice} />
         </SettingsDialog>
       )}
       {openCard === "openfilm" && activeOtherCard && (

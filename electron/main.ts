@@ -179,7 +179,7 @@ protocol.registerSchemesAsPrivileged([
   /* 11-24：PPT 预览页里的「用其他应用打开」（file:// 页面调不到 IPC）。 */
   { scheme: "harness-open", privileges: { secure: true, supportFetchAPI: true } },
   { scheme: "pet", privileges: { secure: true, supportFetchAPI: true } },
-  { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }, { scheme: "orencut", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }, { scheme: "orencut", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
 app.setName("Codex Harness Desktop");

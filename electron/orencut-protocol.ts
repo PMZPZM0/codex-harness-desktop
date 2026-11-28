@@ -59,8 +59,19 @@ export function resolveOrencutPath(requestUrl: string): string {
   return target;
 }
 
+/**
+ * CORS 只对「本地页面」放行（`file://` 的 Origin 是 "null"）。
+ * ⛔ 为什么需要：宿主主页面是 file://，它要 fetch 本协议做存在性/元信息检查时属跨源；
+ *    **远程站点**（内置浏览器里的 https 页面）origin 不是 null ⇒ 拿不到 CORS 头 ⇒ 读不到。
+ * ⛔ 这不是"开个大口子"：协议本身只读、根目录只有 MIT 静态资源，且远程 origin 被排除在外。
+ */
+function corsHeaders(request: { headers?: { get: (name: string) => string | null } }): Record<string, string> {
+  const origin = request.headers?.get?.("origin") ?? "";
+  return origin === "null" || origin.startsWith("file://") ? { "access-control-allow-origin": "*" } : {};
+}
+
 /** 注册协议处理器（在 app ready 之后、与其它 protocol.handle 同处调用）。 */
-export function registerOrencutProtocol(target: { handle: (scheme: string, fn: (req: { url: string }) => Promise<Response>) => void }): void {
+export function registerOrencutProtocol(target: { handle: (scheme: string, fn: (req: { url: string; headers?: { get: (name: string) => string | null } }) => Promise<Response>) => void }): void {
   target.handle(ORENCUT_SCHEME, async (request) => {
     const file = resolveOrencutPath(request.url);
     if (!file) return new Response("Forbidden", { status: 403 });
@@ -70,7 +81,33 @@ export function registerOrencutProtocol(target: { handle: (scheme: string, fn: (
     try {
       const stat = statSync(file);
       if (!stat.isFile()) return new Response("Not found", { status: 404 });
-      return new Response(readFileSync(file), { status: 200, headers: { "content-type": type } });
+      const total = stat.size;
+      /* ⛔⛔ 11-28 修：必须支持 Range/206 —— 上游 Studio 的预览是 `<video>`，Chromium 对
+         "整份 200 + 没有 accept-ranges" 的自定义协议会报 **"The element has no supported sources."**
+         （用户实测：播放键点了没反应、时长显示 0.00 / 4.20）。默认 session 的 harness-media
+         也是同一套 Range 口径，这里对齐。 */
+      const range = request.headers?.get?.("range") ?? "";
+      if (range.startsWith("bytes=")) {
+        const [startRaw, endRaw] = range.slice(6).split("-");
+        const start = Math.max(0, Number(startRaw) || 0);
+        const end = endRaw ? Math.min(Number(endRaw), total - 1) : total - 1;
+        if (start > end) return new Response("Range not satisfiable", { status: 416, headers: { "content-range": `bytes */${total}` } });
+        const chunk = readFileSync(file).subarray(start, end + 1);
+        return new Response(chunk, {
+          status: 206,
+          headers: {
+            "content-type": type,
+            "accept-ranges": "bytes",
+            "content-range": `bytes ${start}-${end}/${total}`,
+            "content-length": String(chunk.length),
+            ...corsHeaders(request),
+          },
+        });
+      }
+      return new Response(readFileSync(file), {
+        status: 200,
+        headers: { "content-type": type, "accept-ranges": "bytes", "content-length": String(total), ...corsHeaders(request) },
+      });
     } catch {
       return new Response("Not found", { status: 404 });
     }

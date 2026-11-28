@@ -13,12 +13,18 @@ import { useCallback, useEffect, useState } from "react";
 type Status = { installed: boolean; installedAt: string; files: number; error: string };
 
 const STUDIO_URL = "orencut://app/studio.html";
+/* ⛔ 11-28 用户实测「这没有返回按键」：上游 studio.html 里没有回组件库的入口（它是独立页），
+   所以在**我们的**顶栏补一个视图切换，⛔ 不改上游文件（改了下次重新下载就没了）。 */
+const LIBRARY_URL = "orencut://app/index.html";
 
 /** 右栏「动效」页：状态条（下载/重装/卸载）+ Studio iframe；未装时给引导与体积说明。
  *  targetId 来自模型调 orencut(action=open) 的推送（主进程 orencut:open → 本页 iframe 带 ?id=）。 */
 export function OrenCutPage({ targetId = "" }: { targetId?: string }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState("");
+  const [view, setView] = useState<"library" | "studio">("studio");
+  /* 工具推过来的组件 id ⇒ 强制回 studio 视图（opened 之后才看得到具体组件）。 */
+  useEffect(() => { if (targetId) setView("studio"); }, [targetId]);
   const [error, setError] = useState("");
 
   const refresh = useCallback(() => {
@@ -68,6 +74,10 @@ export function OrenCutPage({ targetId = "" }: { targetId?: string }) {
         </span>
         {installed ? (
           <>
+            <div className="orencut-switch" role="group" aria-label="视图">
+              <button type="button" className={view === "library" ? "is-active" : ""} onClick={() => setView("library")}>组件库</button>
+              <button type="button" className={view === "studio" ? "is-active" : ""} onClick={() => setView("studio")}>Studio</button>
+            </div>
             <button type="button" className="secondary-setting" disabled={Boolean(busy)} onClick={() => void install()}>重新下载</button>
             <button type="button" className="secondary-setting" disabled={Boolean(busy)} onClick={() => void remove()}>卸载</button>
           </>
@@ -80,8 +90,10 @@ export function OrenCutPage({ targetId = "" }: { targetId?: string }) {
       {installed ? (
         <iframe
           className="orencut-frame"
-          src={targetId ? STUDIO_URL + "?id=" + encodeURIComponent(targetId) : STUDIO_URL}
-          key={targetId || "studio"}
+          src={view === "library"
+            ? LIBRARY_URL
+            : (targetId ? STUDIO_URL + "?id=" + encodeURIComponent(targetId) : STUDIO_URL)}
+          key={view + (targetId || "")}
           title="OrenCut Studio"
         />
       ) : (

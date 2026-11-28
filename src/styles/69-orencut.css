@@ -31,3 +31,9 @@
 .orencut-empty strong { font-size: 13px; color: var(--text); font-weight: 600; }
 .orencut-empty p { margin: 0; font-size: 11.5px; line-height: 1.7; }
 .orencut-empty .orencut-meta { font-size: 11px; opacity: 0.8; }
+
+/* 组件库 / Studio 视图切换（11-28：上游 studio.html 没有回组件库的入口，补在我们顶栏） */
+.orencut-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex: none; }
+.orencut-switch button { border: 0; background: transparent; color: var(--muted); font-size: 11.5px; padding: 4px 10px; cursor: pointer; }
+.orencut-switch button:hover { color: var(--text); }
+.orencut-switch button.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
