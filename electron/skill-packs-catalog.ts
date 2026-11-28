@@ -21,7 +21,7 @@ export type SkillPackDef = {
   /** 装完能干什么、和本应用哪些功能配套（用户点名要写） */
   companion: string;
   /** 分类：界面按它分组（像「Craft 全家桶」那样）；也是「浏览器自动化」这类功能归口 */
-  category: "工程流程" | "图表与可视化" | "网页设计" | "前端动效" | "生活指南" | "浏览器自动化" | "视频与内容" | "电商视觉";
+  category: "工程流程" | "安全审计" | "图表与可视化" | "网页设计" | "前端动效" | "生活指南" | "浏览器自动化" | "视频与内容" | "电商视觉";
   /** 包内技能名（= 仓库里的目录名）：装完逐个可见，便于「按需停用」而不是整包关 */
   skills?: string[];
   /** 配套专家 / 专家团：装了包之后，这些专家做对应任务会自动用上 */
@@ -186,5 +186,25 @@ export const SKILL_PACKS: SkillPackDef[] = [
     skills: ["ecommerce-visual-copywriting"],
     experts: ["生图专家"],
     notice: "第三方技能（MIT，作者 feichanggege）：输出是交给设计师 / 出图工具执行的 brief，不含成品图；平台规则与广告法以官方最新口径为准，发布前必须人工复核。",
+  },
+  {
+    /* 上游核实（11-28，GitHub API 实测）：cloudflare/security-audit-skill —— MIT、143 KB、
+       最近推送 2026-09-14、79.3k star、无 release（版本按日期记）。
+       结构：根目录只有 LICENSE / README.md / skills/ ⇒ 技能在 skills/security-audit/（标准结构，
+       安装器走 skills/ 分支，装出来的技能名就是 security-audit）。
+       ⛔ 它是**方法论**（一组 Markdown + 两个零依赖 Node 校验器），不是扫描器：靠子代理并行狩猎 +
+       对抗式验证，所以 companion/notice 必须写清运行前提，否则用户装完发现跑不起来。 */
+    id: "cloudflare-security-audit",
+    version: "2026-09-14",
+    name: "Cloudflare 安全审计",
+    repo: "cloudflare/security-audit-skill",
+    license: "MIT",
+    licenseUrl: "https://github.com/cloudflare/security-audit-skill/blob/main/LICENSE",
+    size: "约 0.14 MB",
+    description: "六阶段安全审计：侦察 → 狩猎 → 对抗式验证 → 报告",
+    companion: "配套：shell 沙箱 + 子智能体（按攻击面并行狩猎，每条候选漏洞要独立证伪）",
+    category: "安全审计",
+    skills: ["security-audit"],
+    notice: "运行前提：宿主需支持工具调用与并行子智能体，本机要有 Node.js（自带两个零依赖校验器）；目标代码的构建 / 测试必须关进操作系统级沙箱再跑。一次全量审计可能几十分钟到数小时，产出落在 ~/security-audit-skill/<仓库名>/run-N/（报告、覆盖账本、结论 JSON）。",
   },
 ];
