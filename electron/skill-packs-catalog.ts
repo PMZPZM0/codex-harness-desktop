@@ -21,7 +21,7 @@ export type SkillPackDef = {
   /** 装完能干什么、和本应用哪些功能配套（用户点名要写） */
   companion: string;
   /** 分类：界面按它分组（像「Craft 全家桶」那样）；也是「浏览器自动化」这类功能归口 */
-  category: "工程流程" | "图表与可视化" | "网页设计" | "前端动效" | "生活指南" | "浏览器自动化" | "视频与内容";
+  category: "工程流程" | "图表与可视化" | "网页设计" | "前端动效" | "生活指南" | "浏览器自动化" | "视频与内容" | "电商视觉";
   /** 包内技能名（= 仓库里的目录名）：装完逐个可见，便于「按需停用」而不是整包关 */
   skills?: string[];
   /** 配套专家 / 专家团：装了包之后，这些专家做对应任务会自动用上 */
@@ -165,5 +165,26 @@ export const SKILL_PACKS: SkillPackDef[] = [
     skills: ["cheat-bump", "cheat-init", "cheat-predict", "cheat-persona", "cheat-learn-from"],
     experts: ["创意搭档", "自媒体工作台"],
     bundled: { dir: "cheat-on-content", market: true },
+  },
+  {
+    /* 上游核实（11-28，GitHub API 实测）：feichanggege/ecommerce-visual-copywriting-skill
+       —— MIT、19071 KB（约 19 MB）、最近推送 2026-10-30、最新发布 v3.0.0。
+       仓库结构：根目录 SKILL.md（单技能仓库，另有 references/ examples/ scripts/）
+       ⇒ 安装器走「仓库内扫描 SKILL.md」分支（与 taste-skill 同款），不假设 skills/ 目录。
+       能力边界：输出是**可执行的 brief**（场景 / 画面文案 / 设计说明 / 出图提示词）+ 五维合规自检，
+       ⛔ 不直接出图 —— 所以配套指向「生图专家」，由它接画布出图。 */
+    id: "ecommerce-visual-copywriting",
+    version: "v3.0.0",
+    name: "电商视觉文案 SOP",
+    repo: "feichanggege/ecommerce-visual-copywriting-skill",
+    license: "MIT",
+    licenseUrl: "https://github.com/feichanggege/ecommerce-visual-copywriting-skill/blob/main/LICENSE",
+    size: "约 19 MB",
+    description: "主图 / 详情页 / A+ 的视觉文案 SOP：先立证据，再写文案",
+    companion: "配套：生图专家（出完 brief 直接接画布出图）",
+    category: "电商视觉",
+    skills: ["ecommerce-visual-copywriting"],
+    experts: ["生图专家"],
+    notice: "第三方技能（MIT，作者 feichanggege）：输出是交给设计师 / 出图工具执行的 brief，不含成品图；平台规则与广告法以官方最新口径为准，发布前必须人工复核。",
   },
 ];
