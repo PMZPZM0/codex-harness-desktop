@@ -53,11 +53,17 @@ function clampPos(left: number, top: number, size?: { width: number; height: num
   };
 }
 
-/** 图像工坊浮层桥：接主进程的开/关指令，把生成或编辑结果挂成可预览的 URL。 */
-export function ImageLabBridge() {
+/** 图像工坊桥：接主进程的开/关指令，把生成或编辑结果挂成可预览的 URL。
+ *  ⛔ 11-28 用户令：「图像工坊接到侧边栏展示」—— 新增 inline 形态（右栏「图像工坊」页）：
+ *    填满父容器、不可拖动、忽略「最小化」（切标签就是离开，不需要胶囊）；
+ *    另给 onOpen 让宿主在收到事件时自动切到该页。overlay 行为一字不改。 */
+export function ImageLabBridge({ variant = "overlay", onOpen }: { variant?: "overlay" | "inline" | "headless"; onOpen?: () => void } = {}) {
   const [state, setState] = useState<LabState | null>(null);
   const [urls, setUrls] = useState<string[]>([]);
   const [error, setError] = useState("");
+  /* 事件 effect 只跑一次（依赖 []），onOpen 用 ref 取最新值 —— ⛔ 直接进依赖会让订阅反复重建。 */
+  const onOpenRef = useRef<(() => void) | null>(null);
+  onOpenRef.current = onOpen ?? null;
   /* 最小化状态：⛔ 新任务开始时必须复位 —— 否则上一轮最小化成胶囊后，
      下一轮生图只冒出一枚小胶囊，用户会以为「没开始」。 */
   const [minimized, setMinimized] = useState(false);
@@ -84,7 +90,7 @@ export function ImageLabBridge() {
       clearLinger();
       /* 新任务开窗：把上一轮的「最小化」复位，否则用户只看到一枚胶囊。
          ⛔ 不用闭包里的 state 判「是否同一任务」—— 这个 effect 只跑一次，闭包里是首帧的 null。 */
-      if (event.phase === "open") { taskIdRef.current = event.taskId; setMinimized(false); }
+      if (event.phase === "open") { taskIdRef.current = event.taskId; setMinimized(false); onOpenRef.current?.(); }
       setState((prev) => {
         // 新的 open 或同 id 的 update 才接受；过期任务的 update 直接丢
         if (prev && prev.taskId !== event.taskId && event.phase === "update") return prev;
@@ -187,7 +193,23 @@ export function ImageLabBridge() {
     if (next) { try { localStorage.setItem(IMAGE_LAB_POS_KEY, JSON.stringify(next)); } catch { /* 隐私模式 */ } }
   };
 
-  if (!state) return null;
+  /* headless：宿主只借它「收事件 + 切页」，不渲染任何 UI（AppView 那份用这个） */
+  if (variant === "headless") return null;
+
+  if (!state) {
+    /* 11-28：右栏页常驻 —— 没有任务时也要有个说明，⛔ 不能像浮层那样直接 return null（会剩一块白板） */
+    if (variant === "inline") {
+      return (
+        <div className="image-lab-layer is-inline" data-empty="1">
+          <div className="image-lab-empty-page">
+            <strong>图像工坊</strong>
+            <p>让 Codex 生图 / 改图（image_generate / image_edit / image_view），进度与结果会实时出现在这里。</p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
 
   const statusText = state.status === "running"
     ? (state.mode === "generate" ? "生成中" : "处理中")
@@ -196,7 +218,7 @@ export function ImageLabBridge() {
   const stageText = percentText >= 80 ? "正在最后打磨" : percentText >= 55 ? "正在细化质感" : percentText >= 25 ? "正在铺陈光影" : "正在勾勒草图";
 
   /* 最小化：只留一枚小胶囊（⛔ 用户要的是"别挡住对话框"，不是"关掉"—— 关了就看不着进度了）。 */
-  if (minimized) {
+  if (minimized && variant !== "inline") {
     return (
       <button type="button" className={`image-lab-mini is-${state.status}`} onClick={() => setMinimized(false)} title="展开图像工坊">
         <span className="image-lab-mini-dot" />
@@ -209,25 +231,25 @@ export function ImageLabBridge() {
     /* ⛔ 11-24 用户：「这个窗口挡住我看对话框」⇒ 不再用整屏遮罩的模态：
        容器只做定位（pointer-events:none），卡片自身可拖动、可最小化，
        默认落在右下角、宽 340 —— 主体对话始终可见可点。 */
-    <div className="image-lab-layer">
+    <div className={`image-lab-layer${variant === "inline" ? " is-inline" : ""}`}>
       <div
         className="image-lab-dialog"
-        style={pos ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" } : undefined}
+        style={variant === "inline" ? undefined : pos ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" } : undefined}
         role="dialog"
         aria-label="图像工坊"
       >
         <div
           className="image-lab-head"
-          onPointerDown={onHeadPointerDown}
+          onPointerDown={variant === "inline" ? undefined : onHeadPointerDown}
           onPointerMove={onHeadPointerMove}
           onPointerUp={onHeadPointerUp}
           onPointerCancel={onHeadPointerUp}
-          title="按住拖动"
+          title={variant === "inline" ? undefined : "按住拖动"}
         >
           <span className="image-lab-grip" aria-hidden="true">⋮⋮</span>
           <span className="image-lab-title" title={state.title}>{state.title}</span>
           <span className={`image-lab-status is-${state.status}`}>{statusText}</span>
-          <button type="button" className="image-lab-btn" onClick={() => setMinimized(true)} title="最小化">–</button>
+          {variant === "inline" ? null : <button type="button" className="image-lab-btn" onClick={() => setMinimized(true)} title="最小化">–</button>}
           <button type="button" className="image-lab-close" onClick={() => {
             setState(null);
             taskIdRef.current = "";

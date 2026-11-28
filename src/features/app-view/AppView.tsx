@@ -906,9 +906,11 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 视频 / 音频 / 3D 统一预览（media 域，10-20）：自挂载，监听 ui-channels 与 media-preview:open */}
       <MediaPreviewBridge threadId={thread?.id ?? ""} runningTurnIdsRef={app.runningTurnIdsRef} />
       {/* 3D 预览弹窗（model-viewer 域）：自挂载，监听 model-viewer:open 推送（引擎 preview_3d） */}
-      <ModelViewerBridge />
+      {/* 11-28：3D 预览改成右栏「3D」标签页 —— 桥只剩「收事件 + 请宿主切页」，不再渲染浮层 */}
+      <ModelViewerBridge onOpen={() => app.openPanelTab("3d", "3D 预览")} />
       {/* 图像工坊浮层（image-lab 域，10-09）：Codex 的图像生成/编辑工具调用时弹出预览，结束自动收起 */}
-      <ImageLabBridge />
+      {/* 11-28：图像工坊改右栏「图像工坊」页 —— 这份只收事件并请宿主切页（headless，不渲染浮层） */}
+      <ImageLabBridge variant="headless" onOpen={() => app.openPanelTab("lab", "图像工坊")} />
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />

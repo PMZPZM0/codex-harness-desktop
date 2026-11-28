@@ -89,6 +89,7 @@ import {
   MonitorUp,
   BookOpen,
   BookmarkPlus,
+  Box,
   Home,
   Lock,
   CircleCheck,
@@ -159,6 +160,8 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
    静态 import 会把它塞进主包，首屏白等一份没人看的目录。 */
 const ComponentLibraryPage = lazy(() => import("../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 /* ⛔ 11-28：前端开发（iframe 画布 + 桥）同样懒加载 —— 不进主包，点开才拉。 */
+const ImageLabBridge = lazy(() => import("../../image-lab").then((m) => ({ default: m.ImageLabBridge })));
+const ModelViewerPanel = lazy(() => import("../../model-viewer").then((m) => ({ default: m.ModelViewerPanel })));
 const UiSketchModal = lazy(() => import("../../ui-sketch").then((m) => ({ default: m.UiSketchModal })));
 
 /** 右侧面板的可开关标签（11-26 用户令：右栏改成浏览器式标签条）。数组顺序 = 标签顺序。 */
@@ -177,6 +180,10 @@ const PANEL_TABS: Array<{ key: string; name: string; Icon: typeof Globe2; ic: st
   { key: "library", name: "组件库", Icon: Store, ic: "ic-violet", title: "组件库：3,800+ 现成组件（按钮 / 卡片 / 表单 / 加载器…），点「交给 Codex」把代码用到项目里" },
   /* ⛔ 11-28 用户令：「把前端开发那个也接过来，不需要再单独界面了，跟这个画布一样的展示效果&联动效果」。 */
   { key: "sketch", name: "前端开发", Icon: PenTool, ic: "ic-pink", title: "前端开发：拖拽摆界面 → 预览 → 交给 Codex 实现（原整屏浮层，现并入右栏）" },
+  /* ⛔ 11-28 用户令：「3D 建模展示那些都接到侧边栏新标签页展示」—— 原整屏浮层改右栏页。 */
+  { key: "3d", name: "3D", Icon: Box, ic: "ic-cyan", title: "3D 预览：模型调 preview_3d 或点模型文件时，在这里旋转查看" },
+  /* ⛔ 11-28 用户令：「图像工坊接到侧边栏展示」—— 原浮动小窗改右栏页（进度与结果都在这里）。 */
+  { key: "lab", name: "图像工坊", Icon: ImagePlus, ic: "ic-pink", title: "图像工坊：Codex 生图 / 改图的实时进度与结果" },
   { key: "terminal", name: "终端", Icon: SquareTerminal, ic: "ic-accent", title: "终端：在当前工作目录里跑命令" },
 ];
 
@@ -631,6 +638,25 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                     onClose={() => setRightTab("monitor")}
                     onAskAgent={(text) => { setRightTab("monitor"); void app.sendPrefilled({ text }); }}
                   />
+                </Suspense>
+              ) : null}
+            </div>
+            {/* 3D 预览页（11-28 用户令「3D 建模展示接到侧边栏新标签页」）：
+                模型调 preview_3d / openModelViewer 时桥会写 store 并请宿主切到本页；
+                没有目标时给引导文案（见 ModelViewerPanel 空态）。 */}
+            {/* 图像工坊页（11-28 用户令「图像工坊接到侧边栏展示」）：
+                生图 / 改图的进度与结果就在这里；「最小化」在页内无意义（切标签即离开），已由组件忽略。 */}
+            <div className={`panel-page ${rightTab === "lab" ? "" : "hidden"}`}>
+              {rightTab === "lab" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载图像工坊…</div>}>
+                  <ImageLabBridge variant="inline" />
+                </Suspense>
+              ) : null}
+            </div>
+            <div className={`panel-page ${rightTab === "3d" ? "" : "hidden"}`}>
+              {rightTab === "3d" ? (
+                <Suspense fallback={<div style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>正在加载 3D 预览…</div>}>
+                  <ModelViewerPanel variant="inline" />
                 </Suspense>
               ) : null}
             </div>

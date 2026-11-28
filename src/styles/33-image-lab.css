@@ -199,3 +199,47 @@
   .image-lab-shot:hover { transform: none; }
   .image-lab-shot::before, .image-lab-zoom { transition-duration: 1ms; }
 }
+
+/* ── 图像工坊内嵌（右栏「图像工坊」页，11-28 用户令「图像工坊接到侧边栏展示」）──
+   原来 `.image-lab-layer` 是 `position: fixed` 的定位容器（pointer-events:none，卡片可拖动）。
+   inline 时把它变成普通块：填满父容器、可交互、卡片 100% 且不可拖（切标签即离开，不需要拖动）。 */
+.image-lab-layer.is-inline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  pointer-events: auto;
+}
+.image-lab-layer.is-inline .image-lab-dialog {
+  position: relative;
+  left: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.image-lab-layer.is-inline .image-lab-head { cursor: default; }
+/* 空态引导（右栏页常驻，没有任务时别是白板） */
+.image-lab-empty-page {
+  margin: auto;
+  padding: 18px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.image-lab-empty-page strong { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.image-lab-empty-page p { margin: 0; font-size: 11.5px; line-height: 1.6; }

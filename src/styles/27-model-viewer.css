@@ -12,3 +12,41 @@
 .model-viewer-stage model-viewer { width: 100%; height: 100%; }
 .model-viewer-loading { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 .model-viewer-error { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* ── 内嵌（右栏「3D 预览」页，11-28 用户令「3D 建模展示接到侧边栏新标签页展示」）──
+   ⛔ 与 `.drama-canvas-backdrop.is-inline` / `.ui-sketch-backdrop.is-inline` 同一套口径：
+   不定位、不遮罩、填满父容器；三处改一边记得看另两处。 */
+.model-viewer-backdrop.is-inline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.model-viewer-backdrop.is-inline .model-viewer-dialog {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* 空态（右栏里没目标时）—— 给一句引导，别留一块白板 */
+.model-viewer-empty {
+  margin: auto;
+  padding: 18px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.model-viewer-empty strong { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.model-viewer-empty p { margin: 0; font-size: 11.5px; line-height: 1.6; }

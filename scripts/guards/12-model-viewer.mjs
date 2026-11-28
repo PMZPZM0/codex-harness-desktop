@@ -71,8 +71,10 @@ ok(
 /* ── 渲染层：挂载 + 懒加载 + CSS ── */
 // ⛔ 挂载断言必须钉 **JSX 侧**：光查符号名会命中 import 行（变异删掉挂载、import 还在 ⇒ 假绿）。
 ok(
-  appView.includes("<ModelViewerBridge />") && barrel.includes("ModelViewerBridge"),
-  "AppView 挂了 <ModelViewerBridge />（经 barrel，域间禁深链）",
+  /* 11-28：3D 预览并入右栏 ⇒ 桥多了 `onOpen`（收事件后请宿主切页），判据从 `<ModelViewerBridge />`
+     放宽成「挂了 ModelViewerBridge 且带 onOpen」（⛔ 仍必须经 barrel，禁深链）。 */
+  /<ModelViewerBridge\b[^>]*onOpen=/.test(appView) && barrel.includes("ModelViewerBridge"),
+  "AppView 挂了 <ModelViewerBridge onOpen=…>（经 barrel，域间禁深链；11-28 起还负责切到右栏「3D」页）",
 );
 ok(
   modal.includes('import("@google/model-viewer")') && /viewerPromise\s*\?\?=/,

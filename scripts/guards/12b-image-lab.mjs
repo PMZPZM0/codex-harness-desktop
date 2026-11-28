@@ -140,8 +140,10 @@ ok(
 /* ── ⑤ 渲染层：挂载 + 收图 + 自动收起 + CSS ── */
 // ⛔ 挂载断言钉 JSX 侧：光查符号名会命中 import 行（删挂载、import 还在 ⇒ 假绿）
 ok(
-  appView.includes("<ImageLabBridge />") && barrel.includes("ImageLabBridge"),
-  "AppView 挂了 <ImageLabBridge />（经 barrel，域间禁深链）",
+  /* 11-28：图像工坊并入右栏 ⇒ AppView 那份改成 headless（只收事件 + 请宿主切页，不渲染浮层），
+     判据从 `<ImageLabBridge />` 放宽成「挂了且显式 headless + onOpen」（⛔ 仍必须经 barrel）。 */
+  /<ImageLabBridge\b[^>]*variant="headless"[^>]*onOpen=/.test(appView) && barrel.includes("ImageLabBridge"),
+  "AppView 挂了 <ImageLabBridge variant=\"headless\" onOpen=…>（经 barrel，域间禁深链；11-28 起只收事件并切到右栏「图像工坊」页）",
 );
 ok(
   modal.includes("readImage") && modal.includes("createObjectURL") && modal.includes("revokeObjectURL"),

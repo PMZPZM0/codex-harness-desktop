@@ -1,17 +1,20 @@
-// 3D 模型预览弹窗（model-viewer 域，2026-10-05）：自包含、本地 state、不进 bag（样板 = codex-official-market）。
-// 两个入口汇到同一个模块级状态：
-//   ① 主进程推送 model-viewer:open（引擎 harness_tools preview_3d 触发，联动链见 electron/features/model-viewer-ipc.ts 头注）；
+// 3D 模型预览（model-viewer 域，2026-10-05 立；11-28 迁入右栏标签页）
+// 两条入口汇到模块级 store（见 store.mjs）：
+//   ① 主进程推送 model-viewer:open（引擎 harness_tools preview_3d 触发）；
 //   ② 渲染层内部 openModelViewer()（文件卡等后续联动走这里，不走 IPC）。
 // ⛔ 模型库 @google/model-viewer（~1MB）必须懒加载：首次打开才 import，主包零开销。
-import { useEffect, useRef, useState } from "react";
+// ⛔ 11-28 用户令：「3D 建模展示接到侧边栏新标签页展示，其他也都检查一下」——
+//   ⇒ 渲染位置从**整屏浮层**改成右栏「3D 预览」页（`variant="inline"`）；
+//     桥（Bridge）只剩"收事件 → 写 store → 请宿主切页"，不再渲染任何 UI，
+//     这样右栏没开时目标也不会丢（右栏打开时补上）。
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { getModelViewerTarget, setModelViewerTarget, subscribeModelViewerTarget, type ModelViewerTarget } from "./store.mjs";
 
-export type ModelViewerTarget = { path: string; title: string };
+export type { ModelViewerTarget };
 
-let pushTarget: ((target: ModelViewerTarget) => void) | null = null;
-
-/** 渲染层内部打开入口（与本 IPC 推送同一出口；参数不合法时弹窗内会显示真实报错） */
+/** 渲染层内部打开入口（与本 IPC 推送同一出口；参数不合法时面板内会显示真实报错） */
 export function openModelViewer(path: string, title = ""): void {
-  pushTarget?.({ path, title });
+  setModelViewerTarget({ path, title });
 }
 
 let viewerPromise: Promise<void> | null = null;
@@ -36,21 +39,17 @@ declare module "react" {
   }
 }
 
-/** 3D 模型查看器桥：接打开指令，把模型文件转成可加载的 blob URL 再渲染。 */
-export function ModelViewerBridge() {
-  const [target, setTarget] = useState<ModelViewerTarget | null>(null);
+/**
+ * 3D 预览面板：只负责**渲染**当前目标（右栏「3D 预览」页用）。
+ * `variant="inline"` 时填满父容器、无遮罩；没有目标时给一句引导而不是空白。
+ * ⛔ 不要在这里订阅 IPC —— 事件统一由 `ModelViewerBridge` 写 store。
+ */
+export function ModelViewerPanel({ variant = "inline" }: { variant?: "overlay" | "inline" }) {
+  const target = useSyncExternalStore(subscribeModelViewerTarget, getModelViewerTarget, getModelViewerTarget);
   const [src, setSrc] = useState("");
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const blobRef = useRef("");
-
-  useEffect(() => {
-    pushTarget = (next) => setTarget(next);
-    const off = window.codex.onModelViewerOpen((event) => {
-      if (event?.path) setTarget({ path: event.path, title: event.title ?? "" });
-    });
-    return () => { off?.(); pushTarget = null; };
-  }, []);
 
   useEffect(() => {
     if (!target) return;
@@ -77,14 +76,26 @@ export function ModelViewerBridge() {
     return () => { cancelled = true; };
   }, [target]);
 
-  if (!target) return null;
-  const title = target.title || target.path.split(/[\\/]/).pop() || "3D 预览";
+  const title = target ? (target.title || target.path.split(/[\\/]/).pop() || "3D 预览") : "";
+  const close = () => setModelViewerTarget(null);
+
+  if (!target) {
+    return (
+      <div className={`model-viewer-backdrop${variant === "inline" ? " is-inline" : ""}`} data-empty="1">
+        <div className="model-viewer-empty">
+          <strong>还没有要预览的 3D 模型</strong>
+          <p>让 Codex 用 `preview_3d` 打开一个 .glb / .gltf，或在文件页里点模型文件 —— 会自动出现在这里。</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="model-viewer-backdrop" onClick={() => setTarget(null)}>
+    <div className={`model-viewer-backdrop${variant === "inline" ? " is-inline" : ""}`} onClick={variant === "inline" ? undefined : close}>
       <div className="model-viewer-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="model-viewer-head">
           <span className="model-viewer-title" title={target.path}>{title}</span>
-          <button type="button" className="model-viewer-close" onClick={() => setTarget(null)}>✕</button>
+          <button type="button" className="model-viewer-close" onClick={close} title="清空预览">✕</button>
         </div>
         {error
           ? <div className="model-viewer-error">{error}</div>
@@ -95,4 +106,21 @@ export function ModelViewerBridge() {
       </div>
     </div>
   );
+}
+
+/**
+ * 3D 预览桥：**不渲染 UI**，只做「收事件 → 写 store → 请宿主切到 3D 页」。
+ * `onOpen` 由宿主给（AppView 传 `openPanelTab("3d", "3D 预览")`）。
+ * ⛔ 右栏关着的时候也要收（store 是模块级的），否则模型一预览用户什么也看不到。
+ */
+export function ModelViewerBridge({ onOpen }: { onOpen?: () => void }) {
+  useEffect(() => {
+    const off = window.codex.onModelViewerOpen((event) => {
+      if (!event?.path) return;
+      setModelViewerTarget({ path: event.path, title: event.title ?? "" });
+      onOpen?.();
+    });
+    return () => { off?.(); };
+  }, [onOpen]);
+  return null;
 }
