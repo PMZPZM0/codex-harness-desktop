@@ -891,7 +891,11 @@
   color: var(--text);
 }
 .tabstrip-tabs {
-  flex: 1;
+  /* ⛔ 11-28 用户：「加号放到标签页右边，更顺手；放大图标靠右」——
+     这里原来是 `flex: 1`（撑满），＋ 就被推到最右、离标签很远。
+     改成按内容宽 + 可收缩：标签少时 ＋ 紧跟最后一个标签，多时收缩成滚动区；
+     剩余空白由 `.panel-tab-zoom { margin-left: auto }` 吃掉，放大图标靠最右。 */
+  flex: 0 1 auto;
   align-items: center;
   gap: 4px;
   min-width: 0;
@@ -901,6 +905,26 @@
   scrollbar-width: none;
 }
 .tabstrip-tabs::-webkit-scrollbar { display: none; }
+
+/* 标签条左右箭头（11-28）：只在溢出时由 JS 取消 hidden，到边界由 disabled 置灰。
+   ⛔ 与 `.panel-tab-add` 同一颗尺寸语言，别做成大按钮把标签条挤高。 */
+.tabstrip-scroll {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tabstrip-scroll:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.tabstrip-scroll:disabled { opacity: .35; cursor: default; }
+.tabstrip-scroll[hidden] { display: none; }
 .panel-tab {
   min-width: 0;
   max-width: 170px;
@@ -997,6 +1021,8 @@
   align-items: center;
   justify-content: center;
   flex: none;
+  /* 11-28：右边只剩放大这一颗 ⇒ 用 auto 外边距把它顶到最右（标签与 ＋ 留在左边） */
+  margin-left: auto;
   width: 26px;
   height: 26px;
   padding: 0;

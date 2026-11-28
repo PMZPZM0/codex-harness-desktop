@@ -375,6 +375,56 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
     return () => strip.removeEventListener("wheel", onWheel);
   }, [mounted]);
 
+  /* ⛔ 11-28 用户（截图二红框）：「这里的左右滚动你是不会做吗？」——
+     滚轮之外必须给**看得见**的入口：标签条两端各一颗箭头，只在真溢出时出现，到边界置灰。
+     ⛔ 判据来自真实几何（scrollWidth / clientWidth / scrollLeft），不靠"标签数量"猜。 */
+  const [tabScroll, setTabScroll] = useState({ overflow: false, atStart: true, atEnd: true });
+  const syncTabScroll = useCallback(() => {
+    const s = stripRef.current;
+    if (!s) return;
+    setTabScroll({
+      overflow: s.scrollWidth > s.clientWidth + 1,
+      atStart: s.scrollLeft <= 1,
+      atEnd: s.scrollLeft + s.clientWidth >= s.scrollWidth - 1,
+    });
+  }, []);
+  useEffect(() => {
+    if (!mounted) return;
+    const s = stripRef.current;
+    if (!s) return;
+    syncTabScroll();
+    s.addEventListener("scroll", syncTabScroll, { passive: true });
+    const ro = new ResizeObserver(syncTabScroll);
+    ro.observe(s);
+    return () => { s.removeEventListener("scroll", syncTabScroll); ro.disconnect(); };
+  }, [mounted, syncTabScroll, openedTabs.length, rightTab]);
+
+  /* ⛔⛔ 11-28 用户：「每个会话的标签打开后，AI 画布要可以持久化保存，不能缩小，所以标签页都不见了」
+     —— 原来 openedTabs / rightTab 只在内存里，切会话、缩回、重开应用就全没了。
+     ⇒ 按**会话**存 localStorage（key 带 thread id）：
+       · 切会话：换成该会话那一套（没存过就是「新标签页」）；
+       · 重启：首帧读当前会话那一套；
+       · 标签在此时**同步写盘**，不用等关闭。
+     `tabsAppliedRef` 防竞态：恢复/切换那一拍先标记"已应用哪个会话"，
+     写盘 effect 只写当前已应用的 —— 否则会拿新会话的标签去覆盖旧会话的记录。 */
+  const tabsAppliedRef = useRef<string | null>(null);
+  const tabStoreKey = `panel-tabs:${thread?.id || "global"}`;
+  useEffect(() => {
+    if (!mounted) return;
+    if (tabsAppliedRef.current === tabStoreKey) return;
+    tabsAppliedRef.current = tabStoreKey;
+    let saved: { opened?: unknown; active?: unknown } | null = null;
+    try { saved = JSON.parse(localStorage.getItem(tabStoreKey) || "null"); } catch { saved = null; }
+    const known = (key: unknown) => typeof key === "string" && (key === "newtab" || PANEL_TABS.some((tab) => tab.key === key));
+    const opened = Array.isArray(saved?.opened) ? saved!.opened.filter((key) => known(key) && key !== "newtab") as string[] : [];
+    setOpenedTabs(opened);
+    setRightTab(known(saved?.active) ? String(saved!.active) : "newtab");
+  }, [mounted, tabStoreKey]);
+  useEffect(() => {
+    if (!mounted || tabsAppliedRef.current !== tabStoreKey) return;
+    try { localStorage.setItem(tabStoreKey, JSON.stringify({ opened: openedTabs, active: rightTab })); } catch { /* 隐私模式：标签仍可用，只是不记 */ }
+  }, [mounted, tabStoreKey, openedTabs, rightTab]);
+
   /* 进场要「先以关闭态挂上、下一帧再切 open」：元素插入那一拍若已是最终态，
      CSS 过渡不会触发（实测打开时 translate 恒为 none、只有列宽在动）。
      ⛔ 两次 rAF：单次可能仍在同一个布局批次里，切了也播不动。 */
@@ -410,6 +460,19 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
       data-max={panelMax ? "1" : undefined}
       data-density={panelMax || panelWidth >= 480 ? "full" : "compact"}>
             <div className="panel-tabstrip">
+              {/* ⛔ 11-28 用户（截图一）：「新建标签的加号放到标签页右边，更顺手；放大缩小那个图标靠右去」，
+                 以及（截图二）「这里的左右滚动你是不会做吗」——
+                 ⇒ 顺序固定为：‹箭标 · 标签… · ＋新建 · ›箭标 ·（弹性空白）· 放大。
+                 箭头只在真溢出时出现、到边界置灰（几何判据见 syncTabScroll）。 */}
+              <button
+                type="button"
+                className="tabstrip-scroll"
+                title="向左滚动标签"
+                aria-label="向左滚动标签"
+                hidden={!tabScroll.overflow}
+                disabled={tabScroll.atStart}
+                onClick={() => stripRef.current?.scrollBy({ left: -160, behavior: "smooth" })}
+              ><ChevronLeft size={13} /></button>
               <div className="tabstrip-tabs" role="tablist" aria-label="右侧面板" ref={stripRef}>
                 {/* 11-26 用户令：右栏做成浏览器式标签条 —— 每个标签带 ×，右侧「+」开新标签页，
                     新标签页正文是四个入口（打开浏览器 / 查看工作空间 / 查看变更 / 打开终端）。
@@ -447,6 +510,17 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                   </div>
                 ) : null}
               </div>
+              {/* ＋新建紧跟最后一个标签（用户：更顺手），› 箭头随后；放大图标靠最右（margin-left:auto 见 CSS） */}
+              <button className="panel-tab-add" title="新标签页" onClick={() => setRightTab("newtab")}><Plus size={14} /></button>
+              <button
+                type="button"
+                className="tabstrip-scroll"
+                title="向右滚动标签"
+                aria-label="向右滚动标签"
+                hidden={!tabScroll.overflow}
+                disabled={tabScroll.atEnd}
+                onClick={() => stripRef.current?.scrollBy({ left: 160, behavior: "smooth" })}
+              ><ChevronRight size={13} /></button>
               {/* 右栏缩放（11-27 三次改口后定稿）：
                   · 放大 = 整个侧边栏**覆盖主对话区**；缩回 = 恢复原来的侧边栏宽度；
                   · 形态 = **一个图标两态**（用户：「一个图标做两种状态展示就行了，现在左右按键很丑」）。
@@ -461,7 +535,6 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
               >
                 {panelMax ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
               </button>
-              <button className="panel-tab-add" title="新标签页" onClick={() => setRightTab("newtab")}><Plus size={14} /></button>
             </div>
             {/* 新标签页（11-26 用户令）：⛔ 列的是**右栏自己的页**（监控/变更/审阅/浏览器/文件/画布/终端），
                 ⛔ 不是照抄参考截图里那四条 —— 那四条是别的应用的入口，照搬过来等于凭空多长一坨。 */}
