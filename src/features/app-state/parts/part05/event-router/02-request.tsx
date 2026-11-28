@@ -104,7 +104,10 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 };
                 const toolName = String(event.params?.tool ?? "");
                 const hit = tabOf[toolName];
-                if (hit && (lastAutoPanelTab.key !== hit || Date.now() - lastAutoPanelTab.at > 30_000)) {
+                /* ⛔ 只认**当前会话**的工具调用：后台/委派会话跑同样的工具，不该把用户
+                   正在看的右栏切走（多会话并行的真实场景）。 */
+                const fromThisThread = String(event.params?.threadId ?? "") === String(bag.threadRef.current?.id ?? "");
+                if (hit && fromThisThread && (lastAutoPanelTab.key !== hit || Date.now() - lastAutoPanelTab.at > 30_000)) {
                   lastAutoPanelTab.key = hit; lastAutoPanelTab.at = Date.now();
                   try { bag.openPanelTab?.(hit, hit === "canvas" ? "画布" : "组件库"); } catch { /* 面板没挂载就算了 */ }
                 }

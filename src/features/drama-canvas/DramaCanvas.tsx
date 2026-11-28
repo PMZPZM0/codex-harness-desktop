@@ -1008,9 +1008,12 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                    11-28 补：**精简态**（侧栏窄 / 未放大）只读 —— 连线与拖拽都关（见上面的 props），
                    否则窄栏里一点就把卡片拖乱。 */
                 connectionRadius={28}
-                onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); /* 记住右键的**画布坐标**：新建的卡片落在指针处，不是默认网格位 */ const at = rfRef.current?.screenToFlowPosition({ x: evt.clientX, y: evt.clientY }) ?? { x: 120, y: 120 }; setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null, at }); }}
-                onNodeContextMenu={(e, node) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }}
-                onNodeDoubleClick={(_, node) => { board.select([node.id], node.id); setInspectorOpen(true); }}
+                /* ⛔ 精简态只读：右键菜单里有剪切/复制节点/新建/清空这些**写操作**，
+                   窄栏「只展示精简状态」的承诺会从这里漏出去 ⇒ 直接不弹（preventDefault 保住浏览器菜单语义）。 */
+                onPaneContextMenu={(e) => { const evt = e as unknown as MouseEvent; evt.preventDefault(); if (compact) return; /* 记住右键的**画布坐标**：新建的卡片落在指针处，不是默认网格位 */ const at = rfRef.current?.screenToFlowPosition({ x: evt.clientX, y: evt.clientY }) ?? { x: 120, y: 120 }; setMenu({ x: evt.clientX, y: evt.clientY, nodeId: null, at }); }}
+                onNodeContextMenu={(e, node) => { e.preventDefault(); if (compact) return; setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }}
+                /* 精简态检查器是隐藏的，双击开了也看不见 ⇒ 同口径不响应 */
+                onNodeDoubleClick={(_, node) => { if (compact) return; board.select([node.id], node.id); setInspectorOpen(true); }}
                 onPaneClick={() => setMenu(null)}
                 defaultEdgeOptions={{
                   type: "drama-edge",
